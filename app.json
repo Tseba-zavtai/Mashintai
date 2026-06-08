@@ -1,0 +1,95 @@
+{
+  "expo": {
+    "name": "Tureestei",
+    "slug": "tureestei",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "tureestei",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "mn.tureestei.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Ойр байгаа заруудыг харуулахын тулд байршил ашиглана.",
+        "NSCameraUsageDescription": "Зургаа авах болон зар оруулах үед камер ашиглана.",
+        "NSPhotoLibraryUsageDescription": "Зураг сонгож зартаа оруулахын тулд зурагт хандах эрх хэрэгтэй.",
+        "NSMicrophoneUsageDescription": "Микрофон ашигладаг боломжууд нэмэгдсэний дараа ашиглана.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": [
+          "qpaywallet",
+          "khanbank",
+          "statebankmongolia",
+          "xacbank",
+          "tdbbank",
+          "tdbwallet",
+          "socialpay-payment",
+          "most",
+          "nibank",
+          "ckbank",
+          "capitronbank",
+          "bogdbank",
+          "transbank",
+          "mbank",
+          "ard",
+          "toki",
+          "arig",
+          "Monpay",
+          "hipay"
+        ]
+      }
+    },
+    "android": {
+      "package": "mn.tureestei.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDfFoU40BzyPl96iL54zGvv2rHQM33GlZA"
+        }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Ойр байгаа заруудыг харуулахын тулд байршил ашиглана."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Зураг сонгож зартаа оруулахын тулд зурагт хандах эрх хэрэгтэй."
+        }
+      ],
+      "./plugins/with-bank-queries"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "27362e94-9b6c-4c31-96be-d3ceda85d11b"
+      }
+    }
+  }
+}
