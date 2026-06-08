@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Tureestei",
-    "slug": "tureestei",
+    "slug": "tureestei1",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -86,5 +86,6 @@
 "experiments": {
   "typedRoutes": true
 }
+
   }
 }
