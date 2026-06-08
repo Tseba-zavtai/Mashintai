@@ -83,13 +83,8 @@
       ],
       "./plugins/with-bank-queries"
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
-    "extra": {
-      "eas": {
-        "projectId": "27362e94-9b6c-4c31-96be-d3ceda85d11b"
-      }
-    }
+"experiments": {
+  "typedRoutes": true
+}
   }
 }
