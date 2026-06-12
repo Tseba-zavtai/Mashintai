@@ -83,9 +83,15 @@
       ],
       "./plugins/with-bank-queries"
     ],
-"experiments": {
-  "typedRoutes": true
-}
-
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "40307900-5fec-4877-a667-4813c7e8c7bb"
+      }
+    },
+    "owner": "tsebalkhagva"
   }
 }

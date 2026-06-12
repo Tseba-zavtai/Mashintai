@@ -1,9 +1,10 @@
 import { Tabs, useRouter } from "expo-router";
-import { Home, PlusCircle, MapPin, User, Shield } from "lucide-react-native";
+import { Home, PlusCircle, MapPin, User, Shield, Bell } from "lucide-react-native";
 import React from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useJobs } from "@/contexts/JobsContext";
 
 export default function TabLayout() {
   const { colors } = useTheme();
@@ -11,6 +12,10 @@ export default function TabLayout() {
   const router = useRouter();
 
   const { isAuthenticated, isLoading, user, isAdminUnlocked } = useAuth();
+  const { rentalRequests } = useJobs();
+
+  // Хүлээгдэж байгаа (pending) түрээсийн хүсэлтүүдийн тоог олох
+  const pendingCount = rentalRequests?.filter((req: any) => req.status === "pending").length || 0;
 
   const goToAuth = () => router.replace("/auth");
 
@@ -56,6 +61,26 @@ export default function TabLayout() {
         options={{
           title: "Байршил",
           tabBarIcon: ({ color, size }) => <MapPin color={color} size={size} />,
+        }}
+      />
+
+      {/* Мэдэгдлийн цэс: Нэрийг нь "rental-requests" гэж таарууллаа */}
+      <Tabs.Screen
+        name="rental-requests"
+        options={{
+          title: "Мэдэгдэл",
+          tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
+          tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: "#FF3B30", color: "#FFFFFF", fontSize: 10 },
+        }}
+        listeners={{
+          tabPress: (e) => {
+            if (isLoading) return;
+            if (!isAuthenticated) {
+              e.preventDefault();
+              goToAuth();
+            }
+          },
         }}
       />
 

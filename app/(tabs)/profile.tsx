@@ -1,4 +1,3 @@
-// app/(tabs)/profile.tsx
 import {
   ScrollView,
   StyleSheet,
@@ -39,14 +38,50 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import ThemeSelector from "@/components/ThemeSelector";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 import SponsorCountdown from "@/components/SponsorCountdown";
 import type { Href } from "expo-router";
 import { supabase } from "@/lib/supabase";
+import { getLogoSource } from "@/constants/logo";
+
+const APP_VERSION = "1.0.0";
+const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
+const STORAGE_BUCKET = "post-images"; // Апп даяар зураг хадгалж байгаа савны нэр
+
+// Зургийг Base64 -оос Buffer руу хөрвүүлэх (Supabase-д хуулахад зориулсан)
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let bufferLength = base64.length * 0.75;
+  const len = base64.length;
+
+  if (base64[len - 1] === "=") bufferLength--;
+  if (base64[len - 2] === "=") bufferLength--;
+
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const bytes = new Uint8Array(arrayBuffer);
+  let p = 0;
+
+  for (let i = 0; i < len; i += 4) {
+    const encoded1 = chars.indexOf(base64[i]);
+    const encoded2 = chars.indexOf(base64[i + 1]);
+    const encoded3 = chars.indexOf(base64[i + 2]);
+    const encoded4 = chars.indexOf(base64[i + 3]);
+
+    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+
+    if (encoded3 !== 64 && encoded3 !== -1) {
+      bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+    }
+    if (encoded4 !== 64 && encoded4 !== -1) {
+      bytes[p++] = ((encoded3 & 3) << 6) | encoded4;
+    }
+  }
+  return arrayBuffer;
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { jobs } = useJobs();
-
   const {
     user,
     logout,
@@ -59,30 +94,23 @@ export default function ProfileScreen() {
     refetchProfile,
     changePassword,
   } = useAuth() as any;
-
   const { colors, currentTheme } = useTheme();
+  const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
 
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editedName, setEditedName] = useState("");
-
   const [showThemeSelector, setShowThemeSelector] = useState(false);
-
   const [isAdminModalVisible, setIsAdminModalVisible] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [isUnlockingAdmin, setIsUnlockingAdmin] = useState(false);
-
   const [isPwModalVisible, setIsPwModalVisible] = useState(false);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
   const [pwBusy, setPwBusy] = useState(false);
   const [pwShow, setPwShow] = useState(false);
-
   const [deleteBusy, setDeleteBusy] = useState(false);
-
-  const DELETE_USER_URL =
-    "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
-  const APP_VERSION = "1.0.0";
+  const [isUploadingImage, setIsUploadingImage] = useState(false); // Зураг хуулж буйг харуулах төлөв
 
   const formatRating = (value: any) => {
     if (value === null || value === undefined || value === "") return "Шинэ";
@@ -129,21 +157,55 @@ export default function ProfileScreen() {
     refetchProfile?.().catch(() => {});
   }, []);
 
+  // 💡 ШИНЭЧИЛСЭН ЛОГИК: Зураг сонгоод, Supabase Storage руу хуулж хадгалах
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
+        quality: 0.7,
       });
 
       if (!result.canceled && result.assets[0]) {
-        await updateProfile({ photoUri: result.assets[0].uri });
+        setIsUploadingImage(true);
+        const imageUri = result.assets[0].uri;
+
+        // Зургийг уншиж Base64 хэлбэр рүү хөрвүүлэх
+        const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: "base64" });
+        const fileData = base64ToArrayBuffer(base64);
+
+        // Supabase руу хуулах
+        const userId = user?.id || "anonymous";
+        const fileName = `avatar-${userId}-${Date.now()}.jpg`;
+        const filePath = `avatars/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .upload(filePath, fileData, {
+            contentType: "image/jpeg",
+            upsert: true,
+          });
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        // Хуулсан зургийн Public URL-ийг олж авах
+        const { data: publicData } = supabase.storage
+          .from(STORAGE_BUCKET)
+          .getPublicUrl(filePath);
+
+        if (publicData?.publicUrl) {
+          // Хэрэглэгчийн мэдээллийг шинэ URL-тэйгээр шинэчилж хадгалах
+          await updateProfile({ photoUri: publicData.publicUrl });
+        }
       }
     } catch (error) {
       console.error("Failed to pick image:", error);
-      Alert.alert("Алдаа", "Зураг оруулахад алдаа гарлаа");
+      Alert.alert("Алдаа", "Зураг хуулж хадгалахад алдаа гарлаа. Та дахин оролдоно уу.");
+    } finally {
+      setIsUploadingImage(false);
     }
   };
 
@@ -166,7 +228,6 @@ export default function ProfileScreen() {
 
   const openAdminPanel = () => {
     if (!isSuperAdmin) return;
-
     if (isAdminUnlocked) {
       router.push("/admin");
       return;
@@ -230,11 +291,9 @@ export default function ProfileScreen() {
 
   const runDeleteAccount = async () => {
     if (!user?.id) throw new Error("UserId олдсонгүй");
-
     const { data: s } = await supabase.auth.getSession();
     const token = s?.session?.access_token;
     if (!token) throw new Error("Session token олдсонгүй");
-
     const res = await fetch(DELETE_USER_URL, {
       method: "POST",
       headers: {
@@ -243,7 +302,6 @@ export default function ProfileScreen() {
       },
       body: JSON.stringify({ userId: user.id }),
     });
-
     const json = await res.json().catch(() => ({}) as any);
     if (!res.ok)
       throw new Error(json?.error ?? "Профайл устгахад алдаа гарлаа");
@@ -252,7 +310,6 @@ export default function ProfileScreen() {
 
   const handleDeleteAccount = () => {
     if (deleteBusy) return;
-
     Alert.alert(
       "Профайл устгах",
       "Та профайлаа устгахдаа итгэлтэй байна уу? Энэ үйлдлийг буцаах боломжгүй.",
@@ -265,11 +322,9 @@ export default function ProfileScreen() {
             try {
               setDeleteBusy(true);
               await runDeleteAccount();
-
               try {
                 await logout();
               } catch {}
-
               router.replace("/auth");
             } catch (e: any) {
               Alert.alert(
@@ -303,12 +358,7 @@ export default function ProfileScreen() {
             Профайл
           </Text>
           <Image
-            source={{
-              uri:
-                currentTheme === "navy"
-                  ? "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns"
-                  : "https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/0rqqd3riktgmfxudfl0s8",
-            }}
+            source={logoSource}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -323,9 +373,11 @@ export default function ProfileScreen() {
         <View
           style={[styles.profileCard, { backgroundColor: colors.background }]}
         >
-          <TouchableOpacity onPress={pickImage} activeOpacity={0.8}>
+          <TouchableOpacity onPress={pickImage} activeOpacity={0.8} disabled={isUploadingImage}>
             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-              {user?.photoUri ? (
+              {isUploadingImage ? (
+                <ActivityIndicator color={colors.text} />
+              ) : user?.photoUri ? (
                 <Image
                   source={{ uri: user.photoUri }}
                   style={styles.avatarImage}

@@ -79,13 +79,13 @@ const skyTheme: ColorScheme = {
 };
 
 const navyTheme: ColorScheme = {
-  primary: "#201A2E",
+  primary: "#6E0AB0", // Үндсэн товчлуурууд харанхуй дэвсгэр дээр тод харагдана
   text: "#FFF4F1",
   textSecondary: "#D0D2D8",
   background: "#201A2E",
   backgroundSecondary: "#2B243B",
   border: "#3B344A",
-  tint: "#6E0AB0",
+  tint: "#8FE3CF",
   tabIconDefault: "#AFC6D9",
   tabIconSelected: "#8FE3CF",
   card: "#2A2338",
@@ -93,7 +93,7 @@ const navyTheme: ColorScheme = {
   error: "#FF8A80",
   headerBackground: "#201A2E",
   headerText: "#FFF4F1",
-  accent: "#6E0AB0",
+  accent: "#8FE3CF",
 };
 
 const grayTheme: ColorScheme = {

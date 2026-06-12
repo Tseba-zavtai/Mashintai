@@ -21,6 +21,7 @@ import { useJobs } from "@/contexts/JobsContext";
 import { useRouter } from "expo-router";
 import * as Location from "expo-location";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ImageManipulator from "expo-image-manipulator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/lib/supabase";
@@ -65,6 +66,28 @@ type PickedImage = {
 
 const MAX_IMAGES = 5;
 const STORAGE_BUCKET = "post-images";
+const IMAGE_MAX_WIDTH = 1200;
+const IMAGE_COMPRESS_QUALITY = 0.72;
+
+async function compressPickedImage(asset: any, index: number): Promise<PickedImage> {
+  const width = Number(asset?.width ?? 0);
+  const actions = width > IMAGE_MAX_WIDTH ? [{ resize: { width: IMAGE_MAX_WIDTH } }] : [];
+
+  const manipulated = await ImageManipulator.manipulateAsync(
+    asset.uri,
+    actions,
+    {
+      compress: IMAGE_COMPRESS_QUALITY,
+      format: ImageManipulator.SaveFormat.JPEG,
+    },
+  );
+
+  return {
+    uri: manipulated.uri,
+    name: `listing-image-${Date.now()}-${index}.jpg`,
+    mimeType: "image/jpeg",
+  };
+}
 
 function normalizeForSearch(input: string): string {
   return (input ?? "")
@@ -77,41 +100,11 @@ function cyrillicToLatin(input: string): string {
   const text = (input ?? "").toLowerCase();
 
   const map: Record<string, string> = {
-    а: "a",
-    б: "b",
-    в: "v",
-    г: "g",
-    д: "d",
-    е: "e",
-    ё: "yo",
-    ж: "j",
-    з: "z",
-    и: "i",
-    й: "i",
-    к: "k",
-    л: "l",
-    м: "m",
-    н: "n",
-    о: "o",
-    ө: "o",
-    п: "p",
-    р: "r",
-    с: "s",
-    т: "t",
-    у: "u",
-    ү: "u",
-    ф: "f",
-    х: "kh",
-    ц: "ts",
-    ч: "ch",
-    ш: "sh",
-    щ: "sh",
-    ъ: "",
-    ы: "ii",
-    ь: "",
-    э: "e",
-    ю: "yu",
-    я: "ya",
+    а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo",
+    ж: "j", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m",
+    н: "n", о: "o", ө: "o", п: "p", р: "r", с: "s", т: "t",
+    у: "u", ү: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh",
+    щ: "sh", ъ: "", ы: "ii", ь: "", э: "e", ю: "yu", я: "ya",
   };
 
   let out = "";
@@ -123,46 +116,17 @@ function latinToCyrillic(input: string): string {
   let s = (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 
   const rules: Array<[RegExp, string]> = [
-    [/sch/g, "щ"],
-    [/sh/g, "ш"],
-    [/ch/g, "ч"],
-    [/ts/g, "ц"],
-    [/ya/g, "я"],
-    [/yo/g, "ё"],
-    [/yu/g, "ю"],
-    [/ye/g, "е"],
-    [/kh/g, "х"],
+    [/sch/g, "щ"], [/sh/g, "ш"], [/ch/g, "ч"], [/ts/g, "ц"],
+    [/ya/g, "я"], [/yo/g, "ё"], [/yu/g, "ю"], [/ye/g, "е"], [/kh/g, "х"],
   ];
 
   for (const [re, rep] of rules) s = s.replace(re, rep);
 
   const map: Record<string, string> = {
-    a: "а",
-    b: "б",
-    v: "в",
-    g: "г",
-    d: "д",
-    e: "е",
-    z: "з",
-    i: "и",
-    j: "ж",
-    k: "к",
-    l: "л",
-    m: "м",
-    n: "н",
-    o: "о",
-    p: "п",
-    r: "р",
-    s: "с",
-    t: "т",
-    u: "у",
-    f: "ф",
-    h: "х",
-    y: "й",
-    q: "к",
-    w: "в",
-    x: "кс",
-    c: "к",
+    a: "а", b: "б", v: "в", g: "г", d: "д", e: "е", z: "з",
+    i: "и", j: "ж", k: "к", l: "л", m: "м", n: "н", o: "о",
+    p: "п", r: "р", s: "с", t: "т", u: "у", f: "ф", h: "х",
+    y: "й", q: "к", w: "в", x: "кс", c: "к",
   };
 
   let out = "";
@@ -300,164 +264,85 @@ const CATEGORY_SOURCE: Array<{
   {
     name: "Тээврийн хэрэгсэл",
     subcategories: [
-      "Суудлын машин",
-      "SUV",
-      "Pickup",
-      "Ачааны машин",
-      "Микро",
-      "Мотоцикл",
-      "Скүүтер",
-      "Унадаг дугуй",
-      "Цахилгаан дугуй",
-      "Caravan / trailer",
+      "Суудлын машин", "SUV", "Pickup", "Ачааны машин", "Микро",
+      "Мотоцикл", "Скүүтер", "Унадаг дугуй", "Цахилгаан дугуй", "Caravan / trailer",
     ],
   },
   {
     name: "Барилга, засварын тоног төхөөрөмж",
     subcategories: [
-      "Өрөм",
-      "Дрилл",
-      "Бетон зүсэгч",
-      "Цахилгаан хөрөө",
-      "Гагнуурын аппарат",
-      "Шат",
-      "Лазер тэгш ус",
-      "Компрессор",
-      "Генератор",
-      "Усны насос",
+      "Өрөм", "Дрилл", "Бетон зүсэгч", "Цахилгаан хөрөө", "Гагнуурын аппарат",
+      "Шат", "Лазер тэгш ус", "Компрессор", "Генератор", "Усны насос",
     ],
   },
   {
     name: "Арга хэмжээ, event-ийн хэрэгсэл",
     subcategories: [
-      "Майхан",
-      "Ширээ сандал",
-      "Тайзны тоноглол",
-      "Speaker",
-      "Microphone",
-      "Karaoke set",
-      "Projector",
-      "LED screen",
-      "Photo booth",
-      "Гэрэлтүүлэг",
+      "Майхан", "Ширээ сандал", "Тайзны тоноглол", "Speaker", "Microphone",
+      "Karaoke set", "Projector", "LED screen", "Photo booth", "Гэрэлтүүлэг",
     ],
   },
   {
     name: "Ахуйн болон өдөр тутмын хэрэглээ",
     subcategories: [
-      "Хүүхдийн тэрэг",
-      "Хүүхдийн машины суудал",
-      "Нялх хүүхдийн ор",
-      "Wheelchair",
-      "Өвчтөний ор",
-      "Зөөврийн халаагуур",
-      "Air purifier",
-      "Vacuum cleaner",
-      "Carpet cleaner",
+      "Хүүхдийн тэрэг", "Хүүхдийн машины суудал", "Нялх хүүхдийн ор", "Wheelchair",
+      "Өвчтөний ор", "Зөөврийн халаагуур", "Air purifier", "Vacuum cleaner", "Carpet cleaner",
     ],
   },
   {
     name: "Аялал, outdoor хэрэгсэл",
     subcategories: [
-      "Кемпийн майхан",
-      "Унтлагын уут",
-      "Кемпийн ширээ сандал",
-      "Хийн плитка",
-      "Cool box",
-      "Загасчлалын хэрэгсэл",
-      "Уулын дугуй",
-      "GPS төхөөрөмж",
-      "Walkie talkie/станц",
-      "Portable battery/power bank",
+      "Кемпийн майхан", "Унтлагын уут", "Кемпийн ширээ сандал", "Хийн плитка", "Cool box",
+      "Загасчлалын хэрэгсэл", "Уулын дугуй", "GPS төхөөрөмж", "Walkie talkie/станц", "Portable battery/power bank",
     ],
   },
   {
     name: "Фото, видео, контентын тоног төхөөрөмж",
     subcategories: [
-      "Camera",
-      "Lens",
-      "Gimbal",
-      "Tripod",
-      "Drone",
-      "Action camera",
-      "Lighting kit",
-      "Microphone",
-      "Teleprompter",
-      "Backdrop stand",
+      "Camera", "Lens", "Gimbal", "Tripod", "Drone",
+      "Action camera", "Lighting kit", "Microphone", "Teleprompter", "Backdrop stand",
     ],
   },
   {
     name: "Тоглоом, entertainment",
     subcategories: [
-      "Projector + screen set",
-      "Karaoke set",
-      "VR headset",
-      "Board games багц",
-      "Air hockey / party game set",
-      "Sim racing setup",
-      "PS, Nintendo, Sega, etc",
+      "Projector + screen set", "Karaoke set", "VR headset", "Board games багц",
+      "Air hockey / party game set", "Sim racing setup", "PS, Nintendo, Sega, etc",
     ],
   },
   {
     name: "Оффис, бизнесийн хэрэглээ",
     subcategories: [
-      "Зөөврийн компьютер",
-      "Printer",
-      "Scanner",
-      "POS төхөөрөмж",
-      "Barcode scanner",
-      "Label printer",
-      "Meeting speakerphone",
-      "Tablet",
-      "Wi-Fi router",
-      "Зөөврийн дэлгэц",
+      "Зөөврийн компьютер", "Printer", "Scanner", "POS төхөөрөмж", "Barcode scanner",
+      "Label printer", "Meeting speakerphone", "Tablet", "Wi-Fi router", "Зөөврийн дэлгэц",
     ],
   },
   {
     name: "Хүнд машин механизм, тусгай хэрэгсэл",
     subcategories: [
-      "Сэрээт ачигч",
-      "Кран",
-      "Ковш",
-      "Индүү",
-      "Excavator төрлийн техник",
-      "Pallet jack",
-      "Hand stacker",
+      "Сэрээт ачигч", "Кран", "Ковш", "Индүү", "Excavator төрлийн техник",
+      "Pallet jack", "Hand stacker",
     ],
   },
   {
     name: "Хувцас, тусгай хэрэглээ",
     subcategories: [
-      "Гоёлын даашинз",
-      "Үндэсний хувцас",
-      "Костюм",
-      "Тайзны хувцас",
-      "Mascot хувцас",
-      "Хамгаалалтын хувцас",
+      "Гоёлын даашинз", "Үндэсний хувцас", "Костюм", "Тайзны хувцас",
+      "Mascot хувцас", "Хамгаалалтын хувцас",
     ],
   },
   {
     name: "Спорт, хобби",
     subcategories: [
-      "Цанын хэрэгсэл",
-      "Snowboard",
-      "Тэшүүр",
-      "Фитнес тоног төхөөрөмж",
-      "Paddle board",
-      "Kayak",
-      "Tennis racket",
-      "Boxing gear",
+      "Цанын хэрэгсэл", "Snowboard", "Тэшүүр", "Фитнес тоног төхөөрөмж",
+      "Paddle board", "Kayak", "Tennis racket", "Boxing gear",
     ],
   },
   {
     name: "Мал аж ахуй, хөдөө аж ахуйн хэрэгсэл",
     subcategories: [
-      "Өвс хадах машин",
-      "Газар сэндийлэгч",
-      "Мотоблок",
-      "Шүршигч аппарат",
-      "Усалгааны насос",
-      "Цахилгаан хашааны төхөөрөмж",
+      "Өвс хадах машин", "Газар сэндийлэгч", "Мотоблок", "Шүршигч аппарат",
+      "Усалгааны насос", "Цахилгаан хашааны төхөөрөмж",
     ],
   },
 ];
@@ -491,6 +376,8 @@ export default function PostScreen() {
   const [postType, setPostType] = useState<PostType | null>(null);
 
   const [description, setDescription] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [price, setPrice] = useState(""); // Үнэ хадгалах State шинээр нэмэв
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
 
@@ -530,6 +417,8 @@ export default function PostScreen() {
 
   const resetForm = useCallback(() => {
     setDescription("");
+    setQuantity("1");
+    setPrice(""); // Үнийг давхар цэвэрлэх
     setCategoryId(null);
     setSubcategoryId(null);
     setCategorySearch("");
@@ -681,17 +570,10 @@ export default function PostScreen() {
 
       if (result.canceled) return;
 
-      const nextImages: PickedImage[] = (result.assets ?? []).map(
-        (asset, index) => ({
-          uri: asset.uri,
-          name:
-            asset.fileName ||
-            `listing-image-${Date.now()}-${index}.${getFileExtension(
-              asset.uri,
-              asset.mimeType || getMimeTypeFromUri(asset.uri)
-            )}`,
-          mimeType: asset.mimeType || getMimeTypeFromUri(asset.uri),
-        })
+      const nextImages: PickedImage[] = await Promise.all(
+        (result.assets ?? []).map((asset, index) =>
+          compressPickedImage(asset, index),
+        ),
       );
 
       setPickedImages((prev) => {
@@ -764,7 +646,6 @@ export default function PostScreen() {
     [user]
   );
 
-
   const handleSelectCategory = useCallback((cat: LocalCategory) => {
     setCategoryId(cat.id);
     setSubcategoryId(null);
@@ -797,6 +678,19 @@ export default function PostScreen() {
       return;
     }
 
+    const parsedQuantity = postType === "job" ? Math.max(1, Math.floor(Number(quantity || 1))) : 1;
+    if (!Number.isFinite(parsedQuantity) || parsedQuantity < 1) {
+      Alert.alert("Алдаа", "Тоо ширхэгийг зөв оруулна уу");
+      return;
+    }
+
+    // Үнийг шалгах хэсэг
+    const parsedPrice = Number(price.replace(/[^0-9]/g, "")) || 0;
+    if (postType === "job" && parsedPrice <= 0) {
+      Alert.alert("Алдаа", "Үнийг зөв оруулна уу");
+      return;
+    }
+
     try {
       setSubmitting(true);
 
@@ -807,12 +701,9 @@ export default function PostScreen() {
           title: selectedSubcategoryObj?.name || selectedCategoryObj.name,
           description: description.trim(),
 
-          // Tureestei mock category бүтэц ашиглаж байгаа тул
-          // DB рүү uuid биш name-үүдийг хадгална.
           category: selectedCategoryObj.name,
           subcategory: selectedSubcategoryObj?.name ?? null,
 
-          // jobs table дээр эдгээр нь uuid тул mock string id бүү явуул
           category_id: null,
           subcategory_id: null,
 
@@ -820,6 +711,9 @@ export default function PostScreen() {
           location: selectedLocation || undefined,
           image_url: imageUrls[0] ?? null,
           image_urls: imageUrls,
+          quantity: parsedQuantity,
+          available_quantity: parsedQuantity,
+          price: parsedPrice, // Мэдээллийн санд Үнийг нэмэв
         } as any,
         {
           name: user?.name || user?.phone || "Хэрэглэгч",
@@ -1007,6 +901,63 @@ export default function PostScreen() {
               blurOnSubmit={false}
             />
           </View>
+
+          {postType === "job" ? (
+            <>
+              <View style={styles.formSection}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Үнэ (₮) *
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.card,
+                      color: colors.text,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  placeholder="Жишээ нь: 50000"
+                  placeholderTextColor={colors.textSecondary}
+                  value={price}
+                  onChangeText={(value) => {
+                    const cleaned = value.replace(/[^0-9]/g, "");
+                    setPrice(cleaned);
+                  }}
+                  keyboardType="number-pad"
+                  editable={!submitting}
+                />
+              </View>
+
+              <View style={styles.formSection}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Тоо ширхэг *
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.card,
+                      color: colors.text,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  placeholder="1"
+                  placeholderTextColor={colors.textSecondary}
+                  value={quantity}
+                  onChangeText={(value) => {
+                    const cleaned = value.replace(/[^0-9]/g, "");
+                    setQuantity(cleaned || "1");
+                  }}
+                  keyboardType="number-pad"
+                  editable={!submitting}
+                />
+                <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                  Нэг л ширхэг бараа бол 1 гэж үлдээнэ. Олон ширхэгтэй бол нийт тоогоо оруулна.
+                </Text>
+              </View>
+            </>
+          ) : null}
 
           <View style={styles.formSection}>
             <View style={styles.imagesHeaderRow}>
@@ -1265,7 +1216,6 @@ export default function PostScreen() {
                     }
                     renderItem={({ item }) => {
                       const selected = categoryId === item.id;
-
                       return (
                         <Pressable
                           style={({ pressed }) => [
@@ -1398,7 +1348,6 @@ export default function PostScreen() {
                     }
                     renderItem={({ item }) => {
                       const selected = subcategoryId === item.id;
-
                       return (
                         <Pressable
                           style={({ pressed }) => [
@@ -1640,7 +1589,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 14,
   },
-
 
   selectButton: {
     borderRadius: 12,

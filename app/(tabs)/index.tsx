@@ -151,45 +151,14 @@ function normalizeText(s: string) {
 
 function cyrillicToLatin(input: string) {
   const text = (input ?? "").toLowerCase();
-
   const map: Record<string, string> = {
-    а: "a",
-    б: "b",
-    в: "v",
-    г: "g",
-    д: "d",
-    е: "e",
-    ё: "yo",
-    ж: "j",
-    з: "z",
-    и: "i",
-    й: "i",
-    к: "k",
-    л: "l",
-    м: "m",
-    н: "n",
-    о: "o",
-    ө: "o",
-    п: "p",
-    р: "r",
-    с: "s",
-    т: "t",
-    у: "u",
-    ү: "u",
-    ф: "f",
-    х: "kh",
-    ц: "ts",
-    ч: "ch",
-    ш: "sh",
-    щ: "sh",
-    ъ: "",
-    ы: "ii",
-    ь: "",
-    э: "e",
-    ю: "yu",
-    я: "ya",
+    а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo",
+    ж: "j", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m",
+    н: "n", о: "o", ө: "o", п: "p", р: "r", с: "s", т: "t",
+    у: "u", ү: "u", ф: "f", х: "kh", ц: "ts", ч: "ch",
+    ш: "sh", щ: "sh", ъ: "", ы: "ii", ь: "", э: "e",
+    ю: "yu", я: "ya",
   };
-
   let out = "";
   for (const ch of text) out += map[ch] ?? ch;
   return out;
@@ -204,7 +173,6 @@ function normalizeForSearch(input: string) {
 
 function latinToCyrillic(input: string) {
   let s = (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-
   const rules: Array<[RegExp, string]> = [
     [/sch/g, "щ"],
     [/sh/g, "ш"],
@@ -216,38 +184,13 @@ function latinToCyrillic(input: string) {
     [/ye/g, "е"],
     [/kh/g, "х"],
   ];
-
   for (const [re, rep] of rules) s = s.replace(re, rep);
-
   const map: Record<string, string> = {
-    a: "а",
-    b: "б",
-    v: "в",
-    g: "г",
-    d: "д",
-    e: "е",
-    z: "з",
-    i: "и",
-    j: "ж",
-    k: "к",
-    l: "л",
-    m: "м",
-    n: "н",
-    o: "о",
-    p: "п",
-    r: "р",
-    s: "с",
-    t: "т",
-    u: "у",
-    f: "ф",
-    h: "х",
-    y: "й",
-    q: "к",
-    w: "в",
-    x: "кс",
-    c: "к",
+    a: "а", b: "б", v: "в", g: "г", d: "д", e: "е", z: "з",
+    i: "и", j: "ж", k: "к", l: "л", m: "м", n: "н", o: "о",
+    p: "п", r: "р", s: "с", t: "т", u: "у", f: "ф", h: "х",
+    y: "й", q: "к", w: "в", x: "кс", c: "к",
   };
-
   let out = "";
   for (const ch of s) out += map[ch] ?? ch;
   return out;
@@ -256,7 +199,6 @@ function latinToCyrillic(input: string) {
 function buildSearchVariants(input: string): string[] {
   const raw = (input ?? "").trim();
   if (!raw) return [];
-
   const variants = new Set<string>();
 
   const add = (v: string) => {
@@ -286,14 +228,12 @@ function buildSearchVariants(input: string): string[] {
   add(latinToCyrillic(lowered.replace(/kh/g, "h")));
   add(latinToCyrillic(lowered.replace(/sh/g, "s")));
   add(latinToCyrillic(lowered.replace(/ch/g, "c")));
-
   return Array.from(variants);
 }
 
 function searchMatch(text: string, query: string) {
   const variants = buildSearchVariants(query);
   if (variants.length === 0) return true;
-
   const original = normalizeForSearch(text);
   const translit = normalizeForSearch(cyrillicToLatin(text));
 
@@ -302,7 +242,6 @@ function searchMatch(text: string, query: string) {
 
 function normalizeImageUrls(raw: any): string[] {
   const source = raw?.image_urls ?? raw?.imageUrls ?? null;
-
   if (Array.isArray(source)) {
     return source.filter((x) => typeof x === "string" && x.trim().length > 0);
   }
@@ -417,7 +356,6 @@ const CATEGORY_ICON_OVERRIDE: Record<string, LucideIcon> = {
 
 function iconByKeyword(name: string): LucideIcon {
   const t = normalizeText(name);
-
   if (
     t.includes("тээврийн") ||
     t.includes("машин") ||
@@ -702,10 +640,8 @@ function buildUniqueIconMap(categoryNames: string[]) {
     Sparkles,
     Hammer,
   ];
-
   const used = new Set<LucideIcon>();
   const map: Record<string, LucideIcon> = {};
-
   for (const name of categoryNames) {
     const override = CATEGORY_ICON_OVERRIDE[name];
     if (override) {
@@ -737,7 +673,8 @@ function buildUniqueIconMap(categoryNames: string[]) {
 
 function normalizeJob(raw: any): NormalizedJob {
   const postedBy = raw?.postedBy ??
-    raw?.posted_by ?? {
+    raw?.posted_by ??
+    {
       id: raw?.posted_by_id ?? null,
       name: raw?.posted_by_name ?? raw?.posted_by_phone ?? "Unknown",
       phone: raw?.posted_by_phone ?? null,
@@ -764,7 +701,6 @@ function normalizeJob(raw: any): NormalizedJob {
             longitude: raw?.longitude ?? null,
           }
         : null;
-
   const imageUrls = normalizeImageUrls(raw);
   const bumpedAt = getBumpedAtDate(raw);
   const itemRatingAvg = asNumberOrNull(
@@ -774,7 +710,6 @@ function normalizeJob(raw: any): NormalizedJob {
     asNumberOrNull(raw?.itemReviewCount ?? raw?.item_review_count) ?? 0;
   const rentalCount =
     asNumberOrNull(raw?.rentalCount ?? raw?.rental_count) ?? itemReviewCount;
-
   return {
     ...raw,
     category_id: raw?.category_id ?? null,
@@ -789,8 +724,7 @@ function normalizeJob(raw: any): NormalizedJob {
     subcategory:
       raw?.subcategory ??
       raw?.subcategory_name ??
-      raw?.subcategories?.name ??
-      null,
+      raw?.subcategories?.name ?? null,
     location,
     image_url: imageUrls[0] ?? null,
     image_urls: imageUrls,
@@ -828,18 +762,15 @@ function JobCard({
   const handleCardPress = () => {
     router.push(`/job-detail?id=${j.id}`);
   };
-
   const formatDate = (date: Date) => {
     if (!date) return "Огноо алга";
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
     const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-
     if (diffInDays <= 0) return "Өнөөдөр";
     if (diffInDays === 1) return "Өчигдөр";
     return `${diffInDays} өдрийн өмнө`;
   };
-
   if (j?.isActive === false) return null;
 
   const CatIcon = getCategoryIcon(j.category ?? "");
@@ -854,7 +785,6 @@ function JobCard({
   const userRating =
     postedBy?.userRatingAvg ?? (j as any).user_rating_avg ?? null;
   const userReviewCount = postedBy?.userReviewCount ?? 0;
-
   return (
     <TouchableOpacity
       style={[styles.jobCard, { backgroundColor: colors.card }]}
@@ -925,16 +855,6 @@ function JobCard({
             <View style={{ height: 0 }} />
           )}
 
-          <View style={styles.ratingLine}>
-            <Text
-              style={[styles.ratingLineText, { color: colors.textSecondary }]}
-            >
-              ★ {formatRating(itemRating)} эд зүйл · ★{" "}
-              {formatRating(userRating)} хүн
-              {rentalCount ? ` · ${rentalCount} түрээс` : ""}
-            </Text>
-          </View>
-
           <View style={styles.jobMetaInfo}>
             <Text style={[styles.posterName, { color: colors.textSecondary }]}>
               {name}
@@ -998,19 +918,16 @@ function ThemeSwipePicker({
     0,
     THEME_OPTIONS.findIndex((item) => item.key === currentTheme),
   );
-
   const centerOffset = Math.max(
     0,
     (width - THEME_ITEM_SIZE) / 2 - THEME_SIDE_PADDING,
   );
-
   const scrollToIndex = useCallback((index: number, animated = true) => {
     const x = index * THEME_SNAP_INTERVAL;
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ x, animated });
     });
   }, []);
-
   useEffect(() => {
     if (visible) {
       const timer = setTimeout(() => {
@@ -1019,7 +936,6 @@ function ThemeSwipePicker({
       return () => clearTimeout(timer);
     }
   }, [visible, selectedIndex, scrollToIndex]);
-
   const applyTheme = useCallback(
     (theme: ThemeType, index: number) => {
       if (typeof setTheme === "function") {
@@ -1029,7 +945,6 @@ function ThemeSwipePicker({
     },
     [setTheme, scrollToIndex],
   );
-
   const onMomentumEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const x = e.nativeEvent.contentOffset.x;
@@ -1049,7 +964,6 @@ function ThemeSwipePicker({
     },
     [currentTheme, setTheme, scrollToIndex],
   );
-
   return (
     <Modal
       visible={visible}
@@ -1105,7 +1019,6 @@ function ThemeSwipePicker({
           >
             {THEME_OPTIONS.map((item, index) => {
               const active = item.key === currentTheme;
-
               return (
                 <TouchableOpacity
                   key={item.key}
@@ -1159,6 +1072,7 @@ function ThemeSwipePicker({
 export default function HomeScreen() {
   const { jobs, loadJobs, isLoading, searchJobs, clearSearch } = useJobs();
   const { colors, currentTheme } = useTheme();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isSmall = width < 380;
@@ -1186,17 +1100,14 @@ export default function HomeScreen() {
 
   const searchJobsRef = useRef(searchJobs);
   const clearSearchRef = useRef(clearSearch);
-
   useEffect(() => {
     searchJobsRef.current = searchJobs;
   }, [searchJobs]);
-
   useEffect(() => {
     clearSearchRef.current = clearSearch;
   }, [clearSearch]);
 
   const [homeBanners, setHomeBanners] = useState<any[]>([]);
-
   const loadHomeBanners = useCallback(async () => {
     try {
       const b = await fetchBanners("home_feed", 3);
@@ -1206,7 +1117,6 @@ export default function HomeScreen() {
       setHomeBanners([]);
     }
   }, []);
-
   const fetchCategories = useCallback(async () => {
     setCategoriesLoading(true);
     try {
@@ -1233,7 +1143,6 @@ export default function HomeScreen() {
       setCategoriesLoading(false);
     }
   }, []);
-
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
@@ -1241,13 +1150,11 @@ export default function HomeScreen() {
   useEffect(() => {
     loadHomeBanners();
   }, [loadHomeBanners]);
-
   useEffect(() => {
     if (!lastUpdatedAt && jobs.length > 0) {
       setLastUpdatedAt(new Date());
     }
   }, [jobs, lastUpdatedAt]);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -1268,12 +1175,10 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   }, [loadJobs, fetchCategories, searchText, loadHomeBanners]);
-
   const normalizedJobs: NormalizedJob[] = useMemo(
     () => (jobs as any[]).map(normalizeJob),
     [jobs],
   );
-
   const subByCategoryId = useMemo(() => {
     const m: Record<string, DbSubcategoryRow[]> = {};
     for (const s of dbSubcategories) {
@@ -1282,29 +1187,24 @@ export default function HomeScreen() {
     }
     return m;
   }, [dbSubcategories]);
-
   const categoryById = useMemo(() => {
     const map: Record<string, DbCategoryRow> = {};
     for (const item of dbCategories) map[item.id] = item;
     return map;
   }, [dbCategories]);
-
   const subcategoryById = useMemo(() => {
     const map: Record<string, DbSubcategoryRow> = {};
     for (const item of dbSubcategories) map[item.id] = item;
     return map;
   }, [dbSubcategories]);
-
   const categoryNames = useMemo(
     () => dbCategories.map((c) => c.name).filter(Boolean),
     [dbCategories],
   );
-
   const categoryIconMap = useMemo(
     () => buildUniqueIconMap(categoryNames),
     [categoryNames],
   );
-
   const getCategoryIcon = useCallback(
     (name: string) => {
       if (!name) return Tag;
@@ -1312,13 +1212,11 @@ export default function HomeScreen() {
     },
     [categoryIconMap],
   );
-
   const selectedCategoryNames = useMemo(
     () =>
       selectedCategoryIds.map((id) => categoryById[id]?.name).filter(Boolean),
     [selectedCategoryIds, categoryById],
   );
-
   const selectedSubcategoryNames = useMemo(
     () =>
       selectedSubcategoryIds
@@ -1326,11 +1224,12 @@ export default function HomeScreen() {
         .filter(Boolean),
     [selectedSubcategoryIds, subcategoryById],
   );
-
   const filteredJobs = useMemo(() => {
     return normalizedJobs
       .filter((job) => {
         if (job?.isActive === false) return false;
+        const available = Number((job as any)?.available_quantity ?? (job as any)?.availableQuantity ?? (job as any)?.quantity ?? 1);
+        if (Number.isFinite(available) && available <= 0) return false;
 
         let matches = true;
 
@@ -1355,7 +1254,6 @@ export default function HomeScreen() {
                 );
               })
             : true;
-
           const subOk = hasSub
             ? selectedSubcategoryIds.some((id) => {
                 const pickedName = subcategoryById[id]?.name;
@@ -1368,7 +1266,6 @@ export default function HomeScreen() {
                 );
               })
             : true;
-
           matches = matches && (hasSub ? subOk : mainOk);
         }
 
@@ -1389,11 +1286,9 @@ export default function HomeScreen() {
     categoryById,
     subcategoryById,
   ]);
-
   const toggleOpen = (id: string) => {
     setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
-
   const toggleMain = (catId: string) => {
     setSelectedCategoryIds((prev) => {
       const on = prev.includes(catId);
@@ -1409,7 +1304,6 @@ export default function HomeScreen() {
       return next;
     });
   };
-
   const toggleSub = (catId: string, subId: string) => {
     setSelectedCategoryIds((prev) =>
       prev.includes(catId) ? prev : [...prev, catId],
@@ -1424,10 +1318,8 @@ export default function HomeScreen() {
     (text: string) => searchMatch(text, categorySearch),
     [categorySearch],
   );
-
   const canApply =
     selectedCategoryIds.length > 0 || selectedSubcategoryIds.length > 0;
-
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
 
@@ -1450,7 +1342,6 @@ export default function HomeScreen() {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
   }, [searchText]);
-
   const clearTopSearch = useCallback(async () => {
     setSearchText("");
     try {
@@ -1460,7 +1351,6 @@ export default function HomeScreen() {
       console.log("CLEAR SEARCH ERROR:", e);
     }
   }, []);
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SafeAreaView
@@ -1471,11 +1361,15 @@ export default function HomeScreen() {
           <Text style={[styles.greeting, { color: colors.headerText }]}>
             Сайн байна уу
           </Text>
-          <Image
-            source={getLogoSource(currentTheme)}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+          
+          <View style={styles.headerRight}>
+            {/* Ойлгомжгүй Мэдэгдлийн дүрсийг эндээс УСТГАЛАА */}
+            <Image
+              source={getLogoSource(currentTheme)}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </View>
         </View>
 
         <View style={styles.searchContainer}>
@@ -1802,7 +1696,7 @@ export default function HomeScreen() {
                   <Text
                     style={[styles.clearButtonText, { color: colors.text }]}
                   >
-                    Бүгдийг харах
+                     Бүгдийг харах
                   </Text>
                 </TouchableOpacity>
               )}
@@ -1877,7 +1771,6 @@ export default function HomeScreen() {
                           ? subs
                           : subs.filter((s) => matchesSearch(s.name))
                         : subs;
-
                       return (
                         <View key={c.id} style={{ marginBottom: 8 }}>
                           <TouchableOpacity
@@ -2050,6 +1943,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   greeting: { fontSize: 18, fontWeight: "600" as const },
   logo: { width: 140, height: 60 },

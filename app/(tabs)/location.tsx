@@ -21,6 +21,7 @@ import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from "expo-router";
 import { JOB_CATEGORIES } from "@/mocks/jobs";
+import { getLogoSource } from "@/constants/logo";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -194,12 +195,7 @@ export default function LocationScreen() {
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: colors.headerText }]}>Байршил</Text>
           <Image
-            source={{
-              uri:
-                currentTheme === "dark"
-                  ? "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns"
-                  : "https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/0rqqd3riktgmfxudfl0s8",
-            }}
+            source={getLogoSource(currentTheme)}
             style={styles.logo}
             resizeMode="contain"
           />

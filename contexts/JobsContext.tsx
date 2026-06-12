@@ -22,6 +22,32 @@ interface UserLocation {
 
 type DbJobRow = any;
 
+export type RentalRequestStatus = "pending" | "approved" | "rejected" | "cancelled" | "completed";
+
+export type RentalRequest = {
+  id: string;
+  job_id: string;
+  requester_id: string;
+  owner_id: string;
+  requester_name?: string | null;
+  requester_phone?: string | null;
+  requester_photo?: string | null;
+  quantity: number;
+  rent_days?: number;
+  total_price?: number;
+  status: RentalRequestStatus;
+  message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  jobs?: any;
+};
+
+function asPositiveInt(value: any, fallback = 1): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.floor(n));
+}
+
 function toSafeDate(value: any): Date {
   if (!value) return new Date();
   const d = value instanceof Date ? value : new Date(value);
@@ -49,9 +75,6 @@ function escapeLike(input: string): string {
 
 /**
  * Текстийг search-д бэлдэнэ
- * - lower
- * - trim
- * - special chars / зай зэргийг цэвэрлэнэ
  */
 function normalizeForSearch(input: string): string {
   return (input ?? "")
@@ -62,49 +85,15 @@ function normalizeForSearch(input: string): string {
 
 /**
  * Cyrillic -> Latin
- * санхүү -> sankhuu
- * барилга -> barilga
- * тогооч -> togooch
  */
 function cyrillicToLatin(input: string): string {
   const text = (input ?? "").toLowerCase();
 
   const map: Record<string, string> = {
-    а: "a",
-    б: "b",
-    в: "v",
-    г: "g",
-    д: "d",
-    е: "e",
-    ё: "yo",
-    ж: "j",
-    з: "z",
-    и: "i",
-    й: "i",
-    к: "k",
-    л: "l",
-    м: "m",
-    н: "n",
-    о: "o",
-    ө: "o",
-    п: "p",
-    р: "r",
-    с: "s",
-    т: "t",
-    у: "u",
-    ү: "u",
-    ф: "f",
-    х: "kh",
-    ц: "ts",
-    ч: "ch",
-    ш: "sh",
-    щ: "sh",
-    ъ: "",
-    ы: "ii",
-    ь: "",
-    э: "e",
-    ю: "yu",
-    я: "ya",
+    а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "j", з: "z",
+    и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", ө: "o", п: "p",
+    р: "r", с: "s", т: "t", у: "u", ү: "u", ф: "f", х: "kh", ц: "ts", ч: "ch",
+    ш: "sh", щ: "sh", ъ: "", ы: "ii", ь: "", э: "e", ю: "yu", я: "ya",
   };
 
   let out = "";
@@ -116,52 +105,21 @@ function cyrillicToLatin(input: string): string {
 
 /**
  * Latin -> Cyrillic
- * practical Mongolian search helper
  */
 function latinToCyrillic(input: string): string {
   let s = (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 
   const rules: Array<[RegExp, string]> = [
-    [/sch/g, "щ"],
-    [/sh/g, "ш"],
-    [/ch/g, "ч"],
-    [/ts/g, "ц"],
-    [/ya/g, "я"],
-    [/yo/g, "ё"],
-    [/yu/g, "ю"],
-    [/ye/g, "е"],
-    [/kh/g, "х"],
+    [/sch/g, "щ"], [/sh/g, "ш"], [/ch/g, "ч"], [/ts/g, "ц"],
+    [/ya/g, "я"], [/yo/g, "ё"], [/yu/g, "ю"], [/ye/g, "е"], [/kh/g, "х"],
   ];
 
   for (const [re, rep] of rules) s = s.replace(re, rep);
 
   const map: Record<string, string> = {
-    a: "а",
-    b: "б",
-    v: "в",
-    g: "г",
-    d: "д",
-    e: "е",
-    z: "з",
-    i: "и",
-    j: "ж",
-    k: "к",
-    l: "л",
-    m: "м",
-    n: "н",
-    o: "о",
-    p: "п",
-    r: "р",
-    s: "с",
-    t: "т",
-    u: "у",
-    f: "ф",
-    h: "х",
-    y: "й",
-    q: "к",
-    w: "в",
-    x: "кс",
-    c: "к",
+    a: "а", b: "б", v: "в", g: "г", d: "д", e: "е", z: "з", i: "и", j: "ж",
+    k: "к", l: "л", m: "m", n: "н", o: "о", p: "п", r: "р", s: "с", t: "т",
+    u: "у", f: "ф", h: "х", y: "й", q: "к", w: "в", x: "кс", c: "к",
   };
 
   let out = "";
@@ -171,7 +129,6 @@ function latinToCyrillic(input: string): string {
 
 /**
  * Нэг query-г олон хувилбар болгоно
- * sankhuu -> sankhuu / санхуу / sankhu / ...
  */
 function buildSearchVariants(input: string): string[] {
   const raw = (input ?? "").trim();
@@ -212,7 +169,6 @@ function buildSearchVariants(input: string): string[] {
 
 /**
  * Search compare
- * text: original/cyrillic/latin бүх хувилбараар тулгана
  */
 function searchMatch(text: string, query: string): boolean {
   const variants = buildSearchVariants(query);
@@ -461,7 +417,7 @@ function getJobRankingScore(job: any): number {
     if (itemRating >= 4) score += 60_000;
     else if (itemRating >= 3) score += 35_000;
     else if (itemRating > 0) score += 12_000;
-    else score += 45_000; // шинэ, үнэлгээгүй sponsored-д боломж өгнө
+    else score += 45_000;
   }
 
   if (bumpedTs > 0) {
@@ -554,6 +510,8 @@ const mapDbToJob = (row: DbJobRow, reviewStats?: ReviewStats): Job => {
     asNumberOrNull(row?.rental_count ?? row?.rentalCount) ??
     itemReviewCount;
   const bumpedAt = getBumpedAtDate(row);
+  const quantity = asPositiveInt(row?.quantity ?? row?.qty ?? 1, 1);
+  const availableQuantity = Math.max(0, asPositiveInt(row?.available_quantity ?? row?.availableQuantity ?? quantity, quantity));
 
   const mapped: any = {
     ...row,
@@ -582,9 +540,10 @@ const mapDbToJob = (row: DbJobRow, reviewStats?: ReviewStats): Job => {
     rentalCount,
     rental_count: rentalCount,
     bumpedAt,
-    bumped_at: bumpedAt ? bumpedAt.toISOString() : null,
-    bumpCount: asNumberOrNull(row?.bump_count ?? row?.bumpCount) ?? 0,
     bump_count: asNumberOrNull(row?.bump_count ?? row?.bumpCount) ?? 0,
+    quantity,
+    available_quantity: availableQuantity,
+    price: asNumberOrNull(row?.price) ?? 0,
   };
 
   return mapped as Job;
@@ -594,7 +553,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function formatSupabaseError(error: any) {
   if (!error) return "Unknown Supabase error";
-
   return {
     message: error?.message ?? String(error),
     code: error?.code ?? null,
@@ -605,64 +563,42 @@ function formatSupabaseError(error: any) {
 
 /**
  * jobs унших хамгийн тэсвэртэй хувилбар.
- *
- * 1. Эхлээд jobs + subcategories join хийж үзнэ.
- * 2. Join дээр relationship / RLS / schema асуудал гарвал jobs дангаар нь уншина.
- * 3. is_active column/filter асуудалтай байвал filter-гүй уншаад app дээрээ filter хийнэ.
- *
- * Ингэснээр Supabase schema бага зэрэг зөрсөн ч app шууд унахгүй.
  */
-async function queryJobsRobustly() {
+async function queryJobsRobustly(): Promise<any[]> {
   const selectAttempts = [
-    {
-      label: "jobs_with_subcategories",
-      select: "*, subcategories(name)",
-    },
-    {
-      label: "jobs_only",
-      select: "*",
-    },
+    { label: "jobs_with_subcategories", select: "*, subcategories(name)" },
+    { label: "jobs_only", select: "*" },
   ];
 
   const activeFilterAttempts = [true, false];
-
   let lastError: any = null;
 
   for (const selectAttempt of selectAttempts) {
     for (const useActiveFilter of activeFilterAttempts) {
       try {
         let query = supabase.from("jobs").select(selectAttempt.select);
-
         if (useActiveFilter) {
           query = query.eq("is_active", true);
         }
-
         query = query.order("created_at", { ascending: false });
 
         const { data, error } = await query;
-
         if (error) {
           lastError = error;
-          console.warn(
-            `[loadJobs] Supabase attempt failed: ${selectAttempt.label}, activeFilter=${useActiveFilter}`,
-            formatSupabaseError(error),
-          );
           continue;
         }
 
         const rows = Array.isArray(data) ? data : [];
-
-        return rows.filter((row: any) => row?.is_active !== false);
+        return rows.filter((row: any) => {
+          if (row?.is_active === false) return false;
+          const available = Number(row?.available_quantity ?? row?.availableQuantity ?? 1);
+          return !Number.isFinite(available) || available > 0;
+        });
       } catch (error) {
         lastError = error;
-        console.warn(
-          `[loadJobs] Supabase attempt crashed: ${selectAttempt.label}, activeFilter=${useActiveFilter}`,
-          formatSupabaseError(error),
-        );
       }
     }
   }
-
   throw lastError ?? new Error("Unable to load jobs from Supabase");
 }
 
@@ -670,7 +606,6 @@ function sortJobs(list: Job[]): Job[] {
   return list.slice().sort((a: any, b: any) => {
     const scoreDiff = getJobRankingScore(b) - getJobRankingScore(a);
     if (scoreDiff !== 0) return scoreDiff;
-
     const aPosted = a?.postedDate?.getTime?.() ?? 0;
     const bPosted = b?.postedDate?.getTime?.() ?? 0;
     return bPosted - aPosted;
@@ -687,7 +622,6 @@ async function loadJobsFromCache(): Promise<Job[]> {
   try {
     const stored = await AsyncStorage.getItem(STORAGE_KEY);
     if (!stored) return [];
-
     const parsed = JSON.parse(stored);
     const arr = Array.isArray(parsed) ? parsed : [];
     return arr.map((row: any) => mapDbToJob(row));
@@ -700,15 +634,14 @@ export const [JobsContext, useJobs] = createContextHook(() => {
   const [jobs, setJobs] = useState<Job[]>(MOCK_JOBS);
   const [isLoading, setIsLoading] = useState(true);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
 
   const mountedRef = useRef(true);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
+    return () => { mountedRef.current = false; };
   }, []);
 
   const loadUserLocation = useCallback(async () => {
@@ -732,13 +665,6 @@ export const [JobsContext, useJobs] = createContextHook(() => {
     }
   }, []);
 
-  /**
-   * Load jobs from Supabase.
-   *
-   * Search-ийг Supabase .or дээр хийхгүй, app дотроо filter хийж байна.
-   * Учир нь category/subcategory/posted_by_name/address column-ийн аль нэг DB дээр байхгүй байвал
-   * Supabase .or query тэр чигээрээ унадаг.
-   */
   const loadJobs = useCallback(async (searchText?: string) => {
     const myReqId = ++requestIdRef.current;
     const qRaw = (searchText ?? "").trim();
@@ -747,7 +673,6 @@ export const [JobsContext, useJobs] = createContextHook(() => {
 
     try {
       if (mountedRef.current) setIsLoading(true);
-
       let rows: any[] = [];
 
       for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
@@ -755,14 +680,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
           rows = await queryJobsRobustly();
           break;
         } catch (err) {
-          const isLast = attempt === MAX_RETRY;
-
-          console.warn(
-            `[loadJobs] attempt ${attempt}/${MAX_RETRY} failed`,
-            formatSupabaseError(err),
-          );
-
-          if (isLast) throw err;
+          if (attempt === MAX_RETRY) throw err;
           await sleep(300 * attempt);
         }
       }
@@ -775,37 +693,26 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       );
 
       let mapped = rows.map((row: any) => mapDbToJob(row, reviewStats));
-
       if (hasQuery) {
         mapped = mapped.filter((job) => jobMatchesQuery(job, qRaw));
       }
 
       const sorted = sortJobs(mapped);
-
       if (!mountedRef.current || requestIdRef.current !== myReqId) return;
 
       setJobs(sorted);
-
       if (!hasQuery) {
         await saveJobsToCache(sorted);
       }
     } catch (error) {
-      console.error(
-        "Failed to load jobs from Supabase:",
-        formatSupabaseError(error),
-      );
-
+      console.error("Failed to load jobs from Supabase:", formatSupabaseError(error));
       if (!mountedRef.current || requestIdRef.current !== myReqId) return;
 
       const cached = await loadJobsFromCache();
-
       if (!mountedRef.current || requestIdRef.current !== myReqId) return;
 
       if (cached.length > 0) {
-        const filtered = hasQuery
-          ? cached.filter((job) => jobMatchesQuery(job, qRaw))
-          : cached;
-
+        const filtered = hasQuery ? cached.filter((job) => jobMatchesQuery(job, qRaw)) : cached;
         setJobs(sortJobs(filtered));
       } else if (hasQuery) {
         setJobs([]);
@@ -819,21 +726,142 @@ export const [JobsContext, useJobs] = createContextHook(() => {
     }
   }, []);
 
-  const searchJobs = useCallback(
-    async (text: string) => {
-      await loadJobs(text);
+  const searchJobs = useCallback(async (text: string) => { await loadJobs(text); }, [loadJobs]);
+  const clearSearch = useCallback(async () => { await loadJobs(); }, [loadJobs]);
+
+  const loadRentalRequests = useCallback(async () => {
+    try {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !data.session?.user?.id) {
+        if (mountedRef.current) setRentalRequests([]);
+        return [];
+      }
+
+      const uid = data.session.user.id;
+      const selectWithJob =
+        "id,job_id,requester_id,owner_id,requester_name,requester_phone,requester_photo,quantity,rent_days,total_price,status,message,created_at,updated_at,jobs(id,title,description,category,subcategory,posted_by_name,posted_by_phone,image_url,image_urls)";
+
+      let rows: any[] = [];
+      const withJoin = await supabase
+        .from("rental_requests")
+        .select(selectWithJob)
+        .or(`owner_id.eq.${uid},requester_id.eq.${uid}`) // 💡 Эзэн ЭСВЭЛ хүсэлт гаргагч хоёуланг нь зэрэг татна
+        .order("created_at", { ascending: false });
+
+      if (withJoin.error) {
+        const fallback = await supabase
+          .from("rental_requests")
+          .select("*")
+          .or(`owner_id.eq.${uid},requester_id.eq.${uid}`)
+          .order("created_at", { ascending: false });
+        if (fallback.error) throw fallback.error;
+        rows = Array.isArray(fallback.data) ? fallback.data : [];
+      } else {
+        rows = Array.isArray(withJoin.data) ? withJoin.data : [];
+      }
+
+      if (mountedRef.current) setRentalRequests(rows as RentalRequest[]);
+      return rows as RentalRequest[];
+    } catch (error) {
+      console.error("Failed to load rental requests:", formatSupabaseError(error));
+      if (mountedRef.current) setRentalRequests([]);
+      return [];
+    }
+  }, []);
+
+  const createRentalRequest = useCallback(
+    async (jobId: string, quantity = 1, rentDays = 1, message?: string) => {
+      const session = await requireSession();
+      const requesterId = session?.user?.id ?? null;
+      if (!requesterId) throw new Error("Нэвтэрсний дараа түрээслэх боломжтой");
+
+      const job = jobs.find((item: any) => String(item.id) === String(jobId)) as any;
+      if (!job) throw new Error("Зар олдсонгүй");
+
+      const ownerId = job?.postedBy?.id ?? job?.posted_by_id ?? job?.owner_id ?? null;
+      if (!ownerId) throw new Error("Зарын эзний мэдээлэл олдсонгүй");
+      if (String(ownerId) === String(requesterId)) {
+        throw new Error("Өөрийн зарыг түрээслэх боломжгүй");
+      }
+
+      const requestQuantity = asPositiveInt(quantity, 1);
+      const requestDays = asPositiveInt(rentDays, 1);
+      const available = Number(job?.available_quantity ?? job?.availableQuantity ?? job?.quantity ?? 1);
+      if (Number.isFinite(available) && available < requestQuantity) {
+        throw new Error("Энэ зарын боломжит тоо хүрэлцэхгүй байна");
+      }
+
+      const jobPrice = Number(job?.price) || 0;
+      const totalPrice = jobPrice * requestQuantity * requestDays;
+
+      const { data: existing, error: existingError } = await supabase
+        .from("rental_requests")
+        .select("id,status")
+        .eq("job_id", jobId)
+        .eq("requester_id", requesterId)
+        .eq("status", "pending")
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+      if (existing?.id) {
+        throw new Error("Та энэ зар дээр өмнө нь хүсэлт илгээсэн байна");
+      }
+
+      const requesterMeta: any = session?.user?.user_metadata ?? {};
+      const { data, error } = await supabase
+        .from("rental_requests")
+        .insert({
+          job_id: jobId,
+          requester_id: requesterId,
+          owner_id: ownerId,
+          requester_name: requesterMeta.name ?? requesterMeta.full_name ?? session?.user?.phone ?? session?.user?.email ?? "Хэрэглэгч",
+          requester_phone: requesterMeta.phone ?? session?.user?.phone ?? null,
+          requester_photo: requesterMeta.photoUri ?? requesterMeta.avatar_url ?? null,
+          quantity: requestQuantity,
+          rent_days: requestDays,
+          total_price: totalPrice,
+          message: message?.trim() || null,
+          status: "pending",
+        })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+      await loadRentalRequests();
+      return data as RentalRequest;
     },
-    [loadJobs],
+    [jobs, loadRentalRequests],
   );
 
-  const clearSearch = useCallback(async () => {
-    await loadJobs();
-  }, [loadJobs]);
+  const approveRentalRequest = useCallback(
+    async (requestId: string) => {
+      if (!requestId) throw new Error("Request ID is required");
+      const rpc = await safeRpc<any>("approve_rental_request", { p_request_id: requestId });
+      if ((rpc as any)?.error) throw (rpc as any).error;
+
+      await Promise.all([loadJobs(), loadRentalRequests()]);
+      return (rpc as any)?.data;
+    },
+    [loadJobs, loadRentalRequests],
+  );
+
+  const rejectRentalRequest = useCallback(
+    async (requestId: string) => {
+      if (!requestId) throw new Error("Request ID is required");
+      const rpc = await safeRpc<any>("reject_rental_request", { p_request_id: requestId });
+      if ((rpc as any)?.error) throw (rpc as any).error;
+
+      await loadRentalRequests();
+      return (rpc as any)?.data;
+    },
+    [loadRentalRequests],
+  );
 
   useEffect(() => {
     loadJobs();
     loadUserLocation();
-  }, [loadJobs, loadUserLocation]);
+    loadRentalRequests().catch(() => {});
+  }, [loadJobs, loadUserLocation, loadRentalRequests]);
 
   const addJob = useCallback(
     async (
@@ -855,69 +883,41 @@ export const [JobsContext, useJobs] = createContextHook(() => {
           ? (newJob as any).image_urls.filter(isNonEmptyString)
           : [];
 
-        const rawCategoryId =
-          (newJob as any).category_id ?? (newJob as any).categoryId ?? null;
-        const rawSubcategoryId =
-          (newJob as any).subcategory_id ??
-          (newJob as any).subcategoryId ??
-          null;
+        const rawCategoryId = (newJob as any).category_id ?? (newJob as any).categoryId ?? null;
+        const rawSubcategoryId = (newJob as any).subcategory_id ?? (newJob as any).subcategoryId ?? null;
 
         const safeCategoryId = isUuidLike(rawCategoryId) ? rawCategoryId : null;
-        const safeSubcategoryId = isUuidLike(rawSubcategoryId)
-          ? rawSubcategoryId
-          : null;
-
-        const safeCategory = isNonEmptyString((newJob as any).category)
-          ? (newJob as any).category.trim()
-          : null;
-
-        const safeSubcategory = isNonEmptyString((newJob as any).subcategory)
-          ? (newJob as any).subcategory.trim()
-          : null;
+        const safeSubcategoryId = isUuidLike(rawSubcategoryId) ? rawSubcategoryId : null;
+        const safeCategory = isNonEmptyString((newJob as any).category) ? (newJob as any).category.trim() : null;
+        const safeSubcategory = isNonEmptyString((newJob as any).subcategory) ? (newJob as any).subcategory.trim() : null;
 
         const payload: any = {
           posted_by_id: uid,
-
           title: (newJob as any).title,
           description: (newJob as any).description,
           category: safeCategory,
           subcategory: safeSubcategory,
           post_type: (newJob as any).postType ?? "job",
-
           category_id: safeCategoryId,
           subcategory_id: safeSubcategoryId,
-
-          address:
-            (newJob as any).location?.address ??
-            (newJob as any).address ??
-            null,
-          latitude:
-            (newJob as any).location?.latitude ??
-            (newJob as any).latitude ??
-            null,
-          longitude:
-            (newJob as any).location?.longitude ??
-            (newJob as any).longitude ??
-            null,
-
+          address: (newJob as any).location?.address ?? (newJob as any).address ?? null,
+          latitude: (newJob as any).location?.latitude ?? (newJob as any).latitude ?? null,
+          longitude: (newJob as any).location?.longitude ?? (newJob as any).longitude ?? null,
           posted_by_name: userInfo.name,
           posted_by_phone: userInfo.phone,
           posted_by_photo: userInfo.photoUri ?? null,
-
           is_sponsored: userInfo.isSponsored ?? false,
-          sponsored_until: userInfo.sponsoredUntil
-            ? new Date(userInfo.sponsoredUntil).toISOString()
-            : null,
-
+          sponsored_until: userInfo.sponsoredUntil ? new Date(userInfo.sponsoredUntil).toISOString() : null,
           image_url: imageUrls[0] ?? (newJob as any).image_url ?? null,
           image_urls: imageUrls,
-
           item_rating_avg: null,
           item_review_count: 0,
           rental_count: 0,
           bumped_at: null,
           bump_count: 0,
-
+          quantity: asPositiveInt((newJob as any).quantity ?? 1, 1),
+          available_quantity: asPositiveInt((newJob as any).available_quantity ?? (newJob as any).quantity ?? 1, 1),
+          price: Number((newJob as any).price) || 0,
           is_active: true,
         };
 
@@ -925,7 +925,6 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         if (res.error) throw res.error;
 
         await loadJobs();
-
         return mapDbToJob(res.data);
       } catch (error) {
         console.error("Failed to add job:", error);
@@ -938,27 +937,15 @@ export const [JobsContext, useJobs] = createContextHook(() => {
   const sponsorJob = useCallback(
     async (jobId: string, sponsoredUntil: Date | string | null) => {
       try {
-        if (!jobId) {
-          throw new Error("Job ID is required");
-        }
+        if (!jobId) throw new Error("Job ID is required");
+        const untilIso = sponsoredUntil ? new Date(sponsoredUntil).toISOString() : null;
 
-        const untilIso = sponsoredUntil
-          ? new Date(sponsoredUntil).toISOString()
-          : null;
-
-        const res = await safeRpc<any>("admin_sponsor_job", {
-          p_job_id: jobId,
-          p_until: untilIso,
-        });
-
+        const res = await safeRpc<any>("admin_sponsor_job", { p_job_id: jobId, p_until: untilIso });
         if ((res as any)?.error) throw (res as any).error;
 
         const data = (res as any)?.data;
         const row = Array.isArray(data) ? data[0] : data;
-
-        if (!row) {
-          throw new Error("0 rows updated");
-        }
+        if (!row) throw new Error("0 rows updated");
 
         await loadJobs();
         return row;
@@ -973,10 +960,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
   const updateJobCategory = useCallback(
     async (jobId: string, newCategory: string) => {
       try {
-        const res = await safeUpdateJob(jobId, {
-          category: newCategory,
-          category_id: null,
-        });
+        const res = await safeUpdateJob(jobId, { category: newCategory, category_id: null });
         if (res.error) throw res.error;
         await loadJobs();
       } catch (error) {
@@ -1003,7 +987,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         setJobs((prev) => {
           const next = prev.filter((j: any) => j.id !== jobId);
           saveJobsToCache(next as Job[]);
-          return next as any;
+          return next;
         });
       } catch (error) {
         console.error("Failed to delete job:", error);
@@ -1020,11 +1004,9 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         if (res.error) throw res.error;
 
         setJobs((prev) => {
-          const next = prev.map((j: any) =>
-            j.id === jobId ? { ...j, isActive } : j,
-          );
+          const next = prev.map((j: any) => j.id === jobId ? { ...j, isActive } : j);
           saveJobsToCache(next as Job[]);
-          return next as any;
+          return next;
         });
       } catch (error) {
         console.error("Failed to toggle job active:", error);
@@ -1038,12 +1020,9 @@ export const [JobsContext, useJobs] = createContextHook(() => {
     async (jobId: string) => {
       try {
         if (!jobId) throw new Error("Job ID is required");
-
         const existing = jobs.find((j: any) => j.id === jobId) as any;
         const nowIso = new Date().toISOString();
-        const nextCount =
-          (asNumberOrNull(existing?.bumpCount ?? existing?.bump_count) ?? 0) +
-          1;
+        const nextCount = (asNumberOrNull(existing?.bumpCount ?? existing?.bump_count) ?? 0) + 1;
 
         const res = await safeUpdateJob(jobId, {
           bumped_at: nowIso,
@@ -1071,25 +1050,19 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       try {
         const session = await requireSession();
         const reviewerId = session?.user?.id ?? null;
-        if (!reviewerId)
-          throw new Error("Not authenticated. Please login again.");
+        if (!reviewerId) throw new Error("Not authenticated. Please login again.");
 
         const job = jobs.find((j: any) => j.id === params.jobId) as any;
-        const reviewedUserId =
-          job?.postedBy?.id ?? job?.posted_by_id ?? job?.postedById ?? null;
+        const reviewedUserId = job?.postedBy?.id ?? job?.posted_by_id ?? job?.postedById ?? null;
 
         if (!params.jobId) throw new Error("Job ID is required");
         if (!reviewedUserId) throw new Error("Түрээслүүлэгчийн ID олдсонгүй");
         if (reviewerId === reviewedUserId) {
-          throw new Error(
-            "Өөрийн зар дээр түрээс дуусгах үнэлгээ өгөх боломжгүй",
-          );
+          throw new Error("Өөрийн зар дээр түрээс дуусгах үнэлгээ өгөх боломжгүй");
         }
 
         const itemRating = Math.max(1, Math.min(5, Number(params.itemRating)));
-        const userRating = params.userRating
-          ? Math.max(1, Math.min(5, Number(params.userRating)))
-          : null;
+        const userRating = params.userRating ? Math.max(1, Math.min(5, Number(params.userRating))) : null;
 
         const { error } = await supabase.from("rental_reviews").insert({
           job_id: params.jobId,
@@ -1119,6 +1092,11 @@ export const [JobsContext, useJobs] = createContextHook(() => {
     toggleJobActive,
     bumpJob,
     submitRentalReview,
+    rentalRequests,
+    loadRentalRequests,
+    createRentalRequest,
+    approveRentalRequest,
+    rejectRentalRequest,
     isLoading,
     userLocation,
     saveUserLocation,
