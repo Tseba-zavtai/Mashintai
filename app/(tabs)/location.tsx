@@ -391,7 +391,7 @@ export default function LocationScreen() {
                   </Text>
 
                   <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginTop: 8 }}>
-                    <Text style={[styles.badge, { color: colors.text, backgroundColor: colors.primary }]}>
+                    <Text style={[styles.badge, { color: colors.headerText, backgroundColor: colors.primary }]}>
                       {normalizeCategory(job.category) || "Категори байхгүй"}
                     </Text>
                     {distanceKm != null ? (

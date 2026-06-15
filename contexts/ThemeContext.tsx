@@ -35,6 +35,7 @@ export const [ThemeContext, useTheme] = createContextHook(() => {
   const [currentTheme, setCurrentThemeState] = useState<ThemeType>(DEFAULT_THEME);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Санах ойноос өнгө унших функц
   const loadTheme = useCallback(async () => {
     try {
       const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
@@ -53,10 +54,13 @@ export const [ThemeContext, useTheme] = createContextHook(() => {
     }
   }, []);
 
+  // Хязгааргүй гогцоо үүсгэдэг байсан хэсгийг засав.
+  // [loadTheme] байсныг [] хоосон болгосноор апп асах үед зөвхөн 1 удаа ажиллана.
   useEffect(() => {
     loadTheme();
-  }, [loadTheme]);
+  }, []); 
 
+  // Өнгө солих функц
   const changeTheme = useCallback(async (theme: ThemeType) => {
     try {
       const safeTheme = themes[theme] ? theme : DEFAULT_THEME;

@@ -802,7 +802,7 @@ function JobCard({
               <Text
                 style={[
                   styles.posterInitial,
-                  { color: currentTheme === "navy" ? "#121212" : "#1A1A1A" },
+                  { color: colors.headerText },
                 ]}
               >
                 {initial}
@@ -815,7 +815,7 @@ function JobCard({
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <CatIcon size={18} color={colors.text} />
             <Text
-              style={[styles.jobTitle, { color: colors.text }]}
+              style={[styles.jobTitle, { color: colors.headerText }]}
               numberOfLines={1}
             >
               {j.category ?? "Категори"}
@@ -1613,7 +1613,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       <TouchableOpacity
-        style={[styles.floatingButton, { backgroundColor: colors.accent }]}
+        style={[styles.floatingButton, { backgroundColor: colors.primary }]}
         onPress={() => setShowThemeSelector(true)}
         activeOpacity={0.8}
       >

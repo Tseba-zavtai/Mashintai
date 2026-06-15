@@ -1472,9 +1472,9 @@ export default function PostScreen() {
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#111" />
+              <ActivityIndicator color={colors.headerText} />
             ) : (
-              <Text style={styles.submitButtonText}>Зар нэмэх</Text>
+              <Text style={[styles.submitButtonText, { color: colors.headerText }]}>Зар нэмэх</Text>
             )}
           </TouchableOpacity>
 

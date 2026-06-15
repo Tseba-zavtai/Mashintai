@@ -29,6 +29,9 @@ import {
   Minus,
   Plus,
   Clock,
+  CreditCard,
+  Check,
+  X,
 } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -49,11 +52,9 @@ function asNumberOrNull(value: any): number | null {
 function formatRatingValue(value: any, count: any) {
   const ratingCount = Number(count ?? 0);
   const n = asNumberOrNull(value);
-
   if (!ratingCount || n == null) {
     return "Үнэлгээ байхгүй";
   }
-
   return `★ ${n.toFixed(1)}`;
 }
 
@@ -87,7 +88,6 @@ function RatingStars({
 
 function normalizeImageUrls(job: any): string[] {
   const source = job?.image_urls ?? job?.imageUrls ?? null;
-
   if (Array.isArray(source)) {
     return source.filter((x) => typeof x === "string" && x.trim().length > 0);
   }
@@ -120,18 +120,15 @@ export default function JobDetailScreen() {
   const router = useRouter();
   const { colors, currentTheme } = useTheme();
   const { width } = useWindowDimensions();
-
   const job = useMemo(() => jobs.find((j: any) => j.id === id), [jobs, id]);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  
-  // Review Modal States
+
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [itemRating, setItemRating] = useState(5);
   const [userRating, setUserRating] = useState<number | null>(null);
   const [reviewComment, setReviewComment] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  
-  // Rent Modal States
+
   const [rentModalVisible, setRentModalVisible] = useState(false);
   const [rentQuantity, setRentQuantity] = useState(1);
   const [rentDays, setRentDays] = useState(1);
@@ -141,7 +138,6 @@ export default function JobDetailScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-
         <SafeAreaView
           style={[
             styles.container,
@@ -158,7 +154,7 @@ export default function JobDetailScreen() {
               style={[styles.backBtn, { backgroundColor: colors.primary }]}
               activeOpacity={0.8}
             >
-              <Text style={[styles.backBtnText, { color: colors.text }]}>
+              <Text style={[styles.backBtnText, { color: "#FFFFFF" }]}>
                 Буцах
               </Text>
             </TouchableOpacity>
@@ -174,13 +170,11 @@ export default function JobDetailScreen() {
   const posterId = postedBy?.phone ?? postedBy?.id ?? "";
   const initial = posterName.charAt(0).toUpperCase() || "?";
   const imageUrls = normalizeImageUrls(job);
-
   const safePostedDate = toSafeDate(
     (job as any).postedDate ??
       (job as any).created_at ??
       (job as any).updated_at,
   );
-
   const itemRatingAvg =
     (job as any).itemRatingAvg ?? (job as any).item_rating_avg ?? null;
   const itemReviewCount =
@@ -191,17 +185,14 @@ export default function JobDetailScreen() {
   const posterUserRating = postedBy?.userRatingAvg ?? null;
   const posterUserReviewCount = postedBy?.userReviewCount ?? 0;
   const posterRentalCount = postedBy?.rentalCount ?? 0;
-  
   const availableQuantity = Number((job as any).available_quantity ?? (job as any).availableQuantity ?? (job as any).quantity ?? 1);
   const jobPrice = Number(job.price || 0);
 
   const isOwnJob = !!user?.id && !!postedBy?.id && user.id === postedBy.id;
-
   const formatDate = (date: Date) => {
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
     const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-
     if (diffInDays === 0) return "Өнөөдөр";
     if (diffInDays === 1) return "Өчигдөр";
     return `${diffInDays} өдрийн өмнө`;
@@ -209,21 +200,16 @@ export default function JobDetailScreen() {
 
   const handleCallPress = async () => {
     const phoneNumber = posterPhone;
-
     if (!phoneNumber) {
       Alert.alert("Анхаар", "Утасны дугаар олдсонгүй");
       return;
     }
 
     let phoneUrl = "";
-
     if (Platform.OS === "android" || Platform.OS === "ios") {
       phoneUrl = `tel:${phoneNumber}`;
     } else {
-      Alert.alert(
-        "Анхаар",
-        "Утас руу залгах нь зөвхөн гар утсан дээр ажиллана",
-      );
+      Alert.alert("Анхаар", "Утас руу залгах нь зөвхөн гар утсан дээр ажиллана");
       return;
     }
 
@@ -263,7 +249,6 @@ export default function JobDetailScreen() {
 
   const handleRentSubmit = async () => {
     if (rentSubmitting) return;
-
     try {
       setRentSubmitting(true);
       await createRentalRequest?.(job.id, rentQuantity, rentDays, "Түрээслэх хүсэлт илгээлээ");
@@ -276,7 +261,6 @@ export default function JobDetailScreen() {
           {
             text: "ОК",
             onPress: () => {
-              // 💡 Хүсэлт амжилттай болсны дараа Нүүр хуудас руу буцаах
               router.replace("/(tabs)"); 
             }
           }
@@ -308,7 +292,6 @@ export default function JobDetailScreen() {
 
   const handleSubmitReview = async () => {
     if (reviewSubmitting) return;
-
     try {
       setReviewSubmitting(true);
 
@@ -318,7 +301,6 @@ export default function JobDetailScreen() {
         userRating,
         comment: reviewComment,
       });
-
       setReviewModalVisible(false);
       Alert.alert("Амжилттай", "Түрээс дуусаж, үнэлгээ хадгалагдлаа");
     } catch (e: any) {
@@ -343,30 +325,31 @@ export default function JobDetailScreen() {
         ]}
         edges={["top"]}
       >
+        {/* Толгой хэсгийг бусад хуудас шиг тод ягаан дэвсгэртэй, цагаан тексттэй болгов */}
         <View
           style={[
             styles.header,
             {
-              backgroundColor: colors.background,
+              backgroundColor: colors.primary,
               borderBottomColor: colors.border,
             },
           ]}
         >
           <View style={styles.headerLeft}>
             <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}>
-              <Text style={[styles.backButton, { color: colors.text }]}>
+              <Text style={[styles.backButton, { color: "#FFFFFF" }]}>
                 ← 
               </Text>
             </TouchableOpacity>
 
-            <Text style={[styles.headerTitle, { color: colors.text }]}>
+            <Text style={[styles.headerTitle, { color: "#FFFFFF" }]}>
               Зарын дэлгэрэнгүй
             </Text>
           </View>
 
           <Image
             source={getLogoSource(currentTheme)}
-            style={styles.logo}
+            style={[styles.logo, { tintColor: "#FFFFFF" }]}
             resizeMode="contain"
           />
         </View>
@@ -401,7 +384,8 @@ export default function JobDetailScreen() {
                   { backgroundColor: colors.primary },
                 ]}
               >
-                <Text style={[styles.posterInitial, { color: colors.text }]}>
+                {/* Жижиг аватар доторх үсгийг цагаан болгов */}
+                <Text style={[styles.posterInitial, { color: "#FFFFFF" }]}>
                   {initial}
                 </Text>
               </View>
@@ -430,7 +414,7 @@ export default function JobDetailScreen() {
               <Tag size={20} color={colors.primary} />
               <Text style={[styles.jobPrice, { color: colors.primary }]}>
                 {jobPrice > 0 ? `${jobPrice.toLocaleString()} ₮` : "Үнэ тохиролцоно"}
-                {jobPrice > 0 && <Text style={styles.priceUnit}> / өдөр</Text>}
+                {jobPrice > 0 && <Text style={[styles.priceUnit, { color: colors.textSecondary }]}> / өдөр</Text>}
               </Text>
             </View>
 
@@ -438,12 +422,13 @@ export default function JobDetailScreen() {
               <View
                 style={[styles.typeBadge, { backgroundColor: colors.primary }]}
               >
-                <Text style={[styles.typeBadgeText, { color: colors.text }]}>
-                  {job.postType === "job" ? "Түрээслэх" : "Түрээслүүлэх"}
+                {/* Бажны бичгийг цагаан болгов */}
+                <Text style={[styles.typeBadgeText, { color: colors.headerText }]}>
+                  {job.postType === "job" ? "Түрээсэлх" : "Түрээслүүлэг"}
                 </Text>
               </View>
 
-              {(job as any).isSponsored ? (
+              {job.isSponsored ? (
                 <View
                   style={[
                     styles.sponsoredBadge,
@@ -675,17 +660,19 @@ export default function JobDetailScreen() {
             </Text>
           </View>
 
+          {/* Залгах товчлуурын бичиг болон иконыг цагаан болгов */}
           <TouchableOpacity
             style={[styles.callButton, { backgroundColor: colors.primary }]}
             onPress={handleCallPress}
             activeOpacity={0.8}
           >
-            <Phone size={20} color={colors.text} />
-            <Text style={[styles.callButtonText, { color: colors.text }]}>
+            <Phone size={20} color="#FFFFFF" />
+            <Text style={[styles.callButtonText, { color: "#FFFFFF" }]}>
               {posterPhone ? `Залгах: ${posterPhone}` : "Утасны дугаар алга"}
             </Text>
           </TouchableOpacity>
 
+          {/* Түрээслэх товчны бичгийг цагаан, дэд бичгийг цайвар саарал болгов */}
           <TouchableOpacity
             style={[
               styles.reviewButton,
@@ -699,13 +686,13 @@ export default function JobDetailScreen() {
             activeOpacity={0.8}
             disabled={isOwnJob}
           >
-            <Text style={[styles.reviewButtonText, { color: colors.text }]}>
+            <Text style={[styles.reviewButtonText, { color: "#FFFFFF" }]}>
               Түрээслэх
             </Text>
             <Text
               style={[
                 styles.reviewButtonSubText,
-                { color: colors.textSecondary },
+                { color: "rgba(255, 255, 255, 0.75)" },
               ]}
             >
               Түрээслэх хугацаа болон тоог сонгох
@@ -827,9 +814,9 @@ export default function JobDetailScreen() {
                   disabled={rentSubmitting}
                 >
                   {rentSubmitting ? (
-                    <ActivityIndicator color={colors.text} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
-                    <Text style={[styles.modalSubmitText, { color: colors.text }]}>
+                    <Text style={[styles.modalSubmitText, { color: "#FFFFFF" }]}>
                       Хүсэлт илгээх
                     </Text>
                   )}
@@ -858,8 +845,7 @@ export default function JobDetailScreen() {
               </Text>
 
               <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>
-                Түрээс дууссан гэж тэмдэглэхийн тулд зарын үнэлгээ заавал
-                өгнө.
+                Түрээс дууссан гэж тэмдэглэхийн тулд зарын үнэлгээ заавал өгнө.
               </Text>
 
               <Text style={[styles.modalLabel, { color: colors.text }]}>
@@ -927,10 +913,10 @@ export default function JobDetailScreen() {
                   disabled={reviewSubmitting}
                 >
                   {reviewSubmitting ? (
-                    <ActivityIndicator color={colors.text} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text
-                      style={[styles.modalSubmitText, { color: colors.text }]}
+                      style={[styles.modalSubmitText, { color: "#FFFFFF" }]}
                     >
                       Дуусгах
                     </Text>
@@ -949,7 +935,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-
   header: {
     paddingHorizontal: 20,
     paddingVertical: 12,
@@ -978,14 +963,12 @@ const styles = StyleSheet.create({
     fontWeight: "700" as const,
     flexShrink: 1,
   },
-
   content: {
     flex: 1,
   },
   contentContainer: {
     padding: 20,
   },
-
   posterSection: {
     flexDirection: "row",
     alignItems: "center",
@@ -1022,7 +1005,6 @@ const styles = StyleSheet.create({
   posterPhone: {
     fontSize: 14,
   },
-
   titleSection: {
     padding: 16,
     borderRadius: 16,
@@ -1077,7 +1059,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-
   imagesSection: {
     padding: 16,
     borderRadius: 16,
@@ -1125,7 +1106,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-
   metaSection: {
     padding: 16,
     borderRadius: 16,
@@ -1150,7 +1130,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700" as const,
   },
-
   ratingSection: {
     padding: 16,
     borderRadius: 16,
@@ -1197,7 +1176,6 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     width: "100%",
   },
-
   descriptionSection: {
     padding: 16,
     borderRadius: 16,
@@ -1217,7 +1195,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-
   callButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1236,7 +1213,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "700" as const,
   },
-
   notFound: {
     flex: 1,
     alignItems: "center",
@@ -1257,7 +1233,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600" as const,
   },
-
   reviewButton: {
     marginTop: 12,
     borderWidth: 1,
@@ -1275,7 +1250,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "center",
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -1297,48 +1271,46 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 20,
   },
-  
-  // Rent Modal Styles
   counterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ccc',
+    borderColor: "#ccc",
   },
   counterLabelWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   counterLabel: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   counterControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 16,
   },
   counterBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   counterValue: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
     minWidth: 24,
-    textAlign: 'center',
+    textAlign: "center",
   },
   totalPriceWrap: {
     marginTop: 20,
     padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 10,
   },
   totalPriceLabel: {
@@ -1347,13 +1319,12 @@ const styles = StyleSheet.create({
   },
   totalPriceValue: {
     fontSize: 24,
-    fontWeight: '800',
+    fontWeight: "800",
     marginBottom: 4,
   },
   calculationHint: {
     fontSize: 12,
   },
-
   modalLabel: {
     fontSize: 14,
     fontWeight: "700" as const,
@@ -1410,7 +1381,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800" as const,
   },
-
   bottomPadding: {
     height: 30,
   },

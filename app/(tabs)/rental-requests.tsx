@@ -12,11 +12,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useRouter } from "expo-router";
-import { Check, X, ChevronLeft, ClipboardList, CreditCard } from "lucide-react-native";
+import { Check, X, ChevronLeft, ClipboardList, CreditCard, Info } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getLogoSource } from "@/constants/logo";
+import { supabase } from "@/lib/supabase";
 
 type RentalRequest = {
   id: string;
@@ -29,7 +30,7 @@ type RentalRequest = {
   quantity?: number | null;
   rent_days?: number | null;
   total_price?: number | null;
-  status: "pending" | "approved" | "rejected" | "cancelled" | "completed";
+  status: "pending" | "approved" | "rejected" | "cancelled" | "completed" | "paid" | "handover_requested" | "in_rent";
   message?: string | null;
   created_at?: string;
   jobs?: any;
@@ -39,7 +40,6 @@ function formatDate(value?: string) {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-
   const now = new Date();
   const diff = now.getTime() - d.getTime();
   const day = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -52,6 +52,9 @@ function statusLabel(status: RentalRequest["status"]) {
   if (status === "pending") return "Хүлээгдэж байна";
   if (status === "approved") return "Зөвшөөрсөн";
   if (status === "rejected") return "Татгалзсан";
+  if (status === "paid") return "Төлбөр төлөгдсөн";
+  if (status === "handover_requested") return "Хүлээлгэж өгөх хүсэлт";
+  if (status === "in_rent") return "Түрээсэлж байгаа";
   if (status === "completed") return "Дууссан";
   return "Цуцалсан";
 }
@@ -145,16 +148,149 @@ export default function RentalRequestsScreen() {
       Alert.alert("Анхаар", "Төлбөрийн дүн 0 байна.");
       return;
     }
-    router.push({
-      pathname: "/payment" as any,
-      params: { requestId, amount: totalPrice },
-    });
+
+    Alert.alert(
+      "Анхаар",
+      "Та бараагаа хүлээн авах үедээ төлбөрөө баталгаажуулж шилжүүлээрэй.",
+      [
+        { text: "Болих", style: "cancel" },
+        {
+          text: "OK",
+          onPress: () => {
+            router.push({
+              pathname: "/payment" as any,
+              params: { requestId, amount: totalPrice },
+            });
+          },
+        },
+      ]
+    );
   };
 
-  const list: RentalRequest[] = Array.isArray(rentalRequests)
-    ? rentalRequests
-    : [];
+  // Түрээслэгч бараа хүлээж авах хүсэлт илгээх
+  const handleHandover = async (requestId: string) => {
+    try {
+      setBusyId(requestId);
+      const { error } = await supabase
+        .from("rental_requests")
+        .update({ status: "handover_requested" })
+        .eq("id", requestId);
 
+      if (error) throw error;
+      Alert.alert("Амжилттай", "Бараа хүлээлгэж өгөх хүсэлтийг түрээслүүлэгч рүү илгээлээ.");
+      loadRentalRequests?.();
+    } catch (e: any) {
+      Alert.alert("Алдаа", e.message || "Хүсэлт илгээхэд алдаа гарлаа");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Түрээслүүлэгч бараа өгснийг батлах (Түрээс эхлэх)
+  const handleConfirmHandover = async (requestId: string) => {
+    try {
+      setBusyId(requestId);
+      const { error } = await supabase
+        .from("rental_requests")
+        .update({ status: "in_rent" })
+        .eq("id", requestId);
+
+      if (error) throw error;
+      Alert.alert("Амжилттай", "Барааг хүлээлгэж өгснийг баталгаажууллаа. Түрээс эхэллээ.");
+      loadRentalRequests?.();
+    } catch (e: any) {
+      Alert.alert("Алдаа", e.message || "Баталгаажуулахад алдаа гарлаа");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Түрээслүүлэгч бараа хүлээлгэж өгөхөөс татгалзах
+  const handleRejectHandover = async (requestId: string) => {
+    try {
+      setBusyId(requestId);
+      const { error } = await supabase
+        .from("rental_requests")
+        .update({ status: "paid" })
+        .eq("id", requestId);
+
+      if (error) throw error;
+      Alert.alert("Мэдэгдэл", "Бараа хүлээлгэж өгөх хүсэлтээс татгалзлаа.");
+      loadRentalRequests?.();
+    } catch (e: any) {
+      Alert.alert("Алдаа", e.message || "Татгалзахад алдаа гарлаа");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // 🛠️ ЗАСВАР: Түрээс дуусахад төлөв "completed" болоод, зарын тоо ширхгийг буцааж нэмэх логик
+  const handleCompleteRental = async (requestId: string) => {
+    Alert.alert(
+      "Түрээс дуусгах уу?",
+      "Түрээсийг дуусгаснаар зарын тоо ширхэг буцаж нэмэгдэнэ. Мөн хоёр тал бие биедээ үнэлгээ өгөх боломжтой болно.",
+      [
+        { text: "Болих", style: "cancel" },
+        {
+          text: "Дуусгах",
+          onPress: async () => {
+            try {
+              setBusyId(requestId);
+
+              // Алхам А: Түрээсийн мэдээллийг татаж авах (job_id болон quantity хэрэгтэй)
+              const { data: requestData, error: reqError } = await supabase
+                .from("rental_requests")
+                .select("job_id, quantity")
+                .eq("id", requestId)
+                .single();
+
+              if (reqError) throw reqError;
+
+              if (requestData) {
+                // Алхам Б: Төлөвийг "completed" болгоно
+                const { error: statusError } = await supabase
+                  .from("rental_requests")
+                  .update({ status: "completed" })
+                  .eq("id", requestId);
+
+                if (statusError) throw statusError;
+
+                // Алхам В: Зарын одоогийн тоо ширхгийг унших
+                const { data: jobData, error: jobFetchError } = await supabase
+                  .from("jobs")
+                  .select("quantity")
+                  .eq("id", requestData.job_id)
+                  .single();
+
+                if (jobFetchError) throw jobFetchError;
+
+                // Алхам Г: Тоо ширхгийг буцааж нэмэгдүүлэн шинэчлэх
+                const currentQty = jobData?.quantity ? Number(jobData.quantity) : 0;
+                const returnQty = requestData?.quantity ? Number(requestData.quantity) : 1;
+                const newQty = currentQty + returnQty;
+
+                const { error: qtyError } = await supabase
+                  .from("jobs")
+                  .update({ quantity: newQty })
+                  .eq("id", requestData.job_id);
+
+                if (qtyError) throw qtyError;
+              }
+
+              Alert.alert("Амжилттай", "Түрээсийн хугацаа дууслаа. Одоо профайл хэсгээс үнэлгээгээ өгнө үү.");
+              loadRentalRequests?.();
+            } catch (e: any) {
+              Alert.alert("Алдаа", e.message || "Түрээс хаахад алдаа гарлаа");
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const list: RentalRequest[] = Array.isArray(rentalRequests) ? rentalRequests : [];
   const currentUserId = user?.id;
 
   return (
@@ -164,22 +300,17 @@ export default function RentalRequestsScreen() {
         style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
         edges={["top"]}
       >
-        <View
-          style={[
-            styles.header,
-            { backgroundColor: colors.background, borderBottomColor: colors.border },
-          ]}
-        >
+        <View style={[styles.header, { backgroundColor: colors.primary }]}>
           <View style={styles.headerLeft}>
             <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75}>
-              <ChevronLeft size={28} color={colors.text} />
+              <ChevronLeft size={28} color="#FFFFFF" />
             </TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Мэдэгдэл</Text>
+            <Text style={[styles.headerTitle, { color: "#FFFFFF" }]}>Мэдэгдэл</Text>
           </View>
 
           <Image
             source={getLogoSource(currentTheme)}
-            style={styles.logo}
+            style={[styles.logo, { tintColor: "#FFFFFF" }]}
             resizeMode="contain"
           />
         </View>
@@ -194,7 +325,7 @@ export default function RentalRequestsScreen() {
 
           {loading ? (
             <View style={styles.centerBox}>
-              <ActivityIndicator />
+              <ActivityIndicator color={colors.primary} />
               <Text style={[styles.centerText, { color: colors.textSecondary }]}>Уншиж байна...</Text>
             </View>
           ) : list.length === 0 ? (
@@ -269,7 +400,7 @@ export default function RentalRequestsScreen() {
 
                   <View style={styles.statusRow}>
                     <Text style={[styles.statusText, { color: colors.text }]}>
-                      Төлөв: <Text style={{ color: isApproved ? '#34C759' : colors.text }}>{statusLabel(item.status)}</Text>
+                      Төлөв: <Text style={{ color: (isApproved || item.status === "paid" || item.status === "handover_requested" || item.status === "in_rent" || item.status === "completed") ? '#34C759' : colors.text }}>{statusLabel(item.status)}</Text>
                     </Text>
                     
                     {item.total_price ? (
@@ -279,41 +410,105 @@ export default function RentalRequestsScreen() {
                     ) : null}
                   </View>
 
-                  {isOwner && isPending ? (
+                  {/* А. Зарын ЭЗЭНД (Түрээслүүлэгч) харагдах товчлуурууд */}
+                  {isOwner && (isPending || item.status === "handover_requested" || item.status === "in_rent") ? (
                     <View style={styles.actionsRow}>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.rejectButton, { borderColor: colors.border, opacity: isBusy ? 0.6 : 1 }]}
-                        onPress={() => handleReject(item.id)}
-                        disabled={isBusy}
-                        activeOpacity={0.8}
-                      >
-                        <X size={18} color={colors.text} />
-                        <Text style={[styles.actionText, { color: colors.text }]}>Татгалзах</Text>
-                      </TouchableOpacity>
+                      {item.status === "pending" ? (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.actionButton, styles.rejectButton, { borderColor: colors.border, opacity: isBusy ? 0.6 : 1 }]}
+                            onPress={() => handleReject(item.id)}
+                            disabled={isBusy}
+                            activeOpacity={0.8}
+                          >
+                            <X size={18} color={colors.text} />
+                            <Text style={[styles.actionText, { color: colors.text }]}>Татгалзах</Text>
+                          </TouchableOpacity>
 
-                      <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: colors.primary, opacity: isBusy ? 0.6 : 1 }]}
-                        onPress={() => handleApprove(item.id)}
-                        disabled={isBusy}
-                        activeOpacity={0.8}
-                      >
-                        {isBusy ? <ActivityIndicator color={colors.text} /> : <Check size={18} color={colors.text} />}
-                        <Text style={[styles.actionText, { color: colors.text }]}>Зөвшөөрөх</Text>
-                      </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: colors.primary, opacity: isBusy ? 0.6 : 1 }]}
+                            onPress={() => handleApprove(item.id)}
+                            disabled={isBusy}
+                            activeOpacity={0.8}
+                          >
+                            {isBusy ? <ActivityIndicator color={colors.headerText} /> : <Check size={18} color={colors.headerText} />}
+                            <Text style={[styles.actionText, { color: colors.headerText }]}>Зөвшөөрөх</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : item.status === "handover_requested" ? (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.actionButton, styles.rejectButton, { borderColor: colors.border, opacity: isBusy ? 0.6 : 1 }]}
+                            onPress={() => handleRejectHandover(item.id)}
+                            disabled={isBusy}
+                            activeOpacity={0.8}
+                          >
+                            <X size={18} color={colors.text} />
+                            <Text style={[styles.actionText, { color: colors.text }]}>Хүлээж аваагүй</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: colors.primary, opacity: isBusy ? 0.6 : 1 }]}
+                            onPress={() => handleConfirmHandover(item.id)}
+                            disabled={isBusy}
+                            activeOpacity={0.8}
+                          >
+                            {isBusy ? <ActivityIndicator color={colors.headerText} /> : <Check size={18} color={colors.headerText} />}
+                            <Text style={[styles.actionText, { color: colors.headerText }]}>Бараа өгснийг батлах</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        /* Түрээсэлж байгаа (in_rent) үед харагдах Дуусгах товч */
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: colors.primary, opacity: isBusy ? 0.6 : 1 }]}
+                          onPress={() => handleCompleteRental(item.id)}
+                          disabled={isBusy}
+                          activeOpacity={0.8}
+                        >
+                          {isBusy ? <ActivityIndicator color={colors.headerText} /> : <Check size={18} color={colors.headerText} />}
+                          <Text style={[styles.actionText, { color: colors.headerText }]}>Түрээс дуусгах</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   ) : null}
 
-                  {isRequester && isApproved ? (
-                     <View style={styles.actionsRow}>
-                       <TouchableOpacity
-                         style={[styles.actionButton, { backgroundColor: colors.primary }]}
-                         onPress={() => handlePay(item.id, item.total_price)}
-                         activeOpacity={0.8}
-                       >
-                         <CreditCard size={18} color={colors.text} />
-                         <Text style={[styles.actionText, { color: colors.text }]}>Төлбөр төлөх</Text>
-                       </TouchableOpacity>
-                     </View>
+                  {/* Б. ТҮРЭЭСЛЭГЧИД (Хүсэлт гаргагч) харагдах товчлуурууд */}
+                  {isRequester && (isApproved || item.status === "paid" || item.status === "handover_requested" || item.status === "in_rent") ? (
+                    <View style={styles.actionsRow}>
+                      {item.status === "approved" ? (
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                          onPress={() => handlePay(item.id, item.total_price)}
+                          activeOpacity={0.8}
+                        >
+                          <CreditCard size={18} color={colors.headerText} />
+                          <Text style={[styles.actionText, { color: colors.headerText }]}>Төлбөр төлөх</Text>
+                        </TouchableOpacity>
+                      ) : item.status === "paid" ? (
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: colors.primary, opacity: isBusy ? 0.6 : 1 }]}
+                          onPress={() => handleHandover(item.id)}
+                          disabled={isBusy}
+                          activeOpacity={0.8}
+                        >
+                          {isBusy ? <ActivityIndicator color={colors.headerText} /> : <Check size={18} color={colors.headerText} />}
+                          <Text style={[styles.actionText, { color: colors.headerText }]}>Бараа хүлээлгэж өгөх</Text>
+                        </TouchableOpacity>
+                      ) : item.status === "handover_requested" ? (
+                        <View style={[styles.actionButton, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border, borderWidth: 1, gap: 8 }]}>
+                          <ActivityIndicator color={colors.textSecondary} size="small" />
+                          <Text style={[styles.actionText, { color: colors.textSecondary }]}>Эзэмшигч зөвшөөрөхийг хүлээж байна...</Text>
+                        </View>
+                      ) : (
+                        /* 🛠️ ШИНЭ: Түрээслэгчид "in_rent" үед харагдах ухаалаг хайрцаг */
+                        <View style={[styles.infoActiveBox, { backgroundColor: 'rgba(52, 199, 89, 0.1)', borderColor: '#34C759' }]}>
+                          <Info size={16} color="#34C759" />
+                          <Text style={[styles.infoActiveText, { color: '#24963E' }]}>
+                            Түрээс идэвхтэй үргэлжилж байна. Хугацаа дуусахад эзэмшигч хаана. Түүний дараа Профайл хэсгээс үнэлгээгээ өгнө үү.
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   ) : null}
 
                 </TouchableOpacity>
@@ -331,7 +526,6 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingVertical: 14,
-    borderBottomWidth: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -348,7 +542,7 @@ const styles = StyleSheet.create({
   emptyTitle: { marginTop: 12, fontSize: 17, fontWeight: "800" },
   emptyText: { marginTop: 8, fontSize: 14, textAlign: "center", lineHeight: 20 },
   card: {
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
     marginBottom: 12,
     shadowColor: "#000",
@@ -390,4 +584,20 @@ const styles = StyleSheet.create({
   },
   rejectButton: { borderWidth: 1 },
   actionText: { fontSize: 14, fontWeight: "800" },
+  // 🛠️ Шинэ хайрцагны загвар
+  infoActiveBox: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start"
+  },
+  infoActiveText: {
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 16,
+    flex: 1
+  }
 });

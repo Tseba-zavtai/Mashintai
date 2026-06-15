@@ -6,14 +6,17 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { User, ChevronLeft } from "lucide-react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { getLogoSource } from "@/constants/logo";
+import { supabase } from "@/lib/supabase";
 
 function asNumberOrNull(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -32,8 +35,14 @@ export default function UserProfileScreen() {
   const { jobs } = useJobs();
   const { colors, currentTheme } = useTheme();
 
-  const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
+  // 🛠️ Үнэлгээ өгөхөд ашиглах State-үүд
+  const [pendingReviews, setPendingReviews] = useState<any[]>([]);
+  const [ratingUser, setRatingUser] = useState<number>(5);
+  const [ratingItem, setRatingItem] = useState<number>(5);
+  const [submittingReview, setSubmittingReview] = useState<boolean>(false);
 
+  const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
+  
   const userJobs = useMemo(() => {
     return (jobs as any[]).filter((job: any) => {
       const postedBy = job?.postedBy ?? {};
@@ -77,6 +86,68 @@ export default function UserProfileScreen() {
     };
   }, [user, userJobs]);
 
+  // 🛠️ ШИНЭ: Үнэлгээ өгөх дутуу байгаа completed түрээсүүдийг Supabase-ээс унших
+  const fetchPendingReviews = async () => {
+    if (!user?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from("rental_requests")
+        .select(`
+          id, 
+          status, 
+          owner_id, 
+          requester_id,
+          jobs (title)
+        `)
+        .eq("status", "completed");
+
+      if (error) throw error;
+
+      // Одоогийн хэрэглэгчид хамааралтай бөгөөд review өгөөгүй байгааг шүүх
+      if (data) {
+        const myPending = data.filter((item: any) => item.owner_id === user.id || item.requester_id === user.id);
+        setPendingReviews(myPending);
+      }
+    } catch (e) {
+      console.log("Үнэлгээ уншихад алдаа гарлаа:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchPendingReviews();
+  }, [user?.id]);
+
+  // 🛠️ ШИНЭ: Үнэлгээг Supabase руу хадгалах функц
+  const handleSubmitReview = async (requestItem: any) => {
+    try {
+      setSubmittingReview(true);
+      
+      const isCurrentOwner = user.id === requestItem.owner_id;
+
+      // rental_reviews хүснэгт рүү үнэлгээг оруулах
+      const { error } = await supabase
+        .from("rental_reviews")
+        .insert({
+          request_id: requestItem.id,
+          reviewer_id: user.id,
+          reviewee_id: isCurrentOwner ? requestItem.requester_id : requestItem.owner_id,
+          user_rating: ratingUser,
+          item_rating: isCurrentOwner ? null : ratingItem, // Хэрэв эзэн нь үнэлж байвал эд зүйл үнэлэхгүй, зөвхөн түрээслэгчийг үнэлнэ
+        });
+
+      if (error) throw error;
+
+      Alert.alert("Баярлалаа", "Таны үнэлгээ амжилттай хадгалагдлаа.");
+      
+      // Үнэлгээ өгсөн хүсэлтийг жагсаалтаас хасах
+      setPendingReviews(prev => prev.filter(p => p.id !== requestItem.id));
+    } catch (e: any) {
+      Alert.alert("Алдаа", e.message || "Үнэлгээ илгээхэд алдаа гарлаа");
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
   const formatDate = (date: Date) => {
     const now = new Date();
     const safeDate = date instanceof Date ? date : new Date(date as any);
@@ -105,7 +176,7 @@ export default function UserProfileScreen() {
             onPress={() => router.back()}
             style={[styles.backBtn, { backgroundColor: colors.primary }]}
           >
-            <Text style={[styles.backBtnText, { color: colors.text }]}>
+            <Text style={[styles.backBtnText, { color: colors.headerText }]}>
               Буцах
             </Text>
           </TouchableOpacity>
@@ -158,7 +229,7 @@ export default function UserProfileScreen() {
                 style={styles.avatarImage}
               />
             ) : (
-              <User size={40} color={colors.text} strokeWidth={2} />
+              <User size={40} color={colors.headerText} strokeWidth={2} />
             )}
           </View>
 
@@ -182,6 +253,58 @@ export default function UserProfileScreen() {
             </Text>
           </View>
         </View>
+
+        {/* 🛠️ ШИНЭ ХЭСЭГ: Үнэлгээ өгөх дутуу түрээс олдвол харагдах цонх */}
+        {pendingReviews.length > 0 && (
+          <View style={[styles.reviewBox, { backgroundColor: colors.background, borderColor: colors.primary }]}>
+            <Text style={[styles.reviewTitle, { color: colors.text }]}>
+              📣 Түрээсийн үнэлгээ дутуу байна!
+            </Text>
+            <Text style={[styles.reviewSub, { color: colors.textSecondary }]}>
+              Захиалга: {pendingReviews[0]?.jobs?.title || "Түрээсийн бараа"}
+            </Text>
+
+            {/* Хэрэглэгчийг үнэлэх од сонгох */}
+            <Text style={[styles.ratingLabel, { color: colors.text }]}>
+              Хэрэглэгчийн харилцааг үнэлэх:
+            </Text>
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} onPress={() => setRatingUser(star)}>
+                  <Text style={[styles.starText, { color: star <= ratingUser ? "#FFD700" : colors.border }]}>★</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Хэрэв түрээслэгч бол эд зүйлийг давхар үнэлнэ */}
+            {user.id !== pendingReviews[0]?.owner_id && (
+              <>
+                <Text style={[styles.ratingLabel, { color: colors.text }]}>
+                  Эд зүйлсийн чанарыг үнэлэх:
+                </Text>
+                <View style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity key={star} onPress={() => setRatingItem(star)}>
+                      <Text style={[styles.starText, { color: star <= ratingItem ? "#FFD700" : colors.border }]}>★</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
+            <TouchableOpacity 
+              style={[styles.submitReviewBtn, { backgroundColor: colors.primary }]} 
+              onPress={() => handleSubmitReview(pendingReviews[0])}
+              disabled={submittingReview}
+            >
+              {submittingReview ? (
+                <ActivityIndicator color={colors.headerText} size="small" />
+              ) : (
+                <Text style={[styles.submitReviewBtnText, { color: colors.headerText }]}>Үнэлгээ илгээх</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.statsContainer}>
           <View
@@ -268,7 +391,7 @@ export default function UserProfileScreen() {
                     ]}
                   >
                     <Text
-                      style={[styles.typeBadgeText, { color: colors.text }]}
+                      style={[styles.typeBadgeText, { color: colors.headerText }]}
                     >
                       {job.postType === "job" ? "Түрээслүүлэх" : "Түрээслэх"}
                     </Text>
@@ -373,6 +496,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600" as const,
   },
+  reviewBox: {
+    marginHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
+    marginBottom: 16,
+  },
+  reviewTitle: { fontSize: 15, fontWeight: "800" as const, marginBottom: 4 },
+  reviewSub: { fontSize: 13, fontWeight: "600" as const, marginBottom: 12 },
+  ratingLabel: { fontSize: 13, fontWeight: "700" as const, marginTop: 6 },
+  starsRow: { flexDirection: "row", gap: 4, marginBottom: 8, marginTop: 2 },
+  starText: { fontSize: 28, fontWeight: "bold" },
+  submitReviewBtn: { height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center", marginTop: 12 },
+  submitReviewBtnText: { fontSize: 14, fontWeight: "800" as const },
   statsContainer: {
     flexDirection: "row",
     marginHorizontal: 20,

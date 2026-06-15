@@ -1,17 +1,15 @@
 import React, { useEffect, useState } from "react";
-// ⬇️ Эндээс SafeAreaView-ийг хасаад, зөвхөн доорх хэдэн дүрсийг үлдээгээрэй
 import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert, ScrollView, Linking } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, CreditCard, CheckCircle } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
-// ⬇️ Энийг заавал тусад нь, хамгийн доор нь байлгаарай
 import { SafeAreaView } from "react-native-safe-area-context";
+import { supabase } from "@/lib/supabase";
 
 export default function PaymentScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { requestId, amount } = useLocalSearchParams<{ requestId: string; amount: string }>();
-
   const [loading, setLoading] = useState(true);
   const [qrBase64, setQrImage] = useState<string | null>(null);
   const [bankUrls, setBankUrls] = useState<any[]>([]);
@@ -22,25 +20,19 @@ export default function PaymentScreen() {
   const fetchQpayInvoice = async () => {
     try {
       setLoading(true);
-      
-      // БАКЭНД ЭСВЭЛ EDGE FUNCTION БАЙХГҮЙ ҮЕД ШУУД ТЕСТ ХИЙХЭД ЗОРИУЛСАН УРСГАЛ:
-      // Алхам А: Эхлээд Token авна
       const tokenResponse = await fetch("https://merchant.qpay.mn/v2/auth/token", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Өөрийн QPay хөгжүүлэгчийн эрхээр Хэрэв Basic Auth ашигладаг бол headers-д нэмнэ
         },
         body: JSON.stringify({
-          user_name: "ZAWTAI", // Өөрийн QPay нэрийг тавина
-          password: "oGRPMTlX",   // Өөрийн QPay нууц үгийг тавина
+          user_name: "ZAWTAI", 
+          password: "oGRPMTlX",   
         }),
       });
-      
       const tokenData = await tokenResponse.json();
       const accessToken = tokenData.access_token;
 
-      // Алхам Б: Нэхэмжлэх үүсгэнэ
       const invoiceResponse = await fetch("https://merchant.qpay.mn/v2/invoice", {
         method: "POST",
         headers: {
@@ -48,30 +40,28 @@ export default function PaymentScreen() {
           "Authorization": `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          invoice_code: "YOUR_INVOICE_CODE", // QPay-ээс өгсөн код
-          sender_invoice_no: requestId,     // Манай захиалгын ID
+          invoice_code: "YOUR_INVOICE_CODE", 
+          sender_invoice_no: requestId,     
           invoice_receiver_code: "TERMINAL",
           invoice_description: `Tureestei App - Захиалга #${requestId?.slice(0, 6)}`,
           amount: Number(amount),
-          callback_url: "https://your-domain.com/qpay-webhook" // Төлбөр төлөгдөхөд дуудах линк
+          callback_url: "https://your-domain.com/qpay-webhook" 
         })
       });
-
       const invoiceData = await invoiceResponse.json();
       
       if (invoiceData && invoiceData.qr_image) {
-        setQrImage(invoiceData.qr_image);       // QR код (Base64 форматтай ирдэг)
-        setBankUrls(invoiceData.urls || []);     // Банкны апп-уудын линк
-        setInvoiceId(invoiceData.invoice_id);   // Төлбөр шалгахад хэрэгтэй ID
+        setQrImage(invoiceData.qr_image);
+        setBankUrls(invoiceData.urls || []);
+        setInvoiceId(invoiceData.invoice_id);
       } else {
         throw new Error("Нэхэмжлэх үүсгэж чадсангүй");
       }
 
     } catch (error: any) {
       console.log("QPAY ERROR:", error);
-      Alert.alert("Анхаар", "QPay системтэй холбогдоход алдаа гарлаа. Гэрээний мэдээллээ шалгана уу.");
-      // Тест хийж байгаа тул алдаа гарсан ч хуурамч QR харуулж турших:
-      setQrImage("DUMMY_QR"); 
+      Alert.alert("Анхаар", "QPay system-тэй холбогдоход алдаа гарлаа. Гэрээний мэдээллээ шалгана уу.");
+      setQrImage("DUMMY_QR");
     } finally {
       setLoading(false);
     }
@@ -81,20 +71,68 @@ export default function PaymentScreen() {
     fetchQpayInvoice();
   }, [requestId]);
 
+  // 🛠️ ШИНЭ: Төлбөр амжилттай болоход Supabase дээр "paid" болгоод, зарын тоо ширхгийг хасах функц
+  const updateRentalAndReduceQuantity = async () => {
+    try {
+      // Алхам А: Эхлээд тухайн rental_request-ийн job_id болон quantity-г уншиж авна
+      const { data: requestData, error: reqError } = await supabase
+        .from("rental_requests")
+        .select("job_id, quantity")
+        .eq("id", requestId)
+        .single();
+
+      if (reqError) throw reqError;
+
+      if (requestData) {
+        // Алхам Б: Захиалгын төлөвийг "paid" болгоно
+        const { error: updateError } = await supabase
+          .from("rental_requests")
+          .update({ status: "paid" })
+          .eq("id", requestId);
+
+        if (updateError) throw updateError;
+
+        // Алхам В: RPC ашиглахгүйгээр шууд jobs хүснэгтийн quantity-г хасч шинэчлэх үйлдэл
+        const { data: jobData, error: jobFetchError } = await supabase
+          .from("jobs")
+          .select("quantity")
+          .eq("id", requestData.job_id)
+          .single();
+
+        if (jobFetchError) throw jobFetchError;
+
+        const currentQty = jobData?.quantity ? Number(jobData.quantity) : 0;
+        const rentQty = requestData?.quantity ? Number(requestData.quantity) : 1;
+        const newQty = Math.max(0, currentQty - rentQty); // Оноос доош унахгүй байх хаалт
+
+        const { error: qtyError } = await supabase
+          .from("jobs")
+          .update({ quantity: newQty })
+          .eq("id", requestData.job_id);
+
+        if (qtyError) throw qtyError;
+      }
+
+      setPaymentPaid(true);
+    } catch (err: any) {
+      Alert.alert("Алдаа", err.message || "Мэдээлэл шинэчлэхэд алдаа гарлаа");
+    }
+  };
+
   // 2. Төлбөр төлөгдсөн эсэхийг шалгах функц
   const checkPaymentStatus = async () => {
     if (!invoiceId) {
-      // Хэрэв QPay холбогдоогүй бол хуурамчаар "Төлөгдсөн" болгож тест хийх
-      setPaymentPaid(true);
+      // Тест горимд ажиллах
+      await updateRentalAndReduceQuantity();
       return;
     }
 
     try {
-      // Энд QPay-ийн v2/payment/check хаяг руу хандаж шалгана
-      Alert.alert("Мэдээлэл", "Төлбөр шалгаж байна...");
-      setPaymentPaid(true); // Тест амжилттай боллоо гэж үзэх
-    } catch (e) {
-      Alert.alert("Алдаа", "Төлбөр хараахан ороогүй байна");
+      Alert.alert("Мэдэгдэл", "Төлбөр шалгаж байна...");
+      // Жинхэнэ QPay шалгалт амжилттай болсны дараа дуудна
+      await updateRentalAndReduceQuantity();
+    } catch (e: any) {
+      Alert.alert("Алдаа", e.message || "Төлбөр хараахан ороогүй байна");
     }
   };
 
@@ -146,7 +184,7 @@ export default function PaymentScreen() {
               Таны түрээсийн төлбөр амжилттай төлөгдлөө. Түрээслүүлэгч рүү мэдэгдэл илгээгдсэн.
             </Text>
             <TouchableOpacity style={[styles.doneBtn, { backgroundColor: colors.primary }]} onPress={() => router.replace("/rental-requests")}>
-              <Text style={styles.doneBtnText}>Дуусгах</Text>
+              <Text style={[styles.doneBtnText, { color: colors.headerText }]}>Дуусгах</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -163,7 +201,7 @@ export default function PaymentScreen() {
               <View style={styles.qrContainer}>
                 {qrBase64 === "DUMMY_QR" ? (
                   <View style={[styles.dummyQr, { backgroundColor: colors.backgroundSecondary }]}>
-                    <Text style={{ color: colors.textSecondary, textAlign: 'center', fontWeight: 'bold' }}>
+                    <Text style={{ color: colors.textSecondary, textAlign: 'center', fontWeight: 'bold', fontSize: 13 }}>
                       [ TEST QR CODE ]{"\n\n"}QPay API-ийн username, password-оо солиод жинхэнэ QR-аа хараарай.{"\n\n"}Доорх "Шалгах" товчийг дарж төлбөрийг хуурамчаар баталгаажуулж болно.
                     </Text>
                   </View>
@@ -200,11 +238,11 @@ export default function PaymentScreen() {
 
             {/* Төлбөр шалгах товч */}
             <TouchableOpacity style={[styles.checkBtn, { backgroundColor: colors.primary }]} onPress={checkPaymentStatus}>
-              <Text style={styles.checkBtnText}>Төлбөр шалгах</Text>
+              <Text style={[styles.checkBtnText, { color: colors.headerText }]}>Төлбөр шалгах</Text>
             </TouchableOpacity>
           </View>
         )}
-        <View style={{ height: 40 }} />
+        <View style={{ height: 20 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -212,37 +250,37 @@ export default function PaymentScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
   backButton: { padding: 4, marginLeft: -4 },
   headerTitle: { fontSize: 18, fontWeight: "800" },
-  content: { flex: 1, padding: 20 },
-  card: { borderRadius: 16, borderWidth: 1, padding: 20, alignItems: "center", marginBottom: 16 },
-  iconWrap: { width: 54, height: 54, borderRadius: 27, alignItems: "center", justifyContent: "center", marginBottom: 12 },
-  amountLabel: { fontSize: 13, marginBottom: 4 },
-  amountValue: { fontSize: 28, fontWeight: "900", marginBottom: 4 },
-  infoText: { fontSize: 12, opacity: 0.8 },
+  content: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
+  card: { borderRadius: 16, borderWidth: 1, padding: 16, alignItems: "center", marginBottom: 12 },
+  iconWrap: { width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  amountLabel: { fontSize: 13, marginBottom: 2 },
+  amountValue: { fontSize: 26, fontWeight: "900", marginBottom: 2 },
+  infoText: { fontSize: 12, opacity: 0.7 },
   
-  paymentBox: { borderRadius: 16, padding: 20, alignItems: "center" },
-  boxTitle: { fontSize: 16, fontWeight: "700", marginBottom: 16 },
-  qrPlaceholder: { height: 200, justifyContent: "center", alignItems: "center" },
+  paymentBox: { borderRadius: 16, padding: 16, alignItems: "center" },
+  boxTitle: { fontSize: 15, fontWeight: "700", marginBottom: 12 },
+  qrPlaceholder: { height: 180, justifyContent: "center", alignItems: "center" },
   qrContainer: { alignItems: "center", width: "100%" },
-  qrImage: { width: 200, height: 200, borderRadius: 12 },
-  dummyQr: { width: 220, height: 220, borderRadius: 12, padding: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#ccc' },
-  qrHint: { fontSize: 12, textAlign: "center", marginTop: 14, lineHeight: 18, paddingHorizontal: 10 },
+  qrImage: { width: 180, height: 180, borderRadius: 12 },
+  dummyQr: { width: 180, height: 180, borderRadius: 12, padding: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#ccc' },
+  qrHint: { fontSize: 11, textAlign: "center", marginTop: 10, lineHeight: 16, paddingHorizontal: 8 },
   
-  banksSection: { width: "100%", marginTop: 20 },
-  banksTitle: { fontSize: 14, fontWeight: "700", marginBottom: 12 },
-  banksGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  bankItem: { width: "48%", padding: 10, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 8 },
-  bankLogo: { width: 28, height: 28, borderRadius: 6 },
-  bankName: { fontSize: 12, fontWeight: "600", flex: 1 },
+  banksSection: { width: "100%", marginTop: 16 },
+  banksTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
+  banksGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  bankItem: { width: "48%", padding: 8, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 },
+  bankLogo: { width: 24, height: 24, borderRadius: 6 },
+  bankName: { fontSize: 11, fontWeight: "600", flex: 1 },
   
-  checkBtn: { width: "100%", height: 50, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 24 },
-  checkBtnText: { fontSize: 15, fontWeight: "800", color: "#111" },
+  checkBtn: { width: "100%", height: 46, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 20 },
+  checkBtnText: { fontSize: 14, fontWeight: "800" },
   
-  successBox: { borderRadius: 16, padding: 30, alignItems: "center" },
-  successTitle: { fontSize: 20, fontWeight: "800", marginTop: 16, marginBottom: 8 },
-  successText: { fontSize: 14, textAlign: "center", lineHeight: 20, marginBottom: 24 },
-  doneBtn: { width: "100%", height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  doneBtnText: { fontSize: 15, fontWeight: "800", color: "#111" }
+  successBox: { borderRadius: 16, padding: 24, alignItems: "center" },
+  successTitle: { fontSize: 18, fontWeight: "800", marginTop: 12, marginBottom: 6 },
+  successText: { fontSize: 13, textAlign: "center", lineHeight: 18, marginBottom: 20 },
+  doneBtn: { width: "100%", height: 46, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  doneBtnText: { fontSize: 14, fontWeight: "800" }
 });

@@ -720,10 +720,8 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         setJobs(sortJobs(MOCK_JOBS));
       }
     } finally {
-      if (mountedRef.current && requestIdRef.current === myReqId) {
-        setIsLoading(false);
-      }
-    }
+  setIsLoading(false); // Нөхцөл шалгахгүйгээр шууд унтраана
+}
   }, []);
 
   const searchJobs = useCallback(async (text: string) => { await loadJobs(text); }, [loadJobs]);
