@@ -1,3 +1,4 @@
+// app/(tabs)/profile.tsx
 import {
   ScrollView,
   StyleSheet,
@@ -46,9 +47,8 @@ import { getLogoSource } from "@/constants/logo";
 
 const APP_VERSION = "1.0.0";
 const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
-const STORAGE_BUCKET = "post-images"; // Апп даяар зураг хадгалж байгаа савны нэр
+const STORAGE_BUCKET = "post-images"; 
 
-// Зургийг Base64 -оос Buffer руу хөрвүүлэх (Supabase-д хуулахад зориулсан)
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   let bufferLength = base64.length * 0.75;
@@ -110,20 +110,16 @@ export default function ProfileScreen() {
   const [pwBusy, setPwBusy] = useState(false);
   const [pwShow, setPwShow] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [isUploadingImage, setIsUploadingImage] = useState(false); // Зураг хуулж буйг харуулах төлөв
+  const [isUploadingImage, setIsUploadingImage] = useState(false); 
+  
+  // 🎯 НЭМЭЛТ: Таны бусдаас түрээсэлсэн барааны тоог хадгалах хувьсагч (Одоогоор 0 байна, дараа нь баазаас уншина)
+  const [rentedFromOthersCount, setRentedFromOthersCount] = useState(0);
 
   const formatRating = (value: any) => {
     if (value === null || value === undefined || value === "") return "Шинэ";
     const n = Number(value);
     return Number.isFinite(n) ? n.toFixed(1) : "Шинэ";
   };
-
-  const myWorkerJobs = useMemo(() => {
-    if (!user) return [];
-    return jobs.filter(
-      (job) => job.postType === "worker" && job.postedBy.phone === user.phone,
-    );
-  }, [jobs, user]);
 
   const myEmployerJobs = useMemo(() => {
     if (!user) return [];
@@ -157,7 +153,6 @@ export default function ProfileScreen() {
     refetchProfile?.().catch(() => {});
   }, []);
 
-  // 💡 ШИНЭЧИЛСЭН ЛОГИК: Зураг сонгоод, Supabase Storage руу хуулж хадгалах
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -170,12 +165,9 @@ export default function ProfileScreen() {
       if (!result.canceled && result.assets[0]) {
         setIsUploadingImage(true);
         const imageUri = result.assets[0].uri;
-
-        // Зургийг уншиж Base64 хэлбэр рүү хөрвүүлэх
         const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: "base64" });
         const fileData = base64ToArrayBuffer(base64);
 
-        // Supabase руу хуулах
         const userId = user?.id || "anonymous";
         const fileName = `avatar-${userId}-${Date.now()}.jpg`;
         const filePath = `avatars/${fileName}`;
@@ -191,13 +183,11 @@ export default function ProfileScreen() {
           throw uploadError;
         }
 
-        // Хуулсан зургийн Public URL-ийг олж авах
         const { data: publicData } = supabase.storage
           .from(STORAGE_BUCKET)
           .getPublicUrl(filePath);
 
         if (publicData?.publicUrl) {
-          // Хэрэглэгчийн мэдээллийг шинэ URL-тэйгээр шинэчилж хадгалах
           await updateProfile({ photoUri: publicData.publicUrl });
         }
       }
@@ -376,14 +366,14 @@ export default function ProfileScreen() {
           <TouchableOpacity onPress={pickImage} activeOpacity={0.8} disabled={isUploadingImage}>
             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
               {isUploadingImage ? (
-                <ActivityIndicator color={colors.text} />
+                <ActivityIndicator color={colors.headerText} />
               ) : user?.photoUri ? (
                 <Image
                   source={{ uri: user.photoUri }}
                   style={styles.avatarImage}
                 />
               ) : (
-                <User size={40} color={colors.text} strokeWidth={2} />
+                <User size={40} color={colors.headerText} strokeWidth={2} />
               )}
               <View
                 style={[
@@ -404,13 +394,13 @@ export default function ProfileScreen() {
               {user?.name || "Хэрэглэгч"}
             </Text>
             <Text
-              style={[styles.profilePhone, { color: colors.textSecondary }]}
-            >
+              style={[styles.profilePhone, { color: colors.textSecondary }]}>
               {user?.phone || "+976 9999 9999"}
             </Text>
 
             <SponsorCountdown />
 
+            {/* Дэлгэрэнгүй Үнэлгээ болон Түрээслүүлсэн тоо энд харагдана */}
             <Text style={[styles.profileRatingText, { color: colors.text }]}>
               ★ {formatRating(myProfileStats.userRatingAvg)} ·{" "}
               {myProfileStats.userReviewCount} үнэлгээ
@@ -433,28 +423,37 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={{ 
+          marginHorizontal: 20, 
+          borderRadius: 16, 
+          padding: 16, 
+          borderWidth: 1, 
+          borderColor: colors.border,
+          backgroundColor: colors.background,
+          flexDirection: "row", 
+          justifyContent: "space-between", 
+          alignItems: "center", 
+          marginBottom: 16 
+        }}>
+          <View>
+            <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary }}>Зар оруулах боломжит эрх</Text>
+            <Text style={{ fontSize: 18, fontWeight: "900", marginTop: 2, color: colors.primary }}>{user?.available_post_credits ?? 0} эрх үлдсэн</Text>
+          </View>
+          <TouchableOpacity 
+            style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.primary }}
+            onPress={() => router.push({ pathname: "/sponsor-payment", params: { targetType: "credit" } })}
+            activeOpacity={0.8}
+          >
+            <Text style={{ color: colors.headerText, fontWeight: "800", fontSize: 13 }}>Эрх авах (5,000₮)</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 🎯 ЗАСВАР: 4 хайрцгийг 2 болгож цөөлсөн хэсэг */}
         <View style={styles.statsContainer}>
           <TouchableOpacity
-            style={[styles.statCard, { backgroundColor: colors.background }]}
+            style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
             activeOpacity={0.7}
-            onPress={() =>
-              router.push({ pathname: "/my-jobs", params: { type: "worker" } })
-            }
-          >
-            <Text style={[styles.statNumber, { color: colors.text }]}>
-              {myWorkerJobs.length}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-              Түрээслэх зар
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statCard, { backgroundColor: colors.background }]}
-            activeOpacity={0.7}
-            onPress={() =>
-              router.push({ pathname: "/my-jobs", params: { type: "job" } })
-            }
+            onPress={() => router.push({ pathname: "/my-jobs", params: { type: "job" } })}
           >
             <Text style={[styles.statNumber, { color: colors.text }]}>
               {myEmployerJobs.length}
@@ -463,30 +462,19 @@ export default function ProfileScreen() {
               Түрээслүүлэх зар
             </Text>
           </TouchableOpacity>
-        </View>
 
-        <View style={styles.statsContainer}>
-          <View
-            style={[styles.statCard, { backgroundColor: colors.background }]}
+          <TouchableOpacity
+            style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
+            activeOpacity={0.7}
+            onPress={() => router.push("/rental-requests")}
           >
             <Text style={[styles.statNumber, { color: colors.text }]}>
-              ★ {formatRating(myProfileStats.userRatingAvg)}
+              {rentedFromOthersCount}
             </Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-              Хэрэглэгчийн үнэлгээ
+              Нийт түрээслэсэн
             </Text>
-          </View>
-
-          <View
-            style={[styles.statCard, { backgroundColor: colors.background }]}
-          >
-            <Text style={[styles.statNumber, { color: colors.text }]}>
-              {myProfileStats.rentalCount}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-              Нийт түрээс
-            </Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
@@ -494,7 +482,7 @@ export default function ProfileScreen() {
             Аккаунт
           </Text>
           <View
-            style={[styles.menuList, { backgroundColor: colors.background }]}
+            style={[styles.menuList, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
           >
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomColor: colors.border }]}
@@ -507,13 +495,13 @@ export default function ProfileScreen() {
                   { backgroundColor: colors.backgroundSecondary },
                 ]}
               >
-                <MapPin size={20} color={colors.text} />
+                <MapPin size={20} color={colors.textSecondary} />
               </View>
               <View style={styles.menuTextContainer}>
                 <Text style={[styles.menuText, { color: colors.text }]}>
                   Байршил
                 </Text>
-                <Text style={[styles.menuSubText, { color: "#000000" }]}>
+                <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>
                   Өөрийн байршлаа тохируулах
                 </Text>
               </View>
@@ -531,7 +519,7 @@ export default function ProfileScreen() {
                   { backgroundColor: colors.backgroundSecondary },
                 ]}
               >
-                <Lock size={20} color={colors.text} />
+                <Lock size={20} color={colors.textSecondary} />
               </View>
               <Text style={[styles.menuText, { color: colors.text }]}>
                 Нууц үг өөрчлөх
@@ -550,13 +538,13 @@ export default function ProfileScreen() {
                   { backgroundColor: colors.backgroundSecondary },
                 ]}
               >
-                <Palette size={20} color={colors.text} />
+                <Palette size={20} color={colors.textSecondary} />
               </View>
               <View style={styles.menuTextContainer}>
                 <Text style={[styles.menuText, { color: colors.text }]}>
                   Theme
                 </Text>
-                <Text style={[styles.menuSubText, { color: "#000000" }]}>
+                <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>
                   Өнгөний төрх солих
                 </Text>
               </View>
@@ -601,7 +589,7 @@ export default function ProfileScreen() {
                     { backgroundColor: colors.backgroundSecondary },
                   ]}
                 >
-                  <Lock size={20} color={colors.text} />
+                  <Lock size={20} color={colors.textSecondary} />
                 </View>
                 <Text style={[styles.menuText, { color: colors.text }]}>
                   Admin panel түгжих
@@ -616,6 +604,7 @@ export default function ProfileScreen() {
                 {
                   borderBottomColor: colors.border,
                   opacity: deleteBusy ? 0.6 : 1,
+                  borderBottomWidth: 0, 
                 },
               ]}
               activeOpacity={0.7}
@@ -625,7 +614,7 @@ export default function ProfileScreen() {
               <View
                 style={[
                   styles.menuIconContainer,
-                  { backgroundColor: colors.backgroundSecondary },
+                  { backgroundColor: "rgba(239, 68, 68, 0.1)" },
                 ]}
               >
                 {deleteBusy ? (
@@ -647,7 +636,7 @@ export default function ProfileScreen() {
             Тусламж
           </Text>
           <View
-            style={[styles.menuList, { backgroundColor: colors.background }]}
+            style={[styles.menuList, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
           >
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomColor: colors.border }]}
@@ -660,13 +649,13 @@ export default function ProfileScreen() {
                   { backgroundColor: colors.backgroundSecondary },
                 ]}
               >
-                <MessageSquare size={20} color={colors.text} />
+                <MessageSquare size={20} color={colors.textSecondary} />
               </View>
               <View style={styles.menuTextContainer}>
                 <Text style={[styles.menuText, { color: colors.text }]}>
                   Санал хүсэлт
                 </Text>
-                <Text style={[styles.menuSubText, { color: "#000000" }]}>
+                <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>
                   Сайжруулах санал, хүсэлт илгээх
                 </Text>
               </View>
@@ -684,7 +673,7 @@ export default function ProfileScreen() {
                   { backgroundColor: colors.backgroundSecondary },
                 ]}
               >
-                <HelpCircle size={20} color={colors.text} />
+                <HelpCircle size={20} color={colors.textSecondary} />
               </View>
               <Text style={[styles.menuText, { color: colors.text }]}>
                 Тусламж
@@ -716,7 +705,7 @@ export default function ProfileScreen() {
               <View
                 style={[
                   styles.menuIconContainer,
-                  { backgroundColor: colors.backgroundSecondary },
+                  { backgroundColor: "rgba(239, 68, 68, 0.1)" },
                 ]}
               >
                 <LogOut size={20} color={colors.error} />
@@ -727,7 +716,7 @@ export default function ProfileScreen() {
               <ChevronRight size={20} color={colors.textSecondary} />
             </TouchableOpacity>
 
-            <View style={styles.versionRow}>
+            <View style={[styles.versionRow, { borderBottomWidth: 0 }]}>
               <View
                 style={[
                   styles.versionIconContainer,
@@ -794,6 +783,7 @@ export default function ProfileScreen() {
                     {
                       backgroundColor: colors.backgroundSecondary,
                       color: colors.text,
+                      borderColor: colors.border,
                     },
                   ]}
                   value={editedName}
@@ -810,7 +800,7 @@ export default function ProfileScreen() {
                   onPress={handleSaveName}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.saveButtonText, { color: colors.text }]}>
+                  <Text style={[styles.saveButtonText, { color: colors.headerText }]}>
                     Хадгалах
                   </Text>
                 </TouchableOpacity>
@@ -860,6 +850,7 @@ export default function ProfileScreen() {
                     {
                       backgroundColor: colors.backgroundSecondary,
                       color: colors.text,
+                      borderColor: colors.border,
                     },
                   ]}
                   value={currentPw}
@@ -875,6 +866,7 @@ export default function ProfileScreen() {
                     {
                       backgroundColor: colors.backgroundSecondary,
                       color: colors.text,
+                      borderColor: colors.border,
                     },
                   ]}
                   value={newPw}
@@ -890,6 +882,7 @@ export default function ProfileScreen() {
                     {
                       backgroundColor: colors.backgroundSecondary,
                       color: colors.text,
+                      borderColor: colors.border,
                     },
                   ]}
                   value={newPw2}
@@ -905,9 +898,9 @@ export default function ProfileScreen() {
                   activeOpacity={0.8}
                 >
                   {pwShow ? (
-                    <EyeOff size={18} color={colors.text} />
+                    <EyeOff size={18} color={colors.textSecondary} />
                   ) : (
-                    <Eye size={18} color={colors.text} />
+                    <Eye size={18} color={colors.textSecondary} />
                   )}
                   <Text
                     style={{ color: colors.text, fontWeight: "700" as const }}
@@ -928,7 +921,7 @@ export default function ProfileScreen() {
                   activeOpacity={0.8}
                   disabled={pwBusy}
                 >
-                  <Text style={[styles.saveButtonText, { color: colors.text }]}>
+                  <Text style={[styles.saveButtonText, { color: colors.headerText }]}>
                     {pwBusy ? "Сольж байна..." : "Хадгалах"}
                   </Text>
                 </TouchableOpacity>
@@ -989,6 +982,7 @@ export default function ProfileScreen() {
                     {
                       backgroundColor: colors.backgroundSecondary,
                       color: colors.text,
+                      borderColor: colors.border,
                     },
                   ]}
                   value={adminPassword}
@@ -1012,7 +1006,7 @@ export default function ProfileScreen() {
                   activeOpacity={0.8}
                   disabled={isUnlockingAdmin}
                 >
-                  <Text style={[styles.saveButtonText, { color: colors.text }]}>
+                  <Text style={[styles.saveButtonText, { color: colors.headerText }]}>
                     {isUnlockingAdmin ? "Шалгаж байна..." : "Нээх"}
                   </Text>
                 </TouchableOpacity>
@@ -1053,6 +1047,8 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     gap: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   avatar: {
     width: 70,
@@ -1113,14 +1109,14 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   statNumber: { fontSize: 28, fontWeight: "700" as const, marginBottom: 4 },
-  statLabel: { fontSize: 12, textAlign: "center" },
+  statLabel: { fontSize: 12, textAlign: "center", fontWeight: "500" },
 
   section: { marginBottom: 24 },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "700" as const,
-    marginLeft: 20,
-    marginBottom: 12,
+    marginLeft: 24,
+    marginBottom: 10,
   },
   menuList: {
     marginHorizontal: 20,
@@ -1148,7 +1144,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   menuTextContainer: { flex: 1 },
-  menuText: { fontSize: 16, fontWeight: "600" as const, flex: 1 },
+  menuText: { fontSize: 15, fontWeight: "600" as const, flex: 1 },
   menuSubText: { fontSize: 12, marginTop: 2 },
 
   adminIconContainer: { backgroundColor: "#FFF3E0" },
@@ -1158,8 +1154,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 14,
+    paddingTop: 14,
+    paddingBottom: 16,
   },
   versionIconContainer: {
     width: 28,
@@ -1171,7 +1167,7 @@ const styles = StyleSheet.create({
   },
   versionText: {
     fontSize: 12,
-    fontWeight: "500" as const,
+    fontWeight: "600" as const,
   },
 
   bottomPadding: { height: 20 },
@@ -1195,7 +1191,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 20, fontWeight: "700" as const },
   adminHint: { fontSize: 13, marginBottom: 12 },
-  input: { borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 16 },
+  input: { borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 16, borderWidth: 1 },
   saveButton: { borderRadius: 12, padding: 16, alignItems: "center" },
   saveButtonText: { fontSize: 16, fontWeight: "700" as const },
 

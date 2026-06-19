@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Tureestei",
-    "slug": "tureestei1",
+    "name": "Tureesly",
+    "slug": "tureesly",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "tureestei",
+    "scheme": "tureesly",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {

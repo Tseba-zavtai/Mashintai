@@ -351,7 +351,7 @@ export default function LocationScreen() {
                     </Text>
 
                     <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                      <Text style={[styles.jobCategory, { color: colors.text, backgroundColor: colors.primary }]}>
+                      <Text style={[styles.jobCategory, { color: colors.headerText, backgroundColor: colors.primary }]}>
                         {normalizeCategory(job.category) || "Категори байхгүй"}
                       </Text>
                       {selectedFilter === "near" && distanceKm != null ? (

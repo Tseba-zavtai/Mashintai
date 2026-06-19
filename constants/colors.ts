@@ -1,3 +1,4 @@
+// constants/colors.ts
 export type ThemeType =
   | "purple"
   | "peach"
@@ -24,112 +25,88 @@ export interface ColorScheme {
   accent: string;
 }
 
+// 🎯 СУУРЬ ӨНГӨНҮҮД: Бүх Theme-д Body хэсэг нь Цагаан/Цайвар саарал байна
+const baseLight = {
+  background: "#F9FAFB", // Цайвар саарал арын дэвсгэр
+  backgroundSecondary: "#F3F4F6", // Арай бараан саарал
+  card: "#FFFFFF", // Карт болон хайрцагнууд цагаан
+  text: "#111111", // Үндсэн текст тас хар
+  textSecondary: "#6B7280", // Дэд текст саарал
+  border: "#E5E7EB", // Хүрээ зураас
+  success: "#10B981", // Ногоон амжилттай өнгө
+  error: "#EF4444", // Улаан алдааны өнгө
+};
+
+// 💜 1. PURPLE (Нил ягаан)
 const purpleTheme: ColorScheme = {
+  ...baseLight,
   primary: "#6E0AB0",
-  text: "#201A2E",
-  textSecondary: "#6F6A78",
-  background: "#FFFFFF",
-  backgroundSecondary: "#F6F2FA",
-  border: "#D0D2D8",
-  tint: "#6E0AB0",
-  tabIconDefault: "#AFC6D9",
-  tabIconSelected: "#6E0AB0",
-  card: "#FFFFFF",
-  success: "#8FE3CF",
-  error: "#E56B6F",
   headerBackground: "#6E0AB0",
   headerText: "#FFFFFF",
-  accent: "#6E0AB0",
+  tint: "#6E0AB0",
+  tabIconDefault: "#9CA3AF",
+  tabIconSelected: "#6E0AB0",
+  accent: "#F3E8FF", // Цайвар ягаан туяа
 };
 
+// 🍑 2. PEACH (Тоор)
 const peachTheme: ColorScheme = {
+  ...baseLight,
   primary: "#FFE3DD",
-  text: "#201A2E",
-  textSecondary: "#7A7284",
-  background: "#FFF8F6",
-  backgroundSecondary: "#FFF1EE",
-  border: "#F1D7D1",
-  tint: "#6E0AB0",
-  tabIconDefault: "#AFC6D9",
-  tabIconSelected: "#6E0AB0",
-  card: "#FFFFFF",
-  success: "#8FE3CF",
-  error: "#E68A8A",
   headerBackground: "#FFE3DD",
-  headerText: "#201A2E",
-  accent: "#6E0AB0",
-};
-
-const skyTheme: ColorScheme = {
-  primary: "#AFC6D9",
-  text: "#201A2E",
-  textSecondary: "#66707A",
-  background: "#F7FAFC",
-  backgroundSecondary: "#EAF1F6",
-  border: "#D0DCE6",
-  tint: "#6E0AB0",
-  tabIconDefault: "#8EA6BA",
+  headerText: "#6E0AB0", // Хурц ялгарах текст
+  tint: "#FFE3DD",
+  tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
-  card: "#FFFFFF",
-  success: "#8FE3CF",
-  error: "#E56B6F",
-  headerBackground: "#AFC6D9",
-  headerText: "#201A2E",
-  accent: "#6E0AB0",
+  accent: "#FFF5F2",
 };
 
+// 🌌 3. NAVY (Бараан хөх)
 const navyTheme: ColorScheme = {
-  primary: "#6E0AB0", // Үндсэн товчлуурууд харанхуй дэвсгэр дээр тод харагдана
-  text: "#FFF4F1",
-  textSecondary: "#D0D2D8",
-  background: "#201A2E",
-  backgroundSecondary: "#2B243B",
-  border: "#3B344A",
-  tint: "#8FE3CF",
-  tabIconDefault: "#AFC6D9",
-  tabIconSelected: "#8FE3CF",
-  card: "#2A2338",
-  success: "#8FE3CF",
-  error: "#FF8A80",
+  ...baseLight,
+  primary: "#201A2E",
   headerBackground: "#201A2E",
-  headerText: "#FFF4F1",
-  accent: "#8FE3CF",
+  headerText: "#FFFFFF",
+  tint: "#201A2E",
+  tabIconDefault: "#9CA3AF",
+  tabIconSelected: "#201A2E",
+  accent: "#EAE8F0",
 };
 
+// 🪙 4. GRAY (Саарал)
 const grayTheme: ColorScheme = {
-  primary: "#D0D2D8",
-  text: "#201A2E",
-  textSecondary: "#6E7480",
-  background: "#F8F8FA",
-  backgroundSecondary: "#ECEEF2",
-  border: "#D0D2D8",
-  tint: "#6E0AB0",
-  tabIconDefault: "#9FA5B1",
-  tabIconSelected: "#6E0AB0",
-  card: "#FFFFFF",
-  success: "#8FE3CF",
-  error: "#E56B6F",
+  ...baseLight,
+  primary: "#6B7280",
   headerBackground: "#D0D2D8",
-  headerText: "#201A2E",
-  accent: "#6E0AB0",
+  headerText: "#111111",
+  tint: "#6B7280",
+  tabIconDefault: "#9CA3AF",
+  tabIconSelected: "#111111",
+  accent: "#F3F4F6",
 };
 
+// 🌿 5. MINT (Минт ногоон)
 const mintTheme: ColorScheme = {
+  ...baseLight,
   primary: "#8FE3CF",
-  text: "#201A2E",
-  textSecondary: "#66707A",
-  background: "#F4FFFB",
-  backgroundSecondary: "#E7FBF5",
-  border: "#CDEAE2",
-  tint: "#6E0AB0",
-  tabIconDefault: "#AFC6D9",
-  tabIconSelected: "#6E0AB0",
-  card: "#FFFFFF",
-  success: "#8FE3CF",
-  error: "#E56B6F",
   headerBackground: "#8FE3CF",
-  headerText: "#201A2E",
-  accent: "#6E0AB0",
+  headerText: "#111111",
+  tint: "#8FE3CF",
+  tabIconDefault: "#9CA3AF",
+  tabIconSelected: "#111111",
+  accent: "#E8F8F5",
+};
+
+// 💎 6. SKY (Тэнгэрийн цэнхэр)
+const skyTheme: ColorScheme = {
+  ...baseLight,
+  primary: "#AFC6D9",
+  headerBackground: "#AFC6D9",
+  headerText: "#111111",
+  tint: "#AFC6D9",
+  tabIconDefault: "#9CA3AF",
+  tabIconSelected: "#111111",
+  accent: "#F0F5F9",
 };
 
 export const DEFAULT_THEME: ThemeType = "purple";

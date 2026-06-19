@@ -1,3 +1,4 @@
+// app/(tabs)/post.tsx
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Alert,
@@ -72,7 +73,6 @@ const IMAGE_COMPRESS_QUALITY = 0.72;
 async function compressPickedImage(asset: any, index: number): Promise<PickedImage> {
   const width = Number(asset?.width ?? 0);
   const actions = width > IMAGE_MAX_WIDTH ? [{ resize: { width: IMAGE_MAX_WIDTH } }] : [];
-
   const manipulated = await ImageManipulator.manipulateAsync(
     asset.uri,
     actions,
@@ -81,7 +81,6 @@ async function compressPickedImage(asset: any, index: number): Promise<PickedIma
       format: ImageManipulator.SaveFormat.JPEG,
     },
   );
-
   return {
     uri: manipulated.uri,
     name: `listing-image-${Date.now()}-${index}.jpg`,
@@ -98,7 +97,6 @@ function normalizeForSearch(input: string): string {
 
 function cyrillicToLatin(input: string): string {
   const text = (input ?? "").toLowerCase();
-
   const map: Record<string, string> = {
     а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo",
     ж: "j", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m",
@@ -106,7 +104,6 @@ function cyrillicToLatin(input: string): string {
     у: "u", ү: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh",
     щ: "sh", ъ: "", ы: "ii", ь: "", э: "e", ю: "yu", я: "ya",
   };
-
   let out = "";
   for (const ch of text) out += map[ch] ?? ch;
   return out;
@@ -114,21 +111,17 @@ function cyrillicToLatin(input: string): string {
 
 function latinToCyrillic(input: string): string {
   let s = (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-
   const rules: Array<[RegExp, string]> = [
     [/sch/g, "щ"], [/sh/g, "ш"], [/ch/g, "ч"], [/ts/g, "ц"],
     [/ya/g, "я"], [/yo/g, "ё"], [/yu/g, "ю"], [/ye/g, "е"], [/kh/g, "х"],
   ];
-
   for (const [re, rep] of rules) s = s.replace(re, rep);
-
   const map: Record<string, string> = {
     a: "а", b: "б", v: "в", g: "г", d: "д", e: "е", z: "з",
     i: "и", j: "ж", k: "к", l: "л", m: "м", n: "н", o: "о",
     p: "п", r: "р", s: "с", t: "т", u: "у", f: "ф", h: "х",
     y: "й", q: "к", w: "в", x: "кс", c: "к",
   };
-
   let out = "";
   for (const ch of s) out += map[ch] ?? ch;
   return out;
@@ -137,7 +130,6 @@ function latinToCyrillic(input: string): string {
 function buildSearchVariants(input: string): string[] {
   const raw = (input ?? "").trim();
   if (!raw) return [];
-
   const variants = new Set<string>();
 
   const add = (v: string) => {
@@ -167,14 +159,12 @@ function buildSearchVariants(input: string): string[] {
   add(latinToCyrillic(lowered.replace(/kh/g, "h")));
   add(latinToCyrillic(lowered.replace(/sh/g, "s")));
   add(latinToCyrillic(lowered.replace(/ch/g, "c")));
-
   return Array.from(variants);
 }
 
 function searchMatch(text: string, query: string): boolean {
   const variants = buildSearchVariants(query);
   if (variants.length === 0) return true;
-
   const original = normalizeForSearch(text);
   const translit = normalizeForSearch(cyrillicToLatin(text));
 
@@ -214,7 +204,6 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 
   const arrayBuffer = new ArrayBuffer(bufferLength);
   const bytes = new Uint8Array(arrayBuffer);
-
   let p = 0;
 
   for (let i = 0; i < len; i += 4) {
@@ -222,15 +211,16 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     const encoded2 = chars.indexOf(base64[i + 1]);
     const encoded3 = chars.indexOf(base64[i + 2]);
     const encoded4 = chars.indexOf(base64[i + 3]);
-
     bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
 
     if (encoded3 !== 64 && encoded3 !== -1) {
-      bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+      bytes[p++] = ((encoded2 & 15) << 4) |
+(encoded3 >> 2);
     }
 
     if (encoded4 !== 64 && encoded4 !== -1) {
-      bytes[p++] = ((encoded3 & 3) << 6) | encoded4;
+      bytes[p++] = ((encoded3 & 3) << 6) |
+encoded4;
     }
   }
 
@@ -241,7 +231,6 @@ async function uriToArrayBuffer(uri: string): Promise<ArrayBuffer> {
   const base64 = await FileSystem.readAsStringAsync(uri, {
     encoding: "base64" as any,
   });
-
   if (!base64) {
     throw new Error("Зураг уншихад алдаа гарлаа");
   }
@@ -367,17 +356,16 @@ const RENTAL_CATEGORIES: LocalCategory[] = CATEGORY_SOURCE.map(
 export default function PostScreen() {
   const { addJob } = useJobs();
   const router = useRouter();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, refetchProfile } = useAuth() as any;
   const { colors, currentTheme } = useTheme();
-
   const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
 
-  const [step, setStep] = useState<"select-type" | "form">("select-type");
-  const [postType, setPostType] = useState<PostType | null>(null);
+  // 🎯 ЗАСВАР: Түрээслэх / Түрээслүүлэх сонголтыг бүр мөсөн устгаж шууд "job" буюу Түрээслүүлэх төлөвтэйгөөр нээгдэнэ
+  const postType = "job"; 
 
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [price, setPrice] = useState(""); // Үнэ хадгалах State шинээр нэмэв
+  const [price, setPrice] = useState("");
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
 
@@ -391,7 +379,6 @@ export default function PostScreen() {
   const [pickedImages, setPickedImages] = useState<PickedImage[]>([]);
   const [pickingImages, setPickingImages] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
   const [initialRegion, setInitialRegion] = useState({
     latitude: 47.9184,
     longitude: 106.9177,
@@ -400,6 +387,9 @@ export default function PostScreen() {
   });
 
   const [addBanners, setAddBanners] = useState<any[]>([]);
+
+  // 🎯 ЗАСВАР: Хэрэглэгчийн үлдсэн зарын эрхийг тооцоолох
+  const postCredits = (user as any)?.available_post_credits ?? 0;
 
   const loadAddBanners = useCallback(async () => {
     try {
@@ -418,7 +408,7 @@ export default function PostScreen() {
   const resetForm = useCallback(() => {
     setDescription("");
     setQuantity("1");
-    setPrice(""); // Үнийг давхар цэвэрлэх
+    setPrice("");
     setCategoryId(null);
     setSubcategoryId(null);
     setCategorySearch("");
@@ -427,10 +417,8 @@ export default function PostScreen() {
     setSubcategoryModalVisible(false);
     setSelectedLocation(null);
     setPickedImages([]);
-    setPostType(null);
     setSubmitting(false);
     setPickingImages(false);
-    setStep("select-type");
   }, []);
 
   useEffect(() => {
@@ -453,40 +441,25 @@ export default function PostScreen() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated && step === "form") {
-      setStep("select-type");
-      setPostType(null);
+    if (!isAuthenticated) {
+      router.push("/auth");
     }
-  }, [isAuthenticated, step]);
-
-  const handleSelectType = useCallback(
-    (type: PostType) => {
-      if (!isAuthenticated) {
-        router.push("/auth");
-        return;
-      }
-
-      setPostType(type);
-      setStep("form");
-    },
-    [isAuthenticated, router]
-  );
+  }, [isAuthenticated]);
 
   const handleMapPress = async (event: any) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
-
     try {
       const [address] = await Location.reverseGeocodeAsync({
         latitude,
         longitude,
       });
-
       const addressText = address
-        ? `${address.district || address.city || ""}${
-            address.subregion ? `, ${address.subregion}` : ""
+        ? `${address.district || address.city ||
+""}${
+            address.subregion ?
+`, ${address.subregion}` : ""
           }`.trim()
         : undefined;
-
       setSelectedLocation({
         latitude,
         longitude,
@@ -663,8 +636,12 @@ export default function PostScreen() {
   const handleSubmit = async () => {
     if (submitting) return;
 
-    if (!postType) {
-      Alert.alert("Алдаа", "Зарын төрөл сонгоно уу");
+    // 🎯 ЗАСВАР: Эрх шалгах логикийг нийтлэх товчлуур дээр нэмсэн
+    if (postCredits <= 0) {
+      Alert.alert("Эрх дууссан", "Таны үнэгүй зар оруулах эрх дууссан байна. Профайл хэсгээс эрхээ цэнэглэнэ үү.", [
+        { text: "Хаах", style: "cancel" },
+        { text: "Профайл руу", onPress: () => router.push("/profile") }
+      ]);
       return;
     }
 
@@ -678,21 +655,28 @@ export default function PostScreen() {
       return;
     }
 
-    const parsedQuantity = postType === "job" ? Math.max(1, Math.floor(Number(quantity || 1))) : 1;
+    const parsedQuantity = Math.max(1, Math.floor(Number(quantity || 1)));
     if (!Number.isFinite(parsedQuantity) || parsedQuantity < 1) {
       Alert.alert("Алдаа", "Тоо ширхэгийг зөв оруулна уу");
       return;
     }
 
-    // Үнийг шалгах хэсэг
     const parsedPrice = Number(price.replace(/[^0-9]/g, "")) || 0;
-    if (postType === "job" && parsedPrice <= 0) {
+    if (parsedPrice <= 0) {
       Alert.alert("Алдаа", "Үнийг зөв оруулна уу");
       return;
     }
 
     try {
       setSubmitting(true);
+
+      // 🎯 ЗАСВАР: Зар амжилттай орохоос өмнө баазаас 1 эрхийг хасна
+      const { error: creditError } = await supabase
+        .from("profiles")
+        .update({ available_post_credits: Math.max(0, postCredits - 1) })
+        .eq("id", (user as any)?.id);
+        
+      if (creditError) throw creditError;
 
       const imageUrls = await uploadImagesToSupabase(pickedImages);
 
@@ -713,7 +697,7 @@ export default function PostScreen() {
           image_urls: imageUrls,
           quantity: parsedQuantity,
           available_quantity: parsedQuantity,
-          price: parsedPrice, // Мэдээллийн санд Үнийг нэмэв
+          price: parsedPrice, 
         } as any,
         {
           name: user?.name || user?.phone || "Хэрэглэгч",
@@ -722,6 +706,9 @@ export default function PostScreen() {
           sponsoredUntil: (user as any)?.sponsoredUntil ?? null,
         }
       );
+
+      // Профайлын эрхийг дахин дуудаж шинэчилнэ
+      await refetchProfile?.();
 
       Alert.alert("Амжилттай!", "Таны зар амжилттай нэмэгдлээ", [
         {
@@ -740,92 +727,6 @@ export default function PostScreen() {
     }
   };
 
-  if (step === "select-type") {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <SafeAreaView
-          edges={["top"]}
-          style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}
-        >
-          <View style={styles.header}>
-            <Text style={[styles.headerTitle, { color: colors.headerText }]}>
-              Зар нэмэх
-            </Text>
-            <Image
-              source={logoSource}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </View>
-
-          <View style={styles.subtitleContainer}>
-            <Text
-              style={[styles.headerSubtitle, { color: colors.headerText }]}
-            >
-              Та ямар төрлийн зар оруулах вэ?
-            </Text>
-          </View>
-        </SafeAreaView>
-
-        <View style={styles.selectTypeContainer}>
-          <TouchableOpacity
-            style={[styles.typeCard, { backgroundColor: colors.card }]}
-            onPress={() => handleSelectType("job")}
-            activeOpacity={0.7}
-          >
-            <View
-              style={[styles.typeCardIcon, { backgroundColor: colors.primary }]}
-            >
-              <Text style={styles.typeCardEmoji}>📦</Text>
-            </View>
-            <Text style={[styles.typeCardTitle, { color: colors.text }]}>
-              Түрээслүүлэх
-            </Text>
-            <Text
-              style={[
-                styles.typeCardDescription,
-                { color: colors.textSecondary },
-              ]}
-            >
-              Би түрээслүүлэх зүйл, үйлчилгээ эсвэл санал байршуулна.
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.typeCard, { backgroundColor: colors.card }]}
-            onPress={() => handleSelectType("worker")}
-            activeOpacity={0.7}
-          >
-            <View
-              style={[styles.typeCardIcon, { backgroundColor: colors.primary }]}
-            >
-              <Text style={styles.typeCardEmoji}>🔎</Text>
-            </View>
-            <Text style={[styles.typeCardTitle, { color: colors.text }]}>
-              Түрээслэх
-            </Text>
-            <Text
-              style={[
-                styles.typeCardDescription,
-                { color: colors.textSecondary },
-              ]}
-            >
-              Би түрээслэх зүйл, үйлчилгээ эсвэл хэрэгцээгээ байршуулна.
-            </Text>
-          </TouchableOpacity>
-
-          {addBanners.length > 0 ? (
-            <View style={styles.addBannerOuter}>
-              <View style={styles.addBannerWrap}>
-                <BannerCarousel banners={addBanners} />
-              </View>
-            </View>
-          ) : null}
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SafeAreaView
@@ -834,7 +735,7 @@ export default function PostScreen() {
       >
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: colors.headerText }]}>
-            {postType === "job" ? "Түрээслүүлэх" : "Түрээслэх"}
+            Зар нэмэх
           </Text>
           <Image
             source={logoSource}
@@ -844,20 +745,8 @@ export default function PostScreen() {
         </View>
 
         <View style={styles.subtitleContainer}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => setStep("select-type")}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.backButtonText, { color: colors.headerText }]}>
-              ← Буцах
-            </Text>
-          </TouchableOpacity>
-
           <Text style={[styles.headerSubtitle, { color: colors.headerText }]}>
-            {postType === "job"
-              ? "Түрээслүүлэх зарын дэлгэрэнгүй мэдээллээ оруулна уу"
-              : "Түрээслэх хэрэгцээний дэлгэрэнгүй мэдээллээ оруулна уу"}
+             Түрээслүүлэх зарын дэлгэрэнгүй мэдээллээ оруулна уу
           </Text>
         </View>
       </SafeAreaView>
@@ -902,62 +791,58 @@ export default function PostScreen() {
             />
           </View>
 
-          {postType === "job" ? (
-            <>
-              <View style={styles.formSection}>
-                <Text style={[styles.label, { color: colors.text }]}>
-                  Үнэ (₮) *
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: colors.card,
-                      color: colors.text,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                  placeholder="Жишээ нь: 50000"
-                  placeholderTextColor={colors.textSecondary}
-                  value={price}
-                  onChangeText={(value) => {
-                    const cleaned = value.replace(/[^0-9]/g, "");
-                    setPrice(cleaned);
-                  }}
-                  keyboardType="number-pad"
-                  editable={!submitting}
-                />
-              </View>
+          <View style={styles.formSection}>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Үнэ (₮) *
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.card,
+                  color: colors.text,
+                  borderColor: colors.border,
+                },
+              ]}
+              placeholder="Жишээ нь: 50000"
+              placeholderTextColor={colors.textSecondary}
+              value={price}
+              onChangeText={(value) => {
+                const cleaned = value.replace(/[^0-9]/g, "");
+                setPrice(cleaned);
+              }}
+              keyboardType="number-pad"
+              editable={!submitting}
+            />
+          </View>
 
-              <View style={styles.formSection}>
-                <Text style={[styles.label, { color: colors.text }]}>
-                  Тоо ширхэг *
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: colors.card,
-                      color: colors.text,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                  placeholder="1"
-                  placeholderTextColor={colors.textSecondary}
-                  value={quantity}
-                  onChangeText={(value) => {
-                    const cleaned = value.replace(/[^0-9]/g, "");
-                    setQuantity(cleaned || "1");
-                  }}
-                  keyboardType="number-pad"
-                  editable={!submitting}
-                />
-                <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                  Нэг л ширхэг бараа бол 1 гэж үлдээнэ. Олон ширхэгтэй бол нийт тоогоо оруулна.
-                </Text>
-              </View>
-            </>
-          ) : null}
+          <View style={styles.formSection}>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Тоо ширхэг *
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.card,
+                  color: colors.text,
+                  borderColor: colors.border,
+                },
+              ]}
+              placeholder="1"
+              placeholderTextColor={colors.textSecondary}
+              value={quantity}
+              onChangeText={(value) => {
+                const cleaned = value.replace(/[^0-9]/g, "");
+                setQuantity(cleaned || "1");
+              }}
+              keyboardType="number-pad"
+              editable={!submitting}
+            />
+            <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+              Нэг л ширхэг бараа бол 1 гэж үлдээнэ. Олон ширхэгтэй бол нийт тоогоо оруулна.
+            </Text>
+          </View>
 
           <View style={styles.formSection}>
             <View style={styles.imagesHeaderRow}>
@@ -1459,11 +1344,12 @@ export default function PostScreen() {
             )}
           </View>
 
+          {/* 🎯 ЗАСВАР: Зарын эрх 0 бол саарал өнгөтэй харагдана, дарвал анхааруулга гарна */}
           <TouchableOpacity
             style={[
               styles.submitButton,
               {
-                backgroundColor: colors.primary,
+                backgroundColor: postCredits <= 0 ? colors.border : colors.primary,
                 opacity: submitting ? 0.75 : 1,
               },
             ]}
@@ -1474,9 +1360,25 @@ export default function PostScreen() {
             {submitting ? (
               <ActivityIndicator color={colors.headerText} />
             ) : (
-              <Text style={[styles.submitButtonText, { color: colors.headerText }]}>Зар нэмэх</Text>
+              <Text style={[styles.submitButtonText, { color: postCredits <= 0 ? colors.textSecondary : colors.headerText }]}>
+                {postCredits <= 0 ? "Эрх дууссан" : "Зар нэмэх (1 эрх хасагдана)"}
+              </Text>
             )}
           </TouchableOpacity>
+          
+          {postCredits <= 0 && (
+            <Text style={{ textAlign: "center", color: colors.error, marginTop: 12, fontSize: 13, fontWeight: "600" }}>
+              Таны зар оруулах эрх дууссан байна. Профайл руу орж цэнэглэнэ үү.
+            </Text>
+          )}
+
+          {addBanners.length > 0 ? (
+            <View style={styles.addBannerOuter}>
+              <View style={styles.addBannerWrap}>
+                <BannerCarousel banners={addBanners} />
+              </View>
+            </View>
+          ) : null}
 
           <View style={styles.bottomPadding} />
         </ScrollView>
@@ -1631,6 +1533,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
   },
   modalBackdrop: {
@@ -1770,49 +1673,12 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111",
   },
 
   bottomPadding: { height: 40 },
 
-  selectTypeContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    gap: 14,
-  },
-
-  typeCard: {
-    borderRadius: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-
-  typeCardIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-
-  typeCardEmoji: { fontSize: 34 },
-  typeCardTitle: { fontSize: 20, fontWeight: "700", marginBottom: 6 },
-  typeCardDescription: {
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-
   addBannerOuter: {
-    marginTop: 10,
+    marginTop: 16,
     marginBottom: 6,
     marginHorizontal: -20,
   },

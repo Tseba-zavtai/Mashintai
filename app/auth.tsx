@@ -571,7 +571,7 @@ export default function AuthScreen() {
                 disabled={isMainDisabled}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.buttonText, { color: colors.text }]}>{mainButtonText}</Text>
+                <Text style={[styles.buttonText, { color: colors.headerText }]}>{mainButtonText}</Text>
               </TouchableOpacity>
 
               {!isForgotPassword && !isSignUp && (

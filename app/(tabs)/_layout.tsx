@@ -1,3 +1,4 @@
+// app/(tabs)/_layout.tsx
 import { Tabs, useRouter } from "expo-router";
 import { Home, PlusCircle, MapPin, User, Shield, Bell } from "lucide-react-native";
 import React from "react";
@@ -10,23 +11,21 @@ export default function TabLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-
   const { isAuthenticated, isLoading, user, isAdminUnlocked } = useAuth();
   const { rentalRequests } = useJobs();
 
   // Хүлээгдэж байгаа (pending) түрээсийн хүсэлтүүдийн тоог олох
   const pendingCount = rentalRequests?.filter((req: any) => req.status === "pending").length || 0;
-
   const goToAuth = () => router.replace("/auth");
 
   return (
     <Tabs
       screenOptions={{
-        headerShown: false,
+        headerShown: false, // Доод таб доторх хуудаснуудын Expo толгойг мөн давхар хаана
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: colors.card,
+          backgroundColor: colors.background, // 🎯 ЗАСВАР: colors.card байсныг нэгдсэн colors.background болгов
           borderTopColor: colors.border,
           height: 60 + insets.bottom,
           paddingBottom: Math.max(insets.bottom, 10),
@@ -50,9 +49,7 @@ export default function TabLayout() {
         name="post"
         options={{
           title: "Нэмэх",
-          tabBarIcon: ({ color, size }) => (
-            <PlusCircle color={color} size={size} />
-          ),
+          tabBarIcon: ({ color, size }) => <PlusCircle color={color} size={size} />,
         }}
       />
 
@@ -64,7 +61,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Мэдэгдлийн цэс: Нэрийг нь "rental-requests" гэж таарууллаа */}
       <Tabs.Screen
         name="rental-requests"
         options={{
@@ -101,15 +97,12 @@ export default function TabLayout() {
         }}
       />
 
-      {/* ✅ Admin tab зөвхөн супер админ + unlock хийсэн үед */}
       {isAuthenticated && user?.isSuperAdmin && isAdminUnlocked && (
         <Tabs.Screen
           name="admin"
           options={{
             title: "Admin",
-            tabBarIcon: ({ color, size }) => (
-              <Shield color={color} size={size} />
-            ),
+            tabBarIcon: ({ color, size }) => <Shield color={color} size={size} />,
           }}
         />
       )}

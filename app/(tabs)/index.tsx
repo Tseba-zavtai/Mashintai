@@ -1,3 +1,4 @@
+// app/(tabs)/index.tsx
 import React, {
   useCallback,
   useEffect,
@@ -174,15 +175,8 @@ function normalizeForSearch(input: string) {
 function latinToCyrillic(input: string) {
   let s = (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   const rules: Array<[RegExp, string]> = [
-    [/sch/g, "щ"],
-    [/sh/g, "ш"],
-    [/ch/g, "ч"],
-    [/ts/g, "ц"],
-    [/ya/g, "я"],
-    [/yo/g, "ё"],
-    [/yu/g, "ю"],
-    [/ye/g, "е"],
-    [/kh/g, "х"],
+    [/sch/g, "щ"], [/sh/g, "ш"], [/ch/g, "ч"], [/ts/g, "ц"],
+    [/ya/g, "я"], [/yo/g, "ё"], [/yu/g, "ю"], [/ye/g, "е"], [/kh/g, "х"],
   ];
   for (const [re, rep] of rules) s = s.replace(re, rep);
   const map: Record<string, string> = {
@@ -308,7 +302,8 @@ function getJobRankingScore(job: any): number {
     job?.postedDate?.getTime?.() ??
     toSafeDate(job?.created_at ?? job?.updated_at).getTime();
   const bumpedTs =
-    job?.bumpedAt?.getTime?.() ?? getBumpedAtDate(job)?.getTime?.() ?? 0;
+    job?.bumpedAt?.getTime?.() ??
+    getBumpedAtDate(job)?.getTime?.() ?? 0;
   const sponsoredUntilTs = job?.sponsoredUntil?.getTime?.() ?? 0;
   const isSponsored = !!job?.isSponsored && sponsoredUntilTs > now;
   const itemRating =
@@ -485,7 +480,7 @@ function iconByKeyword(name: string): LucideIcon {
     t.includes("pos") ||
     t.includes("barcode") ||
     t.includes("label printer") ||
-    t.includes("speakerphone") ||
+    t.includes("meeting speakerphone") ||
     t.includes("tablet") ||
     t.includes("wi-fi") ||
     t.includes("router") ||
@@ -546,7 +541,7 @@ function iconByKeyword(name: string): LucideIcon {
     t.includes("мотоблок") ||
     t.includes("шүршигч") ||
     t.includes("усалгааны насос") ||
-    t.includes("цахилгаан хашаа") ||
+    t.includes("цахилгаан хашааны төхөөрөмж") ||
     t.includes("agri") ||
     t.includes("farm")
   ) {
@@ -676,29 +671,37 @@ function normalizeJob(raw: any): NormalizedJob {
     raw?.posted_by ??
     {
       id: raw?.posted_by_id ?? null,
-      name: raw?.posted_by_name ?? raw?.posted_by_phone ?? "Unknown",
+      name: raw?.posted_by_name ?? raw?.posted_by_phone ??
+      "Unknown",
       phone: raw?.posted_by_phone ?? null,
-      photoUri: raw?.posted_by_photo ?? null,
+      photoUri: raw?.posted_by_photo ??
+      null,
     };
 
   const postedDate = raw?.postedDate ?? raw?.created_at ?? raw?.updated_at;
   const sponsoredUntil = getSponsoredUntilDate(raw);
   const legacySponsored = !!(raw?.isSponsored ?? raw?.is_sponsored ?? false);
   const isSponsoredByTime = sponsoredUntil
-    ? sponsoredUntil.getTime() > Date.now()
+    ?
+      sponsoredUntil.getTime() > Date.now()
     : false;
   const computedIsSponsored = sponsoredUntil
-    ? isSponsoredByTime
+    ?
+      isSponsoredByTime
     : legacySponsored;
 
   const location =
     raw?.location && typeof raw.location === "object"
-      ? raw.location
+      ?
+        raw.location
       : raw?.address
-        ? {
+        ?
+          {
             address: raw.address,
-            latitude: raw?.latitude ?? null,
-            longitude: raw?.longitude ?? null,
+            latitude: raw?.latitude ??
+            null,
+            longitude: raw?.longitude ??
+            null,
           }
         : null;
   const imageUrls = normalizeImageUrls(raw);
@@ -713,26 +716,32 @@ function normalizeJob(raw: any): NormalizedJob {
   return {
     ...raw,
     category_id: raw?.category_id ?? null,
-    subcategory_id: raw?.subcategory_id ?? null,
+    subcategory_id: raw?.subcategory_id ??
+    null,
     isSponsored: computedIsSponsored,
     sponsoredUntil,
-    postType: raw?.postType ?? raw?.post_type ?? "job",
+    postType: raw?.postType ?? raw?.post_type ??
+    "job",
     isActive: raw?.isActive ?? raw?.is_active ?? true,
     postedBy,
     postedDate: toSafeDate(postedDate),
-    category: raw?.category ?? null,
+    category: raw?.category ??
+    null,
     subcategory:
       raw?.subcategory ??
       raw?.subcategory_name ??
-      raw?.subcategories?.name ?? null,
+      raw?.subcategories?.name ??
+    null,
     location,
-    image_url: imageUrls[0] ?? null,
+    image_url: imageUrls[0] ??
+    null,
     image_urls: imageUrls,
     itemRatingAvg,
     itemReviewCount,
     rentalCount,
     bumpedAt,
-    bumpCount: asNumberOrNull(raw?.bumpCount ?? raw?.bump_count) ?? 0,
+    bumpCount: asNumberOrNull(raw?.bumpCount ?? raw?.bump_count) ??
+    0,
   } as NormalizedJob;
 }
 
@@ -748,10 +757,12 @@ function JobCard({
 
   const j = normalizeJob(job);
   const postedBy = j.postedBy;
-  const name = postedBy?.name ?? "Unknown";
+  const name = postedBy?.name ??
+  "Unknown";
   const initial = (name[0] ?? "?").toUpperCase();
   const photoUri = postedBy?.photoUri ?? null;
-  const imageUrls: string[] = Array.isArray(j.image_urls) ? j.image_urls : [];
+  const imageUrls: string[] = Array.isArray(j.image_urls) ?
+  j.image_urls : [];
 
   const handleAvatarPress = () => {
     const userId = postedBy?.phone ?? postedBy?.id;
@@ -779,7 +790,8 @@ function JobCard({
     j.postedDate ?? toSafeDate((j as any).created_at ?? (j as any).updated_at);
   const itemRating = j.itemRatingAvg ?? (j as any).item_rating_avg ?? null;
   const itemReviewCount =
-    j.itemReviewCount ?? (j as any).item_review_count ?? 0;
+    j.itemReviewCount ??
+    (j as any).item_review_count ?? 0;
   const rentalCount =
     j.rentalCount ?? (j as any).rental_count ?? itemReviewCount;
   const userRating =
@@ -802,7 +814,8 @@ function JobCard({
               <Text
                 style={[
                   styles.posterInitial,
-                  { color: colors.headerText },
+                  { color: 
+                  colors.headerText },
                 ]}
               >
                 {initial}
@@ -811,7 +824,8 @@ function JobCard({
           )}
         </TouchableOpacity>
 
-        <View style={styles.jobHeaderContent}>
+        <View 
+        style={styles.jobHeaderContent}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <CatIcon size={18} color={colors.text} />
             <Text
@@ -822,7 +836,8 @@ function JobCard({
             </Text>
           </View>
 
-          {j.subcategory ? (
+          {j.subcategory ?
+            (
             <View
               style={{
                 marginTop: 4,
@@ -844,7 +859,8 @@ function JobCard({
             <View style={{ height: 0 }} />
           )}
 
-          {isSponsored ? (
+          {isSponsored ?
+            (
             <Text
               style={[styles.sponsoredUnderCategory, { color: "#FFB800" }]}
               numberOfLines={1}
@@ -869,7 +885,8 @@ function JobCard({
         </View>
       </View>
 
-      {imageUrls.length > 0 ? (
+      {imageUrls.length > 0 ?
+        (
         <View style={styles.jobImagesWrap}>
           <ScrollView
             horizontal
@@ -986,7 +1003,8 @@ function ThemeSwipePicker({
           ]}
         >
           <View style={styles.themeSheetHeader}>
-            <View style={styles.themeHandle} />
+            <View 
+            style={styles.themeHandle} />
             <TouchableOpacity
               style={styles.themeCloseButton}
               onPress={onClose}
@@ -1012,7 +1030,8 @@ function ThemeSwipePicker({
             bounces={false}
             onMomentumScrollEnd={onMomentumEnd}
             contentContainerStyle={{
-              paddingLeft: THEME_SIDE_PADDING + centerOffset,
+              paddingLeft: 
+              THEME_SIDE_PADDING + centerOffset,
               paddingRight: THEME_SIDE_PADDING + centerOffset,
               alignItems: "center",
             }}
@@ -1051,10 +1070,12 @@ function ThemeSwipePicker({
                         {
                           backgroundColor: item.color,
                         },
-                        active && styles.themeCircleActive,
+                        active 
+                        && styles.themeCircleActive,
                       ]}
                     >
-                      {active ? (
+                      {active ?
+                        (
                         <Check size={18} color={item.ringColor} />
                       ) : null}
                     </View>
@@ -1255,7 +1276,8 @@ export default function HomeScreen() {
               })
             : true;
           const subOk = hasSub
-            ? selectedSubcategoryIds.some((id) => {
+            ?
+              selectedSubcategoryIds.some((id) => {
                 const pickedName = subcategoryById[id]?.name;
                 return (
                   (!!job.subcategory_id && String(job.subcategory_id) === id) ||
@@ -1363,7 +1385,6 @@ export default function HomeScreen() {
           </Text>
           
           <View style={styles.headerRight}>
-            {/* Ойлгомжгүй Мэдэгдлийн дүрсийг эндээс УСТГАЛАА */}
             <Image
               source={getLogoSource(currentTheme)}
               style={styles.logo}
@@ -1372,118 +1393,36 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.searchContainer}>
-          <Search size={20} color="#666666" />
-          <TextInput
-            style={[styles.searchInput, { color: "#111111" }]}
-            placeholder="Хайх"
-            placeholderTextColor="#666666"
-            value={searchText}
-            onChangeText={setSearchText}
-            returnKeyType="search"
-          />
-          {!!searchText.trim() && (
-            <TouchableOpacity
-              onPress={clearTopSearch}
-              activeOpacity={0.8}
-              style={{ padding: 4 }}
-            >
-              <X size={18} color="#666666" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.filterContainer}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.filterButton,
-              styles.touchSafeButton,
-              isSmall && { paddingHorizontal: 6, paddingVertical: 9 },
-              pressed && { opacity: 0.75, transform: [{ scale: 0.98 }] },
-            ]}
-            onPress={() => {
-              Keyboard.dismiss();
-              setShowCategoryModal(true);
-            }}
-            android_ripple={{ color: "rgba(0,0,0,0.08)", borderless: false }}
-            hitSlop={8}
+        {/* 🎯 ЗАСВАР: Түрээслэх/Түрээслүүлэх товчийг авч хаяж, Хайлтын баруун талд маш цэвэрхэн Категори нээх икон байрлуулав */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchContainer}>
+            <Search size={20} color="#666666" />
+            <TextInput
+              style={[styles.searchInput, { color: "#111111" }]}
+              placeholder="Хайх"
+              placeholderTextColor="#666666"
+              value={searchText}
+              onChangeText={setSearchText}
+              returnKeyType="search"
+            />
+            {!!searchText.trim() && (
+              <TouchableOpacity
+                onPress={clearTopSearch}
+                activeOpacity={0.8}
+                style={{ padding: 4 }}
+              >
+                <X size={18} color="#666666" />
+              </TouchableOpacity>
+            )}
+          </View>
+          
+          {/* Баруун талын Категори нээдэг шинэ икон товчлуур */}
+          <TouchableOpacity 
+            style={[styles.categoryIconBtn, { backgroundColor: colors.background, borderColor: colors.border }]} 
+            onPress={() => setShowCategoryModal(true)}
           >
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.85}
-              allowFontScaling={false}
-              style={[
-                styles.filterButtonText,
-                { color: colors.text, fontSize: isSmall ? 12 : 13 },
-              ]}
-            >
-              Категори
-              {selectedCategoryIds.length || selectedSubcategoryIds.length
-                ? ` (${selectedCategoryIds.length}/${selectedSubcategoryIds.length})`
-                : ""}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.filterButton,
-              styles.touchSafeButton,
-              isSmall && { paddingHorizontal: 6, paddingVertical: 9 },
-              selectedFilter === "need" && styles.filterButtonActive,
-            ]}
-            onPress={() =>
-              setSelectedFilter((prev) => (prev === "need" ? "all" : "need"))
-            }
-            android_ripple={{ color: "rgba(0,0,0,0.08)", borderless: false }}
-            hitSlop={8}
-          >
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.85}
-              allowFontScaling={false}
-              style={[
-                styles.filterButtonText,
-                {
-                  color: selectedFilter === "need" ? "#fff" : colors.text,
-                  fontSize: isSmall ? 12 : 13,
-                },
-              ]}
-            >
-              Түрээслэх
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.filterButton,
-              styles.touchSafeButton,
-              isSmall && { paddingHorizontal: 6, paddingVertical: 9 },
-              selectedFilter === "rent" && styles.filterButtonActive,
-            ]}
-            onPress={() =>
-              setSelectedFilter((prev) => (prev === "rent" ? "all" : "rent"))
-            }
-            android_ripple={{ color: "rgba(0,0,0,0.08)", borderless: false }}
-            hitSlop={8}
-          >
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.75}
-              allowFontScaling={false}
-              style={[
-                styles.filterButtonText,
-                {
-                  color: selectedFilter === "rent" ? "#fff" : colors.text,
-                  fontSize: isSmall ? 11 : 13,
-                },
-              ]}
-            >
-              Түрээслүүлэх
-            </Text>
-          </Pressable>
+            <ClipboardList size={22} color={colors.primary} />
+          </TouchableOpacity>
         </View>
 
         {(selectedCategoryNames.length > 0 ||
@@ -1680,7 +1619,7 @@ export default function HomeScreen() {
               />
 
               {(selectedCategoryIds.length > 0 ||
-                selectedSubcategoryIds.length > 0) && (
+              selectedSubcategoryIds.length > 0) && (
                 <TouchableOpacity
                   style={[
                     styles.clearButton,
@@ -1696,7 +1635,7 @@ export default function HomeScreen() {
                   <Text
                     style={[styles.clearButtonText, { color: colors.text }]}
                   >
-                     Бүгдийг харах
+                    Бүгдийг харах
                   </Text>
                 </TouchableOpacity>
               )}
@@ -1747,7 +1686,8 @@ export default function HomeScreen() {
                       const hasMatchingSub = subs.some((s) =>
                         matchesSearch(s.name),
                       );
-                      return categoryMatches || hasMatchingSub;
+                      return categoryMatches ||
+                        hasMatchingSub;
                     })
                     .map((c) => {
                       const subs = subByCategoryId[c.id] ?? [];
@@ -1949,21 +1889,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  greeting: { fontSize: 18, fontWeight: "600" as const },
+  greeting: { fontSize: 18, fontWeight: "600" },
   logo: { width: 140, height: 60 },
 
+  // 🎯 ЗАСВАР: Хайлтын талбар болон Баруун талын Категори иконыг нэг эгнээнд оруулав
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    gap: 10,
+    marginBottom: 12,
+  },
   searchContainer: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    marginHorizontal: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
     gap: 10,
-    marginBottom: 12,
   },
   searchInput: { flex: 1, fontSize: 16, padding: 0 },
+  categoryIconBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
 
   content: { flex: 1 },
   contentContainer: { paddingTop: 16 },
@@ -1975,8 +1930,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 12,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700" as const },
-  seeAll: { fontSize: 14, fontWeight: "600" as const },
+  sectionTitle: { fontSize: 18, fontWeight: "700" },
+  seeAll: { fontSize: 14, fontWeight: "600" },
 
   jobCard: {
     marginHorizontal: 20,
@@ -1995,7 +1950,7 @@ const styles = StyleSheet.create({
   },
   ratingLineText: {
     fontSize: 12,
-    fontWeight: "700" as const,
+    fontWeight: "700",
   },
 
   jobMetaInfo: {
@@ -2038,7 +1993,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
 
-  jobTitle: { fontSize: 18, fontWeight: "700" as const, color: "#1A1A1A" },
+  jobTitle: { fontSize: 18, fontWeight: "700", color: "#1A1A1A" },
   jobDescription: { fontSize: 14, color: "#666666", lineHeight: 20 },
 
   posterAvatar: {
@@ -2049,13 +2004,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  posterInitial: { fontSize: 20, fontWeight: "700" as const, color: "#1A1A1A" },
-  posterName: { fontSize: 13, fontWeight: "400" as const, color: "#666666" },
-  posterDate: { fontSize: 13, fontWeight: "400" as const, color: "#666666" },
+  posterInitial: { fontSize: 20, fontWeight: "700", color: "#1A1A1A" },
+  posterName: { fontSize: 13, fontWeight: "400", color: "#666666" },
+  posterDate: { fontSize: 13, fontWeight: "400", color: "#666666" },
 
   sponsoredUnderCategory: {
     fontSize: 14,
-    fontWeight: "800" as const,
+    fontWeight: "800",
     marginTop: 6,
     color: "#FFB800",
   },
@@ -2111,8 +2066,8 @@ const styles = StyleSheet.create({
   },
   filterButtonText: {
     fontSize: 13,
-    fontWeight: "600" as const,
-    textAlign: "center" as const,
+    fontWeight: "600",
+    textAlign: "center",
     flexShrink: 1,
   },
 
@@ -2138,7 +2093,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
   },
-  modalTitle: { fontSize: 20, fontWeight: "700" as const },
+  modalTitle: { fontSize: 20, fontWeight: "700" },
   closeButton: { padding: 4 },
 
   modalSearchInput: {
@@ -2155,7 +2110,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     alignItems: "center",
   },
-  clearButtonText: { fontSize: 15, fontWeight: "600" as const },
+  clearButtonText: { fontSize: 15, fontWeight: "600" },
 
   applyButton: {
     marginTop: 8,
@@ -2163,7 +2118,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
   },
-  applyButtonText: { fontSize: 15, fontWeight: "800" as const },
+  applyButtonText: { fontSize: 15, fontWeight: "800" },
 
   categoryList: { marginBottom: 8 },
   categoryItem: {
@@ -2175,7 +2130,7 @@ const styles = StyleSheet.create({
   categoryItemText: { fontSize: 15 },
 
   floatingButton: {
-    position: "absolute" as const,
+    position: "absolute",
     right: 20,
     bottom: 90,
     width: 56,
@@ -2196,15 +2151,15 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   selectedCategoryBadge: {
-    flexDirection: "row" as const,
-    alignItems: "flex-start" as const,
-    justifyContent: "space-between" as const,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
     gap: 8,
   },
-  selectedCategoryText: { fontSize: 14, fontWeight: "700" as const },
+  selectedCategoryText: { fontSize: 14, fontWeight: "700" },
   clearCategoryButton: { padding: 4 },
 
   themeOverlay: {

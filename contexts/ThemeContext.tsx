@@ -1,3 +1,4 @@
+// contexts/ThemeContext.tsx
 import createContextHook from "@nkzw/create-context-hook";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -10,7 +11,6 @@ import {
 } from "@/constants/colors";
 
 const THEME_STORAGE_KEY = "@app_theme";
-
 const LEGACY_THEME_MAP: Record<string, ThemeType> = {
   default: "purple",
   dark: "navy",
@@ -24,7 +24,6 @@ const isValidTheme = (value: string | null): value is ThemeType => {
 const normalizeStoredTheme = (value: string | null): ThemeType => {
   if (!value) return DEFAULT_THEME;
   if (isValidTheme(value)) return value;
-
   const mapped = LEGACY_THEME_MAP[value];
   if (mapped) return mapped;
 
@@ -35,12 +34,10 @@ export const [ThemeContext, useTheme] = createContextHook(() => {
   const [currentTheme, setCurrentThemeState] = useState<ThemeType>(DEFAULT_THEME);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Санах ойноос өнгө унших функц
   const loadTheme = useCallback(async () => {
     try {
       const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
       const normalizedTheme = normalizeStoredTheme(savedTheme);
-
       setCurrentThemeState(normalizedTheme);
 
       if (savedTheme !== normalizedTheme) {
@@ -54,13 +51,10 @@ export const [ThemeContext, useTheme] = createContextHook(() => {
     }
   }, []);
 
-  // Хязгааргүй гогцоо үүсгэдэг байсан хэсгийг засав.
-  // [loadTheme] байсныг [] хоосон болгосноор апп асах үед зөвхөн 1 удаа ажиллана.
   useEffect(() => {
     loadTheme();
   }, []); 
 
-  // Өнгө солих функц
   const changeTheme = useCallback(async (theme: ThemeType) => {
     try {
       const safeTheme = themes[theme] ? theme : DEFAULT_THEME;

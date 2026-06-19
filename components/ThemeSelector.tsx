@@ -1,7 +1,7 @@
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Modal, StyleSheet, Text, TouchableOpacity, View, InteractionManager } from "react-native";
 import { X, Check } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
-import { ThemeType, themes } from "@/constants/colors";
+import { ThemeType } from "@/constants/colors";
 
 interface ThemeSelectorProps {
   visible: boolean;
@@ -17,14 +17,25 @@ const themeOptions: { type: ThemeType; name: string; description: string }[] = [
   { type: "mint", name: "Mint", description: "Минт ногоон өнгө" },
 ];
 
+const PREVIEW_BACKGROUNDS: Record<ThemeType, string> = {
+  purple: "#6E0AB0",
+  peach: "#FFE3DD",
+  navy: "#201A2E",
+  gray: "#D0D2D8",
+  mint: "#8FE3CF",
+  sky: "#AFC6D9"
+};
+
 export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) {
   const { currentTheme, changeTheme, colors } = useTheme();
 
-  const handleSelectTheme = async (theme: ThemeType) => {
-    await changeTheme(theme);
-    setTimeout(() => {
-      onClose();
-    }, 200);
+  const handleSelectTheme = (theme: ThemeType) => {
+    changeTheme(theme);
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => {
+        onClose();
+      }, 250); 
+    });
   };
 
   return (
@@ -54,7 +65,7 @@ export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) 
           <View style={styles.themeList}>
             {themeOptions.map((option) => {
               const isSelected = currentTheme === option.type;
-              const themeColors = themes[option.type] ?? themes.purple;
+              const previewBg = PREVIEW_BACKGROUNDS[option.type] || "#6E0AB0";
 
               return (
                 <TouchableOpacity
@@ -75,8 +86,8 @@ export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) 
                       style={[
                         styles.colorPreview,
                         {
-                          backgroundColor: themeColors.primary,
-                          borderColor: themeColors.border,
+                          backgroundColor: previewBg,
+                          borderColor: colors.border,
                         },
                       ]}
                     />
@@ -92,7 +103,7 @@ export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) 
 
                   {isSelected && (
                     <View style={[styles.checkIcon, { backgroundColor: colors.primary }]}>
-                      <Check size={18} color="#FFFFFF" strokeWidth={3} />
+                      <Check size={18} color={colors.headerText} strokeWidth={3} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -106,77 +117,18 @@ export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) 
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  modalBackdrop: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    paddingBottom: 40,
-    paddingHorizontal: 20,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-  },
-  closeButton: {
-    padding: 4,
-  },
-  themeList: {
-    gap: 12,
-  },
-  themeItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-  },
-  themeItemContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  colorPreview: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginRight: 16,
-    borderWidth: 1,
-  },
-  themeInfo: {
-    flex: 1,
-  },
-  themeName: {
-    fontSize: 16,
-    fontWeight: "600" as const,
-    marginBottom: 2,
-  },
-  themeDescription: {
-    fontSize: 13,
-  },
-  checkIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
+  modalBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.4)" },
+  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 20, paddingBottom: 40, paddingHorizontal: 20 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "700" },
+  closeButton: { padding: 4 },
+  themeList: { gap: 12 },
+  themeItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 16, borderRadius: 16 },
+  themeItemContent: { flexDirection: "row", alignItems: "center", flex: 1 },
+  colorPreview: { width: 44, height: 44, borderRadius: 22, marginRight: 16, borderWidth: 1 },
+  themeInfo: { flex: 1 },
+  themeName: { fontSize: 16, fontWeight: "600", marginBottom: 2 },
+  themeDescription: { fontSize: 12 },
+  checkIcon: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
 });

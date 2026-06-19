@@ -576,7 +576,7 @@ async function queryJobsRobustly(): Promise<any[]> {
   for (const selectAttempt of selectAttempts) {
     for (const useActiveFilter of activeFilterAttempts) {
       try {
-        let query = supabase.from("jobs").select(selectAttempt.select);
+        let query = supabase.from("active_jobs_v").select(selectAttempt.select);
         if (useActiveFilter) {
           query = query.eq("is_active", true);
         }
