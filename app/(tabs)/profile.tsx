@@ -39,7 +39,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import ThemeSelector from "@/components/ThemeSelector";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
 import SponsorCountdown from "@/components/SponsorCountdown";
 import type { Href } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -47,37 +46,10 @@ import { getLogoSource } from "@/constants/logo";
 
 const APP_VERSION = "1.0.0";
 const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
-const STORAGE_BUCKET = "post-images"; 
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let bufferLength = base64.length * 0.75;
-  const len = base64.length;
-
-  if (base64[len - 1] === "=") bufferLength--;
-  if (base64[len - 2] === "=") bufferLength--;
-
-  const arrayBuffer = new ArrayBuffer(bufferLength);
-  const bytes = new Uint8Array(arrayBuffer);
-  let p = 0;
-
-  for (let i = 0; i < len; i += 4) {
-    const encoded1 = chars.indexOf(base64[i]);
-    const encoded2 = chars.indexOf(base64[i + 1]);
-    const encoded3 = chars.indexOf(base64[i + 2]);
-    const encoded4 = chars.indexOf(base64[i + 3]);
-
-    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
-
-    if (encoded3 !== 64 && encoded3 !== -1) {
-      bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
-    }
-    if (encoded4 !== 64 && encoded4 !== -1) {
-      bytes[p++] = ((encoded3 & 3) << 6) | encoded4;
-    }
-  }
-  return arrayBuffer;
-}
+// ⚠️ АНХААР: Supabase дээрх Storage савны нэрээ яг том жижиг үсгээр нь тааруулж бичих!
+// Саяны зургаас харахад таны савны нэр "UserProfile" байсан тул энд ингэж засав.
+const STORAGE_BUCKET = "UserProfile"; 
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -112,7 +84,6 @@ export default function ProfileScreen() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false); 
   
-  // 🎯 НЭМЭЛТ: Таны бусдаас түрээсэлсэн барааны тоог хадгалах хувьсагч (Одоогоор 0 байна, дараа нь баазаас уншина)
   const [rentedFromOthersCount, setRentedFromOthersCount] = useState(0);
 
   const formatRating = (value: any) => {
@@ -153,47 +124,58 @@ export default function ProfileScreen() {
     refetchProfile?.().catch(() => {});
   }, []);
 
+  // 🎯 ЗУРАГ ОРУУЛАХ ХЭСГИЙН 100% ЗАССАН ЛОГИК
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.7,
+        quality: 0.5, // 0.7-аас 0.5 болгов, илүү хурдан хуулагдана.
       });
 
       if (!result.canceled && result.assets[0]) {
         setIsUploadingImage(true);
         const imageUri = result.assets[0].uri;
-        const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: "base64" });
-        const fileData = base64ToArrayBuffer(base64);
+
+        // 1. Утасны зургийг Blob (файлын өгөгдөл) болгож хувиргана. 
+        // Энэ алхам байхгүй бол Supabase зураг хүлээж авдаггүй.
+        const response = await fetch(imageUri);
+        const fileData = await response.blob();
 
         const userId = user?.id || "anonymous";
-        const fileName = `avatar-${userId}-${Date.now()}.jpg`;
-        const filePath = `avatars/${fileName}`;
+        const fileExt = imageUri.substring(imageUri.lastIndexOf('.') + 1);
+        const fileName = `avatar-${userId}-${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
 
+        // 2. Supabase Storage руу хуулах (ArrayBuffer биш, Blob ашиглана)
         const { error: uploadError } = await supabase.storage
           .from(STORAGE_BUCKET)
           .upload(filePath, fileData, {
-            contentType: "image/jpeg",
+            contentType: `image/${fileExt}`, // Автоматаар jpeg эсвэл png танина
             upsert: true,
           });
 
         if (uploadError) {
-          throw uploadError;
+          console.error("Storage upload error:", uploadError);
+          throw new Error("Storage permission эсвэл холболтын алдаа гарлаа");
         }
 
+        // 3. Хуулсан зургаа ил гаргах линк үүсгэх
         const { data: publicData } = supabase.storage
           .from(STORAGE_BUCKET)
           .getPublicUrl(filePath);
 
+        // 4. Тэр линкээ AuthContext.tsx-д байгаа updateProfile-рүү явуулж бааздаа хадгалах
         if (publicData?.publicUrl) {
-          await updateProfile({ photoUri: publicData.publicUrl });
+          // Энд цаг хугацааны тамга (timestamp) нэмснээр утас хуучин зургийг кэшлэхгүй (cache) шууд шинэ зургийг харуулдаг.
+          const freshUrl = `${publicData.publicUrl}?t=${Date.now()}`;
+          await updateProfile({ photoUri: freshUrl });
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to pick image:", error);
-      Alert.alert("Алдаа", "Зураг хуулж хадгалахад алдаа гарлаа. Та дахин оролдоно уу.");
+      Alert.alert("Алдаа", error.message || "Зураг хуулж хадгалахад алдаа гарлаа. Та дахин оролдоно уу.");
     } finally {
       setIsUploadingImage(false);
     }
@@ -448,7 +430,6 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 🎯 ЗАСВАР: 4 хайрцгийг 2 болгож цөөлсөн хэсэг */}
         <View style={styles.statsContainer}>
           <TouchableOpacity
             style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}

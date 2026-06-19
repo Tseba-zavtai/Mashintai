@@ -61,7 +61,6 @@ const isJobSponsoredNow = (job: any) => {
   return t > Date.now();
 };
 
-// ✅ Helper: өдөр эхлэл / өдөр төгсгөл
 const startOfDay = (d: Date) => {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -80,7 +79,6 @@ function formatYMD(d: Date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// ✅ Android дээр DateTimePicker inline тавибал "дахин дахин popup" болох нь элбэг.
 function DateRow({
   label,
   value,
@@ -93,7 +91,6 @@ function DateRow({
   onPick: (d: Date) => void;
 }) {
   const [show, setShow] = useState(false);
-
   const displayText = value ? formatYMD(value) : placeholder;
 
   if (Platform.OS === "ios") {
@@ -147,10 +144,8 @@ function DateRow({
 export default function AdminPanel() {
   const router = useRouter();
   const queryClient = useQueryClient();
-
   const { isSuperAdmin, isAdminUnlocked } = useAuth() as any;
   const { updateJobCategory, deleteJob, sponsorJob } = useJobs();
-
   const [activeTab, setActiveTab] = useState<"users" | "jobs" | "feedback">("users");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -161,30 +156,22 @@ export default function AdminPanel() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-
-  // ✅ User Sponsored editor modal
+  
   const [sponsorUserModalVisible, setSponsorUserModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [userFrom, setUserFrom] = useState<Date | null>(null);
   const [userUntil, setUserUntil] = useState<Date | null>(null);
-
-  // ✅ Job Sponsored until editor modal
+  
   const [sponsorJobModalVisible, setSponsorJobModalVisible] = useState(false);
   const [editingJob, setEditingJob] = useState<any | null>(null);
   const [jobUntil, setJobUntil] = useState<Date | null>(null);
 
-  // ✅ Feedback detail modal
   const [feedbackDetailVisible, setFeedbackDetailVisible] = useState(false);
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(null);
 
-  // ✅ Edge function URL (deploy OK болсон)
-  const LIST_FEEDBACK_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/list-feedback";
-
-  // ✅ NEW: users + delete user
-  const LIST_USERS_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/list-users";
+  // ✅ Зөвхөн хэрэглэгч бүрмөсөн устгах үйлдэл л Edge Function шаардана (RLS-ээс гадуур устгах учраас)
   const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
 
-  // ✅ Guard
   if (!isSuperAdmin || !isAdminUnlocked) {
     return (
       <View style={styles.container}>
@@ -203,27 +190,27 @@ export default function AdminPanel() {
     );
   }
 
-  // ✅ USERS query (EDGE FUNCTION)
+  // ✅ USERS query (ШУУД БААЗААС ТАТАХ - Edge Function хэрэггүй)
   const usersQuery = useQuery({
     queryKey: ["admin-users"],
     queryFn: async () => {
-      const { data: s } = await supabase.auth.getSession();
-      const token = s?.session?.access_token;
-      if (!token) throw new Error("Session token олдсонгүй");
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .limit(1000);
 
-      const res = await fetch(LIST_USERS_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ limit: 1000 }),
+      if (error) {
+        console.log("admin-users error:", error);
+        throw error;
+      }
+
+      // JavaScript дотор сүүлд бүртгүүлснээр нь эрэмбэлэх
+      const sorted = (data || []).sort((a, b) => {
+        if (!a.created_at || !b.created_at) return 0;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(json?.error ?? "Users авахад алдаа гарлаа");
-
-      return (json?.items ?? []) as AdminUser[];
+      return sorted as AdminUser[];
     },
     enabled: true,
   });
@@ -232,9 +219,7 @@ export default function AdminPanel() {
   const jobsQuery = useQuery({
     queryKey: ["admin-jobs"],
     queryFn: async () => {
-      
       const { data, error } = await supabase.from("jobs").select("*").order("created_at", { ascending: false });
-
       if (error) {
         console.log("admin-jobs query error:", error);
         throw error;
@@ -244,27 +229,21 @@ export default function AdminPanel() {
     enabled: true,
   });
 
-  // ✅ FEEDBACK query (edge function)
+  // ✅ FEEDBACK query (ШУУД БААЗААС ТАТАХ - Edge Function хэрэггүй)
   const feedbackQuery = useQuery({
     queryKey: ["admin-feedback"],
     queryFn: async () => {
-      const { data: s } = await supabase.auth.getSession();
-      const token = s?.session?.access_token;
-      if (!token) throw new Error("Session token олдсонгүй");
+      const { data, error } = await supabase
+        .from("feedback")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
 
-      const res = await fetch(LIST_FEEDBACK_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ limit: 200 }),
-      });
-
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(json?.error ?? "Feedback авахад алдаа гарлаа");
-
-      return (json?.items ?? []) as FeedbackItem[];
+      if (error) {
+        console.log("admin-feedback error:", error);
+        throw error;
+      }
+      return (data || []) as FeedbackItem[];
     },
     enabled: true,
   });
@@ -690,6 +669,7 @@ export default function AdminPanel() {
                         <Text style={{ color: "#999", fontSize: 12 }}>{new Date(f.created_at).toLocaleString()}</Text>
                       </View>
                     </View>
+  
                     <Text style={styles.cardInfo}>📱 {f.phone || "-"}</Text>
                     {!!f.platform && (
                       <Text style={styles.cardInfo}>
@@ -852,10 +832,8 @@ export default function AdminPanel() {
                 style={[styles.saveButton, { margin: 0 }]}
                 onPress={() => {
                   if (!editingUser) return;
-
                   const fixedFrom = userFrom ? startOfDay(userFrom) : null;
                   const fixedUntil = userUntil ? endOfDay(userUntil) : null;
-
                   if (fixedFrom && fixedUntil && fixedUntil.getTime() < fixedFrom.getTime()) {
                     Alert.alert("Алдаа", "Дуусах огноо нь эхлэх огнооноос хойш байх ёстой.");
                     return;
