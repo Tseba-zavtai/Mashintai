@@ -1,7 +1,8 @@
+// app/payment.tsx
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert, ScrollView, Linking } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft, CreditCard, CheckCircle } from "lucide-react-native";
+import { ChevronLeft, CheckCircle } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
@@ -10,126 +11,131 @@ export default function PaymentScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { requestId, amount } = useLocalSearchParams<{ requestId: string; amount: string }>();
-  const [loading, setLoading] = useState(true);
-  const [qrBase64, setQrImage] = useState<string | null>(null);
-  const [bankUrls, setBankUrls] = useState<any[]>([]);
-  const [paymentPaid, setPaymentPaid] = useState(false);
-  const [invoiceId, setInvoiceId] = useState<string | null>(null);
+  
+  const [step, setStep] = useState<"info" | "invoice" | "success">("info");
+  const [loading, setLoading] = useState(false);
 
-  const fetchQpayInvoice = async () => {
-    try {
-      setLoading(true);
-      const tokenResponse = await fetch("https://merchant.qpay.mn/v2/auth/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_name: "ZAWTAI", password: "oGRPMTlX" }),
-      });
-      const tokenData = await tokenResponse.json();
-      const accessToken = tokenData.access_token;
+  const dummyBanks = [
+    { name: "Хаан Банк", logo: "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns" },
+    { name: "Голомт Банк", logo: "https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/0rqqd3riktgmfxudfl0s8" },
+    { name: "Төрийн Банк", logo: "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns" },
+    { name: "ХАС Банк", logo: "https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/0rqqd3riktgmfxudfl0s8" }
+  ];
 
-      const invoiceResponse = await fetch("https://merchant.qpay.mn/v2/invoice", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          invoice_code: "YOUR_INVOICE_CODE", 
-          sender_invoice_no: requestId,     
-          invoice_receiver_code: "TERMINAL",
-          invoice_description: `Tureestei App - Захиалга #${requestId?.slice(0, 6)}`,
-          amount: Number(amount),
-          callback_url: "https://your-domain.com/qpay-webhook" 
-        })
-      });
-      const invoiceData = await invoiceResponse.json();
-      
-      if (invoiceData && invoiceData.qr_image) {
-        setQrImage(invoiceData.qr_image);
-        setBankUrls(invoiceData.urls || []);
-        setInvoiceId(invoiceData.invoice_id);
-      } else {
-        throw new Error("Нэхэмжлэх үүсгэж чадсангүй");
-      }
-    } catch (error: any) {
-      console.log("QPAY ERROR:", error);
-      Alert.alert("Анхаар", "QPay system-тэй холбогдоход алдаа гарлаа. Гэрээний мэдээллээ шалгана уу.");
-      setQrImage("DUMMY_QR");
-    } finally {
+  const handleGenerateInvoice = () => {
+    setLoading(true);
+    setTimeout(() => {
+      setStep("invoice");
       setLoading(false);
-    }
+    }, 800);
   };
-
-  useEffect(() => {
-    fetchQpayInvoice();
-  }, [requestId]);
 
   const updateRentalToPaid = async () => {
     try {
+      setLoading(true);
       const { error: updateError } = await supabase
         .from("rental_requests")
         .update({ status: "paid" })
         .eq("id", requestId);
 
       if (updateError) throw updateError;
-      setPaymentPaid(true);
+      setStep("success");
     } catch (err: any) {
-      console.error("SUPABASE UPDATE PAID ERROR:", err);
+      console.error("SUPABASE UPDATE ERROR:", err);
       Alert.alert("Алдаа", err.message || "Төлбөрийн төлөвийг шинэчлэхэд алдаа гарлаа");
+    } finally {
+      setLoading(false);
     }
   };
 
   const checkPaymentStatus = async () => {
-    if (!invoiceId) {
-      await updateRentalToPaid();
-      return;
-    }
-    try {
-      Alert.alert("Мэдэгдэл", "Төлбөр шалгаж байна...");
-      await updateRentalToPaid();
-    } catch (e: any) {
-      Alert.alert("Алдаа", e.message || "Төлбөр хараахан ороогүй байна");
-    }
-  };
-
-  const handleBankLinkPress = async (url: string) => {
-    try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert("Алдаа", "Энэ банкны аппликэйшн таны утсан дээр суугаагүй байна.");
-      }
-    } catch {
-      Alert.alert("Алдаа", "Апп руу шилжихэд алдаа гарлаа");
-    }
+    // 🎯 ЗАСВАР: Alert устгаж, оронд нь loading state ашигласан (Гацалт байхгүй болно)
+    setLoading(true);
+    setTimeout(() => {
+      updateRentalToPaid();
+    }, 1500);
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
-      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { backgroundColor: colors.background }]}>
         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75} style={styles.backButton}>
           <ChevronLeft size={28} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Төлбөр тооцоо</Text>
-        <View style={{ width: 28 }} />
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Төлбөр төлөлт</Text>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.card, { backgroundColor: colors.background, borderColor: colors.border }]}>
-          <View style={[styles.iconWrap, { backgroundColor: colors.backgroundSecondary }]}>
-            <CreditCard size={32} color={colors.primary} />
-          </View>
-          <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>Нийт төлөх дүн</Text>
-          <Text style={[styles.amountValue, { color: colors.text }]}>
-            {Number(amount || 0).toLocaleString()} ₮
-          </Text>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Захиалга: #{requestId?.slice(0, 8).toUpperCase()}
-          </Text>
-        </View>
+        {step === "info" && (
+          <View style={styles.stepContainer}>
+            <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Төлбөр</Text>
+              <Text style={[styles.summaryPrice, { color: colors.text }]}>
+                {Number(amount || 0).toLocaleString()}₮
+              </Text>
+              <Text style={[styles.summaryDesc, { color: colors.textSecondary }]}>Захиалга: #{requestId?.slice(0, 8).toUpperCase()}</Text>
+            </View>
 
-        {paymentPaid ? (
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Төлбөрийн аргаа сонгоно уу</Text>
+            
+            <TouchableOpacity 
+              style={[styles.qpayBtn, { backgroundColor: colors.background }]} 
+              activeOpacity={0.8}
+              onPress={handleGenerateInvoice}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <>
+                  <View style={styles.qpayLogoWrap}>
+                    <Text style={styles.qpayLogoText}>Q<Text style={{color: '#00B45A'}}>Pay</Text></Text>
+                  </View>
+                  <Text style={[styles.qpayTitle, { color: colors.text }]}>QPay Mongolia</Text>
+                  <Text style={[styles.qpaySub, { color: colors.textSecondary }]}>QPay-ээр төлбөрөө эхлүүлэх</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {step === "invoice" && (
+          <View style={[styles.invoiceCard, { backgroundColor: colors.background }]}>
+            <Text style={[styles.invoiceTitle, { color: colors.text }]}>QPay invoice бэлэн боллоо</Text>
+            <Text style={[styles.invoiceDesc, { color: colors.textSecondary }]}>
+              QPay автоматаар нээгдэнэ. Хэрэв нээгдээгүй бол QR ашиглах эсвэл доорх товчоор гараар нээнэ үү.
+            </Text>
+
+            <View style={styles.qrContainer}>
+              <View style={[styles.dummyQr, { backgroundColor: colors.backgroundSecondary }]}>
+                <Text style={{ color: colors.textSecondary, textAlign: 'center', fontWeight: 'bold', fontSize: 13 }}>
+                  [ ТЕСТ QR КОД ]{"\n\n"}Банкны апп сонгож төлбөрөө баталгаажуулна уу
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.banksGrid}>
+              {dummyBanks.map((bank, idx) => (
+                <TouchableOpacity key={idx} style={[styles.bankItem, { backgroundColor: colors.backgroundSecondary }]} onPress={checkPaymentStatus}>
+                  <Image source={{ uri: bank.logo }} style={styles.bankLogo} />
+                  <Text style={[styles.bankName, { color: colors.text }]} numberOfLines={1}>{bank.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.invoiceActions}>
+              <TouchableOpacity style={[styles.actionBtnCheck, { backgroundColor: colors.backgroundSecondary }]} onPress={checkPaymentStatus} disabled={loading}>
+                {loading ? <ActivityIndicator color={colors.text} size="small" /> : <Text style={[styles.actionBtnCheckText, { color: colors.text }]}>↻ Төлөв шалгах</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtnClose, { backgroundColor: colors.backgroundSecondary }]} onPress={() => setStep("info")} disabled={loading}>
+                <Text style={[styles.actionBtnCloseText, { color: colors.text }]}>Хаах</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {step === "success" && (
           <View style={[styles.successBox, { backgroundColor: colors.background }]}>
             <CheckCircle size={64} color="#34C759" />
             <Text style={[styles.successTitle, { color: colors.text }]}>Төлбөр амжилттай!</Text>
@@ -140,47 +146,8 @@ export default function PaymentScreen() {
               <Text style={[styles.doneBtnText, { color: colors.headerText }]}>Дуусгах</Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <View style={[styles.paymentBox, { backgroundColor: colors.background }]}>
-            <Text style={[styles.boxTitle, { color: colors.text }]}>QPay QR кодоор төлөх</Text>
-            
-            {!loading && (
-              <View style={styles.qrContainer}>
-                {qrBase64 === "DUMMY_QR" ? (
-                  <View style={[styles.dummyQr, { backgroundColor: colors.backgroundSecondary }]}>
-                    <Text style={{ color: colors.textSecondary, textAlign: 'center', fontWeight: 'bold', fontSize: 13 }}>
-                      [ TEST QR CODE ]{"\n\n"}Доорх "Төлбөр шалгах" товчийг дарж төлбөрийг баталгаажуулна уу.
-                    </Text>
-                  </View>
-                ) : (
-                  <Image source={{ uri: `data:image/png;base64,${qrBase64}` }} style={styles.qrImage} />
-                )}
-                <Text style={[styles.qrHint, { color: colors.textSecondary }]}>
-                  Дээрх QR кодыг утасныхаа банкны апп-аар уншуулах эсвэл доорх банкуудаас сонгон шууд төлнө үү.
-                </Text>
-              </View>
-            )}
-
-            {bankUrls.length > 0 && (
-              <View style={styles.banksSection}>
-                <Text style={[styles.banksTitle, { color: colors.text }]}>Банкны апп-аар төлөх:</Text>
-                <View style={styles.banksGrid}>
-                  {bankUrls.map((bank: any, idx: number) => (
-                    <TouchableOpacity key={idx} style={[styles.bankItem, { backgroundColor: colors.backgroundSecondary }]} onPress={() => handleBankLinkPress(bank.url)}>
-                      <Image source={{ uri: bank.logo }} style={styles.bankLogo} />
-                      <Text style={[styles.bankName, { color: colors.text }]} numberOfLines={1}>{bank.description}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            <TouchableOpacity style={[styles.checkBtn, { backgroundColor: colors.primary }]} onPress={checkPaymentStatus}>
-              <Text style={[styles.checkBtnText, { color: colors.headerText }]}>Төлбөр шалгах</Text>
-            </TouchableOpacity>
-          </View>
         )}
-        <View style={{ height: 20 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -188,33 +155,38 @@ export default function PaymentScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
-  backButton: { padding: 4, marginLeft: -4 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 },
+  backButton: { padding: 4 },
   headerTitle: { fontSize: 18, fontWeight: "800" },
-  content: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
-  card: { borderRadius: 16, borderWidth: 1, padding: 16, alignItems: "center", marginBottom: 12 },
-  iconWrap: { width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  amountLabel: { fontSize: 13, marginBottom: 2 },
-  amountValue: { fontSize: 26, fontWeight: "900", marginBottom: 2 },
-  infoText: { fontSize: 12, opacity: 0.7 },
-  paymentBox: { borderRadius: 16, padding: 16, alignItems: "center" },
-  boxTitle: { fontSize: 15, fontWeight: "700", marginBottom: 12 },
-  qrPlaceholder: { height: 180, justifyContent: "center", alignItems: "center" },
-  qrContainer: { alignItems: "center", width: "100%" },
-  qrImage: { width: 180, height: 180, borderRadius: 12 },
-  dummyQr: { width: 180, height: 180, borderRadius: 12, padding: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#ccc' },
-  qrHint: { fontSize: 11, textAlign: "center", marginTop: 10, lineHeight: 16, paddingHorizontal: 8 },
-  banksSection: { width: "100%", marginTop: 16 },
-  banksTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
-  banksGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  bankItem: { width: "48%", padding: 8, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 6 },
-  bankLogo: { width: 24, height: 24, borderRadius: 6 },
-  bankName: { fontSize: 11, fontWeight: "600", flex: 1 },
-  checkBtn: { width: "100%", height: 46, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 20 },
-  checkBtnText: { fontSize: 14, fontWeight: "800" },
-  successBox: { borderRadius: 16, padding: 24, alignItems: "center" },
-  successTitle: { fontSize: 18, fontWeight: "800", marginTop: 12, marginBottom: 6 },
-  successText: { fontSize: 13, textAlign: "center", lineHeight: 18, marginBottom: 20 },
-  doneBtn: { width: "100%", height: 46, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  doneBtnText: { fontSize: 14, fontWeight: "800" }
+  content: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
+  stepContainer: { gap: 20 },
+  summaryCard: { borderRadius: 16, padding: 24, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  summaryLabel: { fontSize: 14, marginBottom: 8 },
+  summaryPrice: { fontSize: 32, fontWeight: "900", marginBottom: 8 },
+  summaryDesc: { fontSize: 13 },
+  sectionTitle: { fontSize: 15, fontWeight: "700", marginLeft: 4 },
+  qpayBtn: { borderRadius: 16, padding: 24, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  qpayLogoWrap: { marginBottom: 12 },
+  qpayLogoText: { fontSize: 42, fontWeight: "900", color: "#003366", letterSpacing: -1 },
+  qpayTitle: { fontSize: 16, fontWeight: "800", marginBottom: 6 },
+  qpaySub: { fontSize: 13 },
+  invoiceCard: { borderRadius: 16, padding: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  invoiceTitle: { fontSize: 18, fontWeight: "800", textAlign: "center", marginBottom: 12 },
+  invoiceDesc: { fontSize: 13, textAlign: "center", lineHeight: 18, marginBottom: 20 },
+  qrContainer: { alignItems: "center", marginBottom: 24 },
+  dummyQr: { width: 220, height: 220, borderRadius: 16, padding: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#eee' },
+  banksGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 24 },
+  bankItem: { width: "48%", padding: 12, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 8 },
+  bankLogo: { width: 28, height: 28, borderRadius: 8 },
+  bankName: { fontSize: 12, fontWeight: "600", flex: 1 },
+  invoiceActions: { flexDirection: "row", gap: 12 },
+  actionBtnCheck: { flex: 2, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  actionBtnCheckText: { fontSize: 14, fontWeight: "700" },
+  actionBtnClose: { flex: 1, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  actionBtnCloseText: { fontSize: 14, fontWeight: "700" },
+  successBox: { borderRadius: 16, padding: 32, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  successTitle: { fontSize: 20, fontWeight: "800", marginTop: 16, marginBottom: 8 },
+  successText: { fontSize: 14, textAlign: "center", lineHeight: 20, marginBottom: 24 },
+  doneBtn: { width: "100%", height: 50, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  doneBtnText: { fontSize: 15, fontWeight: "800" }
 });

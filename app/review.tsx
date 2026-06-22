@@ -29,11 +29,14 @@ export default function ReviewScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Хэрэглэгч нэвтрээгүй байна.");
 
+      // 🎯 ЗАСВАР: Баазын шаардлагын дагуу item_rating болон user_rating гэж тусгайлж явуулж байна
       const insertData: any = {
         job_id: jobId,
         reviewer_id: user.id,
         reviewed_user_id: targetUserId,
-        rating: rating,
+        item_rating: rating,
+        user_rating: rating,
+        rating: rating, 
         comment: comment.trim(),
       };
 

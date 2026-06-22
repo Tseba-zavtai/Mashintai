@@ -122,24 +122,6 @@ type NormalizedJob = Job & {
   bumpCount?: number;
 };
 
-const THEME_OPTIONS: Array<{
-  key: ThemeType;
-  color: string;
-  ringColor: string;
-}> = [
-  { key: "purple", color: "#6E0AB0", ringColor: "#FFFFFF" },
-  { key: "peach", color: "#FFE3DD", ringColor: "#6E0AB0" },
-  { key: "sky", color: "#AFC6D9", ringColor: "#6E0AB0" },
-  { key: "navy", color: "#201A2E", ringColor: "#FFE3DD" },
-  { key: "gray", color: "#D0D2D8", ringColor: "#6E0AB0" },
-  { key: "mint", color: "#8FE3CF", ringColor: "#6E0AB0" },
-];
-
-const THEME_ITEM_SIZE = 58;
-const THEME_ITEM_GAP = 14;
-const THEME_SIDE_PADDING = 20;
-const THEME_SNAP_INTERVAL = THEME_ITEM_SIZE + THEME_ITEM_GAP;
-
 function toSafeDate(value: any): Date {
   if (!value) return new Date();
   const d = value instanceof Date ? value : new Date(value);
@@ -916,174 +898,54 @@ function JobCard({
   );
 }
 
-function ThemeSwipePicker({
-  visible,
-  onClose,
-}: {
-  visible: boolean;
-  onClose: () => void;
-}) {
-  const { currentTheme, setTheme } = useTheme() as {
-    currentTheme: ThemeType;
-    setTheme?: (theme: ThemeType) => void;
+// 🎯 ЗАСВАР 1: Шинэ, шууд дарж сонгодог Static Theme Selector (хуучин ThemeSwipePicker-ийг орлосон)
+function ThemeSelector({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { currentTheme, setTheme, colors } = useTheme() as any;
+
+  const handleSelectTheme = (theme: ThemeType) => {
+    if (typeof setTheme === "function") setTheme(theme);
+    setTimeout(() => onClose(), 250); 
   };
-  const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView | null>(null);
 
-  const selectedIndex = Math.max(
-    0,
-    THEME_OPTIONS.findIndex((item) => item.key === currentTheme),
-  );
-  const centerOffset = Math.max(
-    0,
-    (width - THEME_ITEM_SIZE) / 2 - THEME_SIDE_PADDING,
-  );
-  const scrollToIndex = useCallback((index: number, animated = true) => {
-    const x = index * THEME_SNAP_INTERVAL;
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ x, animated });
-    });
-  }, []);
-  useEffect(() => {
-    if (visible) {
-      const timer = setTimeout(() => {
-        scrollToIndex(selectedIndex, false);
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [visible, selectedIndex, scrollToIndex]);
-  const applyTheme = useCallback(
-    (theme: ThemeType, index: number) => {
-      if (typeof setTheme === "function") {
-        setTheme(theme);
-      }
-      scrollToIndex(index);
-    },
-    [setTheme, scrollToIndex],
-  );
-  const onMomentumEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const x = e.nativeEvent.contentOffset.x;
-      const index = Math.round(x / THEME_SNAP_INTERVAL);
-      const safeIndex = Math.max(0, Math.min(index, THEME_OPTIONS.length - 1));
-      const picked = THEME_OPTIONS[safeIndex];
+  const themeOptions: { type: ThemeType; name: string; description: string }[] = [
+    { type: "purple", name: "Purple", description: "Нил ягаан өнгө" },
+    { type: "peach", name: "Peach", description: "Тоорын зөөлөн өнгө" },
+    { type: "sky", name: "Sky", description: "Тэнгэрийн цэнхэр өнгө" },
+    { type: "navy", name: "Navy", description: "Бараан хөх өнгө" },
+    { type: "gray", name: "Gray", description: "Саарал өнгө" },
+    { type: "mint", name: "Mint", description: "Минт ногоон өнгө" },
+  ];
 
-      if (
-        picked &&
-        picked.key !== currentTheme &&
-        typeof setTheme === "function"
-      ) {
-        setTheme(picked.key);
-      }
+  const PREVIEW_BACKGROUNDS: Record<ThemeType, string> = {
+    purple: "#6E0AB0", peach: "#FFE3DD", navy: "#201A2E", gray: "#D0D2D8", mint: "#8FE3CF", sky: "#AFC6D9"
+  };
 
-      scrollToIndex(safeIndex, true);
-    },
-    [currentTheme, setTheme, scrollToIndex],
-  );
   return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      transparent
-      onRequestClose={onClose}
-    >
-      <View style={styles.themeOverlay}>
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={onClose}
-        />
-        <View
-          style={[
-            styles.themeSheet,
-            {
-              paddingBottom: Math.max(insets.bottom, 14) + 12,
-            },
-          ]}
-        >
-          <View style={styles.themeSheetHeader}>
-            <View 
-            style={styles.themeHandle} />
-            <TouchableOpacity
-              style={styles.themeCloseButton}
-              onPress={onClose}
-              activeOpacity={0.8}
-            >
-              <X size={22} color="#201A2E" />
-            </TouchableOpacity>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <TouchableOpacity style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" }} activeOpacity={1} onPress={onClose} />
+        <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 20, paddingBottom: 40, paddingHorizontal: 20, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.text }}>Theme сонгох</Text>
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}><X size={24} color={colors.text} /></TouchableOpacity>
           </View>
-
-          <View style={styles.themeIntroRow}>
-            <Palette size={18} color="#6E0AB0" />
-            <Text style={styles.themeIntroTitle}>Theme</Text>
-          </View>
-
-          <ScrollView
-            ref={scrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            decelerationRate="fast"
-            snapToInterval={THEME_SNAP_INTERVAL}
-            snapToAlignment="start"
-            disableIntervalMomentum
-            bounces={false}
-            onMomentumScrollEnd={onMomentumEnd}
-            contentContainerStyle={{
-              paddingLeft: 
-              THEME_SIDE_PADDING + centerOffset,
-              paddingRight: THEME_SIDE_PADDING + centerOffset,
-              alignItems: "center",
-            }}
-          >
-            {THEME_OPTIONS.map((item, index) => {
-              const active = item.key === currentTheme;
+          <View style={{ gap: 12 }}>
+            {themeOptions.map((option) => {
+              const isSelected = currentTheme === option.type;
               return (
-                <TouchableOpacity
-                  key={item.key}
-                  activeOpacity={0.9}
-                  onPress={() => applyTheme(item.key, index)}
-                  style={[
-                    styles.themeCircleWrap,
-                    {
-                      marginRight:
-                        index === THEME_OPTIONS.length - 1 ? 0 : THEME_ITEM_GAP,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.themeCircleOuter,
-                      active && {
-                        width: 68,
-                        height: 68,
-                        borderRadius: 34,
-                        borderColor: item.ringColor,
-                        shadowOpacity: 0.18,
-                        elevation: 8,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.themeCircle,
-                        {
-                          backgroundColor: item.color,
-                        },
-                        active 
-                        && styles.themeCircleActive,
-                      ]}
-                    >
-                      {active ?
-                        (
-                        <Check size={18} color={item.ringColor} />
-                      ) : null}
+                <TouchableOpacity key={option.type} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.backgroundSecondary, borderColor: isSelected ? colors.primary : colors.border, borderWidth: isSelected ? 2 : 1 }} onPress={() => handleSelectTheme(option.type)} activeOpacity={0.7}>
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 22, marginRight: 16, borderWidth: 1, backgroundColor: PREVIEW_BACKGROUNDS[option.type], borderColor: colors.border }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: "600", color: colors.text, marginBottom: 2 }}>{option.name}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>{option.description}</Text>
                     </View>
                   </View>
+                  {isSelected && <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}><Check size={18} color={colors.headerText} strokeWidth={3} /></View>}
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>
@@ -1118,6 +980,19 @@ export default function HomeScreen() {
   >({});
   const [searchText, setSearchText] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 🎯 ЗАСВАР 2: Гацалтаас сэргийлэх 5 секундын хамгаалалт (timeout)
+  const [safeIsLoading, setSafeIsLoading] = useState(true);
+
+  useEffect(() => {
+    setSafeIsLoading(isLoading);
+    if (isLoading) {
+      const fallbackTimer = setTimeout(() => {
+        setSafeIsLoading(false);
+      }, 5000);
+      return () => clearTimeout(fallbackTimer);
+    }
+  }, [isLoading]);
 
   const searchJobsRef = useRef(searchJobs);
   const clearSearchRef = useRef(clearSearch);
@@ -1393,7 +1268,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* 🎯 ЗАСВАР: Түрээслэх/Түрээслүүлэх товчийг авч хаяж, Хайлтын баруун талд маш цэвэрхэн Категори нээх икон байрлуулав */}
         <View style={styles.searchRow}>
           <View style={styles.searchContainer}>
             <Search size={20} color="#666666" />
@@ -1416,7 +1290,6 @@ export default function HomeScreen() {
             )}
           </View>
           
-          {/* Баруун талын Категори нээдэг шинэ икон товчлуур */}
           <TouchableOpacity 
             style={[styles.categoryIconBtn, { backgroundColor: colors.background, borderColor: colors.border }]} 
             onPress={() => setShowCategoryModal(true)}
@@ -1501,7 +1374,8 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {isLoading && !refreshing && (
+        {/* 🎯 ЗАСВАР 3: Ачаалж дуусаагүй гацсан үед автоматаар зогсоох `safeIsLoading` ашигласан */}
+        {safeIsLoading && !refreshing && (
           <View style={{ paddingVertical: 16, alignItems: "center" }}>
             <ActivityIndicator />
           </View>
@@ -1520,7 +1394,7 @@ export default function HomeScreen() {
           </Text>
         )}
 
-        {!isLoading && filteredJobs.length === 0 ? (
+        {!safeIsLoading && filteredJobs.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               Зар олдсонгүй
@@ -1559,7 +1433,7 @@ export default function HomeScreen() {
         <Palette size={24} color={colors.headerText} />
       </TouchableOpacity>
 
-      <ThemeSwipePicker
+      <ThemeSelector
         visible={showThemeSelector}
         onClose={() => setShowThemeSelector(false)}
       />
@@ -1892,7 +1766,6 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 18, fontWeight: "600" },
   logo: { width: 140, height: 60 },
 
-  // 🎯 ЗАСВАР: Хайлтын талбар болон Баруун талын Категори иконыг нэг эгнээнд оруулав
   searchRow: {
     flexDirection: "row",
     alignItems: "center",

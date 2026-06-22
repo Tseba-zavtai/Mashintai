@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -26,9 +26,8 @@ import {
   Images,
   TrendingUp,
 } from "lucide-react-native";
-import { PostType } from "@/mocks/jobs";
 import { useTheme } from "@/contexts/ThemeContext";
-import { supabase } from "@/lib/supabase"; // 🎯 ЗАСВАР: Баазтай харьцах логик нэмэгдсэн тул импортлов
+import { supabase } from "@/lib/supabase"; 
 
 function isNonEmptyString(value: any): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -58,8 +57,7 @@ function normalizeImageUrls(job: any): string[] {
 
 function toSafeDate(value: any): Date {
   if (!value) return new Date();
-  const d = value instanceof Date ?
-    value : new Date(value);
+  const d = value instanceof Date ? value : new Date(value);
   return Number.isNaN(d.getTime()) ? new Date() : d;
 }
 
@@ -143,18 +141,11 @@ export default function MyJobsScreen() {
   const { jobs, deleteJob, toggleJobActive } = useJobs() as any;
   const { user } = useAuth();
   const { colors, currentTheme } = useTheme();
-  const params = useLocalSearchParams<{ type?: string }>();
-  const [selectedTab, setSelectedTab] = useState<PostType>("worker");
+  
   const [showInactive, setShowInactive] = useState(false);
   const [nowTs, setNowTs] = useState(Date.now());
   const buttonTextColor = currentTheme === "navy" ? "#F8E75D" : "#1A1A1A";
   const buttonBackgroundColor = currentTheme === "navy" ? "#2A2A2A" : colors.primary;
-
-  useEffect(() => {
-    if (params.type === "job" || params.type === "worker") {
-      setSelectedTab(params.type);
-    }
-  }, [params.type]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -165,13 +156,12 @@ export default function MyJobsScreen() {
 
   const myJobsRaw = useMemo(() => {
     return (jobs as any[]).filter((job: any) => {
-      if (job?.postType !== selectedTab && job?.post_type !== selectedTab) return false;
       if (!user) return false;
       const jobPhone = job?.postedBy?.phone ?? job?.posted_by_phone ?? null;
       const jobUserId = job?.postedBy?.id ?? job?.posted_by_id ?? null;
       return jobPhone === user.phone || jobUserId === user.id;
     });
-  }, [jobs, selectedTab, user]);
+  }, [jobs, user]);
 
   const myJobs = useMemo(() => {
     return myJobsRaw.filter((job: any) =>
@@ -223,7 +213,6 @@ export default function MyJobsScreen() {
     ]);
   }, [toggleJobActive]);
 
-  // 🎯 ЗАСВАР: Хугацаа нь дууссан зарыг амилуулахад 1 эрхийг хасдаг логик нэмсэн
   const activate = useCallback(
     async (jobId: string) => {
       const postCredits = (user as any)?.available_post_credits ?? 0;
@@ -242,10 +231,7 @@ export default function MyJobsScreen() {
           text: "Идэвхжүүлэх",
           onPress: async () => {
             try {
-              const { error: creditError } = await supabase
-                .from("profiles")
-                .update({ available_post_credits: Math.max(0, postCredits - 1) })
-                .eq("id", user?.id);
+              const { error: creditError } = await supabase.from("users").update({ available_post_credits: Math.max(0, postCredits - 1) }).eq("id", user?.id);
               if (creditError) throw creditError;
 
               const { error: jobError } = await supabase
@@ -281,36 +267,22 @@ export default function MyJobsScreen() {
         }}
       />
 
-      <View style={[styles.tabsContainer, { backgroundColor: colors.background }]}>
-        <TouchableOpacity style={[styles.tab, selectedTab === "worker" && { backgroundColor: buttonBackgroundColor }]} onPress={() => setSelectedTab("worker")} activeOpacity={0.7}>
-          <Text style={[styles.tabText, { color: selectedTab === "worker" ? buttonTextColor : colors.textSecondary }]}>Түрээслэх зар</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, selectedTab === "job" && { backgroundColor: buttonBackgroundColor }]} onPress={() => setSelectedTab("job")} activeOpacity={0.7}>
-          <Text style={[styles.tabText, { color: selectedTab === "job" 
-? buttonTextColor : colors.textSecondary }]}>Түрээслүүлэх зар</Text>
-        </TouchableOpacity>
-      </View>
-
       <View style={[styles.toolsRow, { backgroundColor: colors.background }]}>
         <TouchableOpacity style={[styles.toolButton, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => setShowInactive((v) => !v)}>
-          {showInactive ?
-<EyeOff size={18} color={colors.text} /> : <Eye size={18} color={colors.text} />}
-          <Text style={[styles.toolButtonText, { color: colors.text }]}>{showInactive ?
-"Идэвхгүйг нуух" : "Идэвхгүйг харуулах"}</Text>
+          {showInactive ? <EyeOff size={18} color={colors.text} /> : <Eye size={18} color={colors.text} />}
+          <Text style={[styles.toolButtonText, { color: colors.text }]}>{showInactive ? "Идэвхгүйг нуух" : "Идэвхгүйг харуулах"}</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
-        {myJobs.length === 0 ?
-        (
+        {myJobs.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Briefcase size={64} color={colors.textSecondary} strokeWidth={1.5} />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              {selectedTab === "worker" ? "Түрээслэх зар байхгүй" : "Түрээслүүлэх зар байхгүй"}
+              Таны оруулсан зар одоогоор байхгүй байна.
             </Text>
           </View>
-        ) : 
-        (
+        ) : (
           myJobs.map((job: any) => {
             const active = job?.isActive ?? job?.is_active ?? true;
             const imageUrls = normalizeImageUrls(job);
@@ -320,8 +292,7 @@ export default function MyJobsScreen() {
             const sponsoredUntilText = getSponsoredUntilText(job, nowTs);
             const sponsoredCountdownText = getSponsoredCountdownText(job, nowTs);
             const itemRatingAvg = job?.itemRatingAvg ?? job?.item_rating_avg ?? null;
-            const itemReviewCount = job?.itemReviewCount ??
-job?.item_review_count ?? 0;
+            const itemReviewCount = job?.itemReviewCount ?? job?.item_review_count ?? 0;
             const rentalCount = job?.rentalCount ?? job?.rental_count ?? itemReviewCount;
             const bumpedAtText = getBumpedAtText(job);
 
@@ -346,8 +317,7 @@ job?.item_review_count ?? 0;
 
                 {imageUrls.length > 0 && (
                   <View style={styles.imagesSection}>
-                    <View style={styles.imagesLabelRow}><Images size={16} color={colors.textSecondary} /><Text style={[styles.imagesLabelText, 
-{ color: colors.textSecondary }]}>{imageUrls.length} зураг</Text></View>
+                    <View style={styles.imagesLabelRow}><Images size={16} color={colors.textSecondary} /><Text style={[styles.imagesLabelText, { color: colors.textSecondary }]}>{imageUrls.length} зураг</Text></View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.imageScrollContent}>
                       {imageUrls.slice(0, 5).map((uri, index) => <Image key={`${job.id}-img-${index}`} source={{ uri }} style={styles.previewImage} />)}
                     </ScrollView>
@@ -361,8 +331,7 @@ job?.item_review_count ?? 0;
 
                 <View style={styles.actionsRow}>
                   <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => confirmDelete(job.id)}><Trash2 size={18} color={colors.text} /><Text style={[styles.actionText, { color: colors.text }]}>Устгах</Text></TouchableOpacity>
-                  {active ?
-                  (
+                  {active ? (
                     <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => confirmDeactivate(job.id)}><PauseCircle size={18} color={colors.text} /><Text style={[styles.actionText, { color: colors.text }]}>Идэвхигүй</Text></TouchableOpacity>
                   ) : (
                     <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => activate(job.id)}><PlayCircle size={18} color={colors.text} /><Text style={[styles.actionText, { color: colors.text }]}>Идэвхжүүлэх</Text></TouchableOpacity>
@@ -375,16 +344,13 @@ job?.item_review_count ?? 0;
                   onPress={() => router.push({ pathname: "/sponsor-payment", params: { jobId: job.id, targetType: "bump" } })}
                 >
                   <TrendingUp size={18} color={colors.text} />
-                  <Text style={[styles.bumpButtonText, { color: colors.text 
-}]}>Зараа дээш гаргах (1,000₮)</Text>
+                  <Text style={[styles.bumpButtonText, { color: colors.text }]}>Зараа дээш гаргах (1,000₮)</Text>
                 </TouchableOpacity>
 
-                {sponsored ?
-                (
+                {sponsored ? (
                   <View style={[styles.sponsoredBadgeWrapper, { backgroundColor: currentTheme === "navy" ? "rgba(248,231,93,0.12)" : "rgba(0,0,0,0.04)", borderColor: currentTheme === "navy" ? "rgba(248,231,93,0.25)" : "rgba(0,0,0,0.08)" }]}>
                     <View style={[styles.sponsoredBadge, { backgroundColor: buttonBackgroundColor }]}><BadgeDollarSign size={18} color={buttonTextColor} strokeWidth={2} /><Text style={[styles.sponsoredBadgeText, { color: buttonTextColor }]}>Sponsored зар</Text></View>
-                    {sponsoredCountdownText && <Text style={[styles.sponsoredCountdownText, { color: colors.text }]}>Үлдсэн: 
-{sponsoredCountdownText}</Text>}
+                    {sponsoredCountdownText && <Text style={[styles.sponsoredCountdownText, { color: colors.text }]}>Үлдсэн: {sponsoredCountdownText}</Text>}
                     {sponsoredUntilText && <Text style={[styles.sponsoredUntilText, { color: colors.textSecondary }]}>Дуусах: {sponsoredUntilText}</Text>}
                   </View>
                 ) : (
@@ -393,14 +359,13 @@ job?.item_review_count ?? 0;
                     activeOpacity={0.7}
                     onPress={() => router.push({ pathname: "/sponsor-payment", params: { jobId: job.id, targetType: "sponsor" } })}
                   >
-                    <BadgeDollarSign size={18} color={buttonTextColor} strokeWidth={2} 
-/>
+                    <BadgeDollarSign size={18} color={buttonTextColor} strokeWidth={2} />
                     <Text style={[styles.sponsorButtonText, { color: buttonTextColor }]}>Sponsored зар болгох</Text>
                   </TouchableOpacity>
                 )}
               </View>
             );
-        })
+          })
         )}
         <View style={styles.bottomPadding} />
       </ScrollView>
@@ -410,9 +375,6 @@ job?.item_review_count ?? 0;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  tabsContainer: { flexDirection: "row", marginHorizontal: 20, marginTop: 16, borderRadius: 12, padding: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  tab: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  tabText: { fontSize: 14, fontWeight: "600" },
   toolsRow: { marginHorizontal: 20, marginTop: 10, borderRadius: 12, padding: 10 },
   toolButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
   toolButtonText: { fontSize: 13, fontWeight: "600" },

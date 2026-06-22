@@ -67,8 +67,10 @@ type PickedImage = {
 
 const MAX_IMAGES = 5;
 const STORAGE_BUCKET = "post-images";
-const IMAGE_MAX_WIDTH = 1200;
-const IMAGE_COMPRESS_QUALITY = 0.72;
+
+// 🎯 ЗАСВАР: Зургийн хэмжээ болон чанарыг багасгаж хуулах хурдыг нэмэгдүүлэв
+const IMAGE_MAX_WIDTH = 1000; 
+const IMAGE_COMPRESS_QUALITY = 0.4; 
 
 async function compressPickedImage(asset: any, index: number): Promise<PickedImage> {
   const width = Number(asset?.width ?? 0);
@@ -214,13 +216,11 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
 
     if (encoded3 !== 64 && encoded3 !== -1) {
-      bytes[p++] = ((encoded2 & 15) << 4) |
-(encoded3 >> 2);
+      bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
     }
 
     if (encoded4 !== 64 && encoded4 !== -1) {
-      bytes[p++] = ((encoded3 & 3) << 6) |
-encoded4;
+      bytes[p++] = ((encoded3 & 3) << 6) | encoded4;
     }
   }
 
@@ -360,7 +360,6 @@ export default function PostScreen() {
   const { colors, currentTheme } = useTheme();
   const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
 
-  // 🎯 ЗАСВАР: Түрээслэх / Түрээслүүлэх сонголтыг бүр мөсөн устгаж шууд "job" буюу Түрээслүүлэх төлөвтэйгөөр нээгдэнэ
   const postType = "job"; 
 
   const [description, setDescription] = useState("");
@@ -388,7 +387,6 @@ export default function PostScreen() {
 
   const [addBanners, setAddBanners] = useState<any[]>([]);
 
-  // 🎯 ЗАСВАР: Хэрэглэгчийн үлдсэн зарын эрхийг тооцоолох
   const postCredits = (user as any)?.available_post_credits ?? 0;
 
   const loadAddBanners = useCallback(async () => {
@@ -454,10 +452,8 @@ export default function PostScreen() {
         longitude,
       });
       const addressText = address
-        ? `${address.district || address.city ||
-""}${
-            address.subregion ?
-`, ${address.subregion}` : ""
+        ? `${address.district || address.city || ""}${
+            address.subregion ? `, ${address.subregion}` : ""
           }`.trim()
         : undefined;
       setSelectedLocation({
@@ -636,7 +632,6 @@ export default function PostScreen() {
   const handleSubmit = async () => {
     if (submitting) return;
 
-    // 🎯 ЗАСВАР: Эрх шалгах логикийг нийтлэх товчлуур дээр нэмсэн
     if (postCredits <= 0) {
       Alert.alert("Эрх дууссан", "Таны үнэгүй зар оруулах эрх дууссан байна. Профайл хэсгээс эрхээ цэнэглэнэ үү.", [
         { text: "Хаах", style: "cancel" },
@@ -670,7 +665,6 @@ export default function PostScreen() {
     try {
       setSubmitting(true);
 
-      // 🎯 ЗАСВАР: Зар амжилттай орохоос өмнө баазаас 1 эрхийг хасна
       const { error: creditError } = await supabase
         .from("profiles")
         .update({ available_post_credits: Math.max(0, postCredits - 1) })
@@ -707,7 +701,6 @@ export default function PostScreen() {
         }
       );
 
-      // Профайлын эрхийг дахин дуудаж шинэчилнэ
       await refetchProfile?.();
 
       Alert.alert("Амжилттай!", "Таны зар амжилттай нэмэгдлээ", [
@@ -1344,7 +1337,6 @@ export default function PostScreen() {
             )}
           </View>
 
-          {/* 🎯 ЗАСВАР: Зарын эрх 0 бол саарал өнгөтэй харагдана, дарвал анхааруулга гарна */}
           <TouchableOpacity
             style={[
               styles.submitButton,

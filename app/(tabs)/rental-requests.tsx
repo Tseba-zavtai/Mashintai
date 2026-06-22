@@ -1,9 +1,9 @@
 // app/rental-requests.tsx
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useRouter } from "expo-router";
-import { Check, X, ChevronLeft, ClipboardList, RefreshCw, PhoneCall } from "lucide-react-native";
+import { Check, X, ChevronLeft, ClipboardList, RefreshCw, PhoneCall, CheckSquare, Square } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,7 +21,6 @@ type RentalRequest = {
   quantity?: number | null;
   rent_days?: number | null;
   total_price?: number | null;
-  // "paid" төлөв хэрэггүй болсон ч баазад байгаа тул хэвээр үлдээв
   status: "pending" | "approved" | "rejected" | "cancelled" | "completed" | "paid" | "handover_requested" | "in_rent";
   message?: string | null;
   created_at?: string;
@@ -44,7 +43,7 @@ function statusLabel(status: RentalRequest["status"]) {
   if (status === "pending") return "Хүлээгдэж байна";
   if (status === "approved") return "Зөвшөөрсөн";
   if (status === "rejected") return "Татгалзсан";
-  if (status === "paid") return "Бараа хүлээж байгаа"; // Төлбөр хийгдэхээ больсон тул нэрийг өөрчлөв
+  if (status === "paid") return "Бараа хүлээж байгаа"; 
   if (status === "handover_requested") return "Хүлээлгэж өгөх хүсэлт";
   if (status === "in_rent") return "Түрээсэлж байгаа";
   if (status === "completed") return "Дууссан";
@@ -60,6 +59,11 @@ export default function RentalRequestsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // 🎯 ЗАСВАР: Түрээслүүлэгчийн зөвшөөрөх үеийн Modal state
+  const [termsModalVisible, setTermsModalVisible] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -85,29 +89,29 @@ export default function RentalRequestsScreen() {
     }
   }, [loadRentalRequests]);
 
-  // 1. Түрээслүүлэгч хүсэлтийг зөвшөөрөх
-  const handleApprove = async (id: string) => {
-    if (busyId) return;
-    Alert.alert("Зөвшөөрөх үү?", "Зөвшөөрсний дараа та хоёр холбогдож, бараа болон төлбөрөө тохиролцоно.", [
-      { text: "Болих", style: "cancel" },
-      {
-        text: "Зөвшөөрөх",
-        onPress: async () => {
-          try {
-            setBusyId(id);
-            await approveRentalRequest?.(id);
-            Alert.alert("Мэдэгдэл", "Түрээслэх хүсэлтийг зөвшөөрлөө. Утасны дугаараар холбогдоно уу.");
-          } catch (e: any) {
-            Alert.alert("Алдаа", e?.message ?? "Зөвшөөрөхөд алдаа гарлаа");
-          } finally {
-            setBusyId(null);
-          }
-        },
-      },
-    ]);
+  // 1. Түрээслүүлэгч хүсэлтийг зөвшөөрөх товч дарахад Modal нээнэ
+  const openApproveModal = (id: string) => {
+    setSelectedRequestId(id);
+    setAgreeTerms(false);
+    setTermsModalVisible(true);
   };
 
-  // 1. Түрээслүүлэгч хүсэлтээс татгалзах
+  // Түрээслүүлэгч нөхцөлийг зөвшөөрч баталгаажуулах
+  const confirmApprove = async () => {
+    if (!selectedRequestId || busyId) return;
+    try {
+      setBusyId(selectedRequestId);
+      await approveRentalRequest?.(selectedRequestId);
+      setTermsModalVisible(false);
+      Alert.alert("Мэдэгдэл", "Түрээслэх хүсэлтийг зөвшөөрлөө. Утасны дугаараар холбогдоно уу.");
+    } catch (e: any) {
+      Alert.alert("Алдаа", e?.message ?? "Зөвшөөрөхөд алдаа гарлаа");
+    } finally {
+      setBusyId(null);
+      setSelectedRequestId(null);
+    }
+  };
+
   const handleReject = async (id: string) => {
     if (busyId) return;
     Alert.alert("Татгалзах уу?", "Энэ хүсэлт татгалзсан төлөвтэй болно.", [
@@ -129,11 +133,9 @@ export default function RentalRequestsScreen() {
     ]);
   };
 
-  // 2. Түрээслэгч барааг хүлээж авах (Төлбөр хийхийг алгассан)
   const handleReceiveItem = async (requestId: string) => {
     try {
       setBusyId(requestId);
-      // 'approved' төлөвөөс шууд 'handover_requested' руу шилжинэ
       const { error } = await supabase.from("rental_requests").update({ status: "handover_requested" }).eq("id", requestId);
       if (error) throw error;
       Alert.alert("Амжилттай", "Барааг хүлээж авсан хүсэлтийг эзэнд нь илгээлээ.");
@@ -145,7 +147,6 @@ export default function RentalRequestsScreen() {
     }
   };
 
-  // 3. Түрээслүүлэгч барааг хүлээлгэж өгснийг баталгаажуулах
   const handleConfirmHandover = async (requestId: string) => {
     try {
       setBusyId(requestId);
@@ -160,11 +161,9 @@ export default function RentalRequestsScreen() {
     }
   };
 
-  // Түрээслүүлэгч буцаах (Cancel handover) - Бараагаа өгөөгүй үед
   const handleRejectHandover = async (requestId: string) => {
     try {
       setBusyId(requestId);
-      // Буцаагаад 'approved' төлөвт оруулна
       const { error } = await supabase.from("rental_requests").update({ status: "approved" }).eq("id", requestId);
       if (error) throw error;
       Alert.alert("Мэдэгдэл", "Бараа хүлээлгэж өгөх хүсэлтийг буцаалаа.");
@@ -176,7 +175,6 @@ export default function RentalRequestsScreen() {
     }
   };
 
-  // 4. Түрээслэгч барааг буцааж өгөх
   const handleEarlyReturnRequest = async (requestId: string, jobId: string, ownerId: string) => {
     Alert.alert("Барааг буцааж тушаах уу?", "Бараагаа эзэнд нь буцааж өгсөн бол энэ товчийг дарна уу.", [
       { text: "Болих", style: "cancel" },
@@ -185,8 +183,7 @@ export default function RentalRequestsScreen() {
         onPress: async () => {
           try {
             setBusyId(requestId);
-            // Үнэлгээ рүү үсрэхгүйгээр зөвхөн төлөв өөрчилнө. Түрээслүүлэгч баталгаажуулсны дараа үнэлнэ.
-            const { error } = await supabase.from("rental_requests").update({ status: "paid" }).eq("id", requestId); // 'paid' төлөвийг 'return_requested' утгаар ашиглаж байна (Баазад өөрчлөхгүйгээр)
+            const { error } = await supabase.from("rental_requests").update({ status: "paid" }).eq("id", requestId); 
             if (error) throw error;
             Alert.alert("Амжилттай", "Эзэнд нь буцааж өгөх хүсэлт илгээлээ.");
             loadRentalRequests?.();
@@ -200,7 +197,6 @@ export default function RentalRequestsScreen() {
     ]);
   };
 
-  // 5. Түрээслүүлэгч түрээсийг дуусгах
   const handleCompleteRental = async (requestId: string) => {
     Alert.alert("Түрээс дуусгах уу?", "Бараагаа бүрэн бүтэн хүлээж авсан бол гэрээг хааж, түрээслэгчийг үнэлнэ үү.", [
       { text: "Болих", style: "cancel" },
@@ -307,7 +303,6 @@ export default function RentalRequestsScreen() {
                     </View>
                   </View>
 
-                  {/* Хоёр тал хүсэлтийг зөвшөөрсөн үед утасны дугаар ил харагдана */}
                   {isApprovedOrActive && (
                      <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.backgroundSecondary, padding: 8, borderRadius: 8 }}>
                        <PhoneCall size={16} color={colors.primary} style={{ marginRight: 8 }} />
@@ -337,7 +332,7 @@ export default function RentalRequestsScreen() {
                             <X size={18} color={colors.text} />
                             <Text style={[styles.actionText, { color: colors.text }]}>Татгалзах</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => handleApprove(item.id)}>
+                          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => openApproveModal(item.id)}>
                             <Check size={18} color={colors.headerText} />
                             <Text style={[styles.actionText, { color: colors.headerText }]}>Зөвшөөрөх</Text>
                           </TouchableOpacity>
@@ -357,7 +352,6 @@ export default function RentalRequestsScreen() {
                         </>
                       )}
 
-                      {/* Түрээслэгч буцааж өгөх хүсэлт илгээсэн үед (paid төлөвийг ашиглаж байна) эсвэл in_rent үед дуусгаж болно */}
                       {(item.status === "paid" || item.status === "in_rent") && (
                          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => handleCompleteRental(item.id)}>
                            <Check size={18} color={colors.headerText} />
@@ -405,6 +399,63 @@ export default function RentalRequestsScreen() {
             })
           )}
         </ScrollView>
+
+        {/* 🎯 ЗАСВАР: Түрээслүүлэгчийн зөвшөөрөх үеийн Хариуцлагын санамж (Modal) */}
+        <Modal
+          visible={termsModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setTermsModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.termsModal, { backgroundColor: colors.background }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Хүсэлт зөвшөөрөх
+              </Text>
+              
+              <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>
+                Та энэ түрээсийн хүсэлтийг зөвшөөрснөөр та хоёрын утасны дугаар ил гарч, хоорондоо холбогдох боломжтой болно.
+              </Text>
+
+              <TouchableOpacity 
+                style={[styles.termsWrap, { backgroundColor: agreeTerms ? 'rgba(0,180,90,0.08)' : colors.backgroundSecondary, borderColor: agreeTerms ? '#00B45A' : colors.border }]} 
+                activeOpacity={0.8}
+                onPress={() => setAgreeTerms(!agreeTerms)}
+              >
+                <View style={styles.termsHeader}>
+                  {agreeTerms ? <CheckSquare size={20} color="#00B45A" /> : <Square size={20} color={colors.textSecondary} />}
+                  <Text style={[styles.termsTitle, { color: agreeTerms ? '#00B45A' : colors.text }]}>Хариуцлагын санамж зөвшөөрөх</Text>
+                </View>
+                <Text style={[styles.termsDescText, { color: colors.textSecondary }]}>
+                  Tureesly апп нь зөвхөн холбон зуучлах үүрэгтэй бөгөөд барааны бүрэн бүтэн байдал, эвдрэл гэмтэл болон төлбөрийн эрсдэлийг талууд 100% өөрсдөө хариуцна.
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalCancelButton, { borderColor: colors.border }]}
+                  onPress={() => setTermsModalVisible(false)}
+                  disabled={busyId !== null}
+                >
+                  <Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalSubmitButton, { backgroundColor: agreeTerms ? colors.primary : colors.border }]}
+                  onPress={confirmApprove}
+                  disabled={busyId !== null || !agreeTerms}
+                >
+                  {busyId !== null ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={[styles.modalSubmitText, { color: agreeTerms ? "#FFFFFF" : colors.textSecondary }]}>Зөвшөөрөх</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
       </SafeAreaView>
     </>
   );
@@ -441,5 +492,75 @@ const styles = StyleSheet.create({
   actionsRow: { flexDirection: "row", gap: 10, marginTop: 14 },
   actionButton: { flex: 1, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 },
   rejectButton: { borderWidth: 1 },
-  actionText: { fontSize: 14, fontWeight: "800" }
+  actionText: { fontSize: 14, fontWeight: "800" },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  termsModal: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 30,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "800" as const,
+    marginBottom: 8,
+  },
+  modalDesc: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  termsWrap: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  termsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  termsTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  termsDescText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  modalCancelButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalSubmitButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+  },
+  modalSubmitText: {
+    fontSize: 15,
+    fontWeight: "800" as const,
+  },
 });
