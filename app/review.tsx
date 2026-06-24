@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Star } from "lucide-react-native";
+import { Star, ChevronLeft } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
@@ -17,7 +17,7 @@ export default function ReviewScreen() {
   const isOwnerView = params.isOwnerView;
   const isOwner = isOwnerView === "true";
 
-  const [rating, setRating] = useState(5);
+  const [rating, setRating] = useState(1);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -29,14 +29,12 @@ export default function ReviewScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Хэрэглэгч нэвтрээгүй байна.");
 
-      // 🎯 ЗАСВАР: Баазын шаардлагын дагуу item_rating болон user_rating гэж тусгайлж явуулж байна
       const insertData: any = {
         job_id: jobId,
         reviewer_id: user.id,
         reviewed_user_id: targetUserId,
         item_rating: rating,
         user_rating: rating,
-        rating: rating, 
         comment: comment.trim(),
       };
 
@@ -44,7 +42,7 @@ export default function ReviewScreen() {
       if (error) throw error;
 
       Alert.alert("Баярлалаа", "Үнэлгээг амжилттай хүлээн авлаа.", [
-        { text: "Нүүр хуудас руу", onPress: () => router.replace("/(tabs)") }
+        { text: "Буцах", onPress: () => router.back() }
       ]);
     } catch (e: any) {
       Alert.alert("Алдаа", e.message || "Үнэлгээ хадгалахад алдаа гарлаа.");
@@ -54,7 +52,16 @@ export default function ReviewScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top", "bottom"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
+      {/* 🎯 ЗАСВАР: Буцах товч бүхий Header нэмэв */}
+      <View style={[styles.header, { backgroundColor: colors.background }]}>
+        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75} style={styles.backButton}>
+          <ChevronLeft size={28} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Үнэлгээ өгөх</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={[styles.title, { color: colors.text }]}>
           {isOwner ? "Түрээслэгч хэрэглэгчийг үнэлэх" : "Түрээсийн үйлчилгээний үнэлгээ"}
@@ -65,7 +72,7 @@ export default function ReviewScreen() {
             : "Түрээсэлсэн үйлчилгээ болон сэтгэгдлээ үнэлнэ үү."}
         </Text>
 
-        <View style={[styles.reviewSection, { borderColor: colors.border, width: '100%' }]}>
+        <View style={[styles.reviewSection, { borderColor: colors.border }]}>
           <View style={styles.starsContainer}>
             {[1, 2, 3, 4, 5].map((star) => (
               <TouchableOpacity key={star} onPress={() => setRating(star)} activeOpacity={0.7}>
@@ -97,6 +104,9 @@ export default function ReviewScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 },
+  backButton: { padding: 4 },
+  headerTitle: { fontSize: 18, fontWeight: "800" },
   scrollContent: { padding: 20, alignItems: "center" },
   title: { fontSize: 20, fontWeight: "800", textAlign: "center", marginBottom: 8 },
   subtitle: { fontSize: 13, textAlign: "center", marginBottom: 24, lineHeight: 18, paddingHorizontal: 10 },

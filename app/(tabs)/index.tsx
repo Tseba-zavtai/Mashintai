@@ -8,7 +8,6 @@ import React, {
 } from "react";
 import { getLogoSource } from "@/constants/logo";
 import {
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -23,9 +22,9 @@ import {
   useWindowDimensions,
   RefreshControl,
   ActivityIndicator,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
 } from "react-native";
+// 🎯 ШИНЭ: Expo Image ашиглаж байна (маш хурдан, бас cache хийнэ)
+import { Image } from "expo-image";
 import {
   Search,
   X,
@@ -71,6 +70,7 @@ import {
   Gift,
   BadgeHelp,
   Dog,
+  Heart,
 } from "lucide-react-native";
 import {
   SafeAreaView,
@@ -84,42 +84,23 @@ import { ThemeType } from "@/constants/colors";
 import { supabase } from "@/lib/supabase";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
+import { searchMatch } from "@/lib/searchUtils";
 
-type LucideIcon = React.ComponentType<{ size?: number; color?: string }>;
+// 🎯 ШИНЭ: Skeleton loader оруулж ирлээ
+import SkeletonCard from "@/components/SkeletonCard";
+
+type LucideIcon = React.ComponentType<{ size?: number; color?: string; fill?: string }>;
 type FilterType = "all" | "rent" | "need";
 
-type DbCategoryRow = {
-  id: string;
-  name: string;
-  sort_order: number | null;
-};
-
-type DbSubcategoryRow = {
-  id: string;
-  name: string;
-  category_id: string;
-  sort_order: number | null;
-};
+type DbCategoryRow = { id: string; name: string; sort_order: number | null; };
+type DbSubcategoryRow = { id: string; name: string; category_id: string; sort_order: number | null; };
 
 type NormalizedJob = Job & {
-  category_id?: string | null;
-  subcategory_id?: string | null;
-  category?: string | null;
-  subcategory?: string | null;
-  postType?: string | null;
-  isActive?: boolean;
-  isSponsored?: boolean;
-  sponsoredUntil?: Date | null;
-  postedBy?: any;
-  postedDate?: Date;
-  location?: any;
-  image_url?: string | null;
-  image_urls?: string[];
-  itemRatingAvg?: number | null;
-  itemReviewCount?: number;
-  rentalCount?: number;
-  bumpedAt?: Date | null;
-  bumpCount?: number;
+  category_id?: string | null; subcategory_id?: string | null; category?: string | null;
+  subcategory?: string | null; postType?: string | null; isActive?: boolean;
+  isSponsored?: boolean; sponsoredUntil?: Date | null; postedBy?: any; postedDate?: Date;
+  location?: any; image_url?: string | null; image_urls?: string[]; itemRatingAvg?: number | null;
+  itemReviewCount?: number; rentalCount?: number; bumpedAt?: Date | null; bumpCount?: number;
 };
 
 function toSafeDate(value: any): Date {
@@ -128,135 +109,27 @@ function toSafeDate(value: any): Date {
   return Number.isNaN(d.getTime()) ? new Date() : d;
 }
 
-function normalizeText(s: string) {
-  return (s ?? "").toLowerCase().trim();
-}
-
-function cyrillicToLatin(input: string) {
-  const text = (input ?? "").toLowerCase();
-  const map: Record<string, string> = {
-    а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo",
-    ж: "j", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m",
-    н: "n", о: "o", ө: "o", п: "p", р: "r", с: "s", т: "t",
-    у: "u", ү: "u", ф: "f", х: "kh", ц: "ts", ч: "ch",
-    ш: "sh", щ: "sh", ъ: "", ы: "ii", ь: "", э: "e",
-    ю: "yu", я: "ya",
-  };
-  let out = "";
-  for (const ch of text) out += map[ch] ?? ch;
-  return out;
-}
-
-function normalizeForSearch(input: string) {
-  return (input ?? "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-zа-яёөү0-9]+/gi, "");
-}
-
-function latinToCyrillic(input: string) {
-  let s = (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-  const rules: Array<[RegExp, string]> = [
-    [/sch/g, "щ"], [/sh/g, "ш"], [/ch/g, "ч"], [/ts/g, "ц"],
-    [/ya/g, "я"], [/yo/g, "ё"], [/yu/g, "ю"], [/ye/g, "е"], [/kh/g, "х"],
-  ];
-  for (const [re, rep] of rules) s = s.replace(re, rep);
-  const map: Record<string, string> = {
-    a: "а", b: "б", v: "в", g: "г", d: "д", e: "е", z: "з",
-    i: "и", j: "ж", k: "к", l: "л", m: "м", n: "н", o: "о",
-    p: "п", r: "р", s: "с", t: "т", u: "у", f: "ф", h: "х",
-    y: "й", q: "к", w: "в", x: "кс", c: "к",
-  };
-  let out = "";
-  for (const ch of s) out += map[ch] ?? ch;
-  return out;
-}
-
-function buildSearchVariants(input: string): string[] {
-  const raw = (input ?? "").trim();
-  if (!raw) return [];
-  const variants = new Set<string>();
-
-  const add = (v: string) => {
-    const n = normalizeForSearch(v);
-    if (n) variants.add(n);
-  };
-
-  add(raw);
-  add(latinToCyrillic(raw));
-  add(cyrillicToLatin(raw));
-
-  const lowered = raw.toLowerCase();
-
-  add(lowered.replace(/oo/g, "o"));
-  add(lowered.replace(/uu/g, "u"));
-  add(lowered.replace(/ii/g, "i"));
-  add(lowered.replace(/ee/g, "e"));
-  add(lowered.replace(/aa/g, "a"));
-
-  add(lowered.replace(/kh/g, "h"));
-  add(lowered.replace(/sh/g, "s"));
-  add(lowered.replace(/ch/g, "c"));
-
-  add(latinToCyrillic(lowered.replace(/oo/g, "o")));
-  add(latinToCyrillic(lowered.replace(/uu/g, "u")));
-  add(latinToCyrillic(lowered.replace(/ii/g, "i")));
-  add(latinToCyrillic(lowered.replace(/kh/g, "h")));
-  add(latinToCyrillic(lowered.replace(/sh/g, "s")));
-  add(latinToCyrillic(lowered.replace(/ch/g, "c")));
-  return Array.from(variants);
-}
-
-function searchMatch(text: string, query: string) {
-  const variants = buildSearchVariants(query);
-  if (variants.length === 0) return true;
-  const original = normalizeForSearch(text);
-  const translit = normalizeForSearch(cyrillicToLatin(text));
-
-  return variants.some((q) => original.includes(q) || translit.includes(q));
-}
+function normalizeText(s: string) { return (s ?? "").toLowerCase().trim(); }
 
 function normalizeImageUrls(raw: any): string[] {
   const source = raw?.image_urls ?? raw?.imageUrls ?? null;
-  if (Array.isArray(source)) {
-    return source.filter((x) => typeof x === "string" && x.trim().length > 0);
-  }
-
+  if (Array.isArray(source)) return source.filter((x) => typeof x === "string" && x.trim().length > 0);
   if (typeof source === "string" && source.trim()) {
     try {
       const parsed = JSON.parse(source);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (x) => typeof x === "string" && x.trim().length > 0,
-        );
-      }
-    } catch {
-      return [source];
-    }
+      if (Array.isArray(parsed)) return parsed.filter((x) => typeof x === "string" && x.trim().length > 0);
+    } catch { return [source]; }
   }
-
   const fallback = raw?.image_url ?? raw?.imageUrl ?? null;
-  if (typeof fallback === "string" && fallback.trim()) {
-    return [fallback];
-  }
-
+  if (typeof fallback === "string" && fallback.trim()) return [fallback];
   return [];
 }
 
 function getSponsoredUntilDate(raw: any): Date | null {
-  const sponsoredUntilRaw =
-    raw?.sponsoredUntil ??
-    raw?.sponsored_until ??
-    raw?.sponsoredEnd ??
-    raw?.sponsored_end ??
-    raw?.sponsored_expires_at ??
-    null;
-
+  const sponsoredUntilRaw = raw?.sponsoredUntil ?? raw?.sponsored_until ?? raw?.sponsoredEnd ?? raw?.sponsored_end ?? raw?.sponsored_expires_at ?? null;
   if (!sponsoredUntilRaw) return null;
-
   const d = toSafeDate(sponsoredUntilRaw);
   if (Number.isNaN(d.getTime())) return null;
-
   return d;
 }
 
@@ -280,20 +153,13 @@ function formatRating(value: any) {
 
 function getJobRankingScore(job: any): number {
   const now = Date.now();
-  const postedTs =
-    job?.postedDate?.getTime?.() ??
-    toSafeDate(job?.created_at ?? job?.updated_at).getTime();
-  const bumpedTs =
-    job?.bumpedAt?.getTime?.() ??
-    getBumpedAtDate(job)?.getTime?.() ?? 0;
+  const postedTs = job?.postedDate?.getTime?.() ?? toSafeDate(job?.created_at ?? job?.updated_at).getTime();
+  const bumpedTs = job?.bumpedAt?.getTime?.() ?? getBumpedAtDate(job)?.getTime?.() ?? 0;
   const sponsoredUntilTs = job?.sponsoredUntil?.getTime?.() ?? 0;
   const isSponsored = !!job?.isSponsored && sponsoredUntilTs > now;
-  const itemRating =
-    asNumberOrNull(job?.itemRatingAvg ?? job?.item_rating_avg) ?? 0;
-  const userRating =
-    asNumberOrNull(job?.postedBy?.userRatingAvg ?? job?.user_rating_avg) ?? 0;
-  const rentalCount =
-    asNumberOrNull(job?.rentalCount ?? job?.rental_count) ?? 0;
+  const itemRating = asNumberOrNull(job?.itemRatingAvg ?? job?.item_rating_avg) ?? 0;
+  const userRating = asNumberOrNull(job?.postedBy?.userRatingAvg ?? job?.user_rating_avg) ?? 0;
+  const rentalCount = asNumberOrNull(job?.rentalCount ?? job?.rental_count) ?? 0;
 
   let score = 0;
   if (isSponsored) {
@@ -303,339 +169,64 @@ function getJobRankingScore(job: any): number {
     else if (itemRating > 0) score += 12_000;
     else score += 45_000;
   }
-
   if (bumpedTs > 0) {
     const ageHours = Math.max(0, (now - bumpedTs) / 36e5);
     score += Math.max(0, 180_000 - ageHours * 4_000);
   }
-
-  score += itemRating * 4_000;
-  score += userRating * 2_000;
-  score += Math.min(rentalCount, 100) * 80;
-  score += postedTs / 1_000_000_000;
+  score += itemRating * 4_000 + userRating * 2_000 + Math.min(rentalCount, 100) * 80 + postedTs / 1_000_000_000;
   return score;
 }
 
 const CATEGORY_ICON_OVERRIDE: Record<string, LucideIcon> = {
-  "Тээврийн хэрэгсэл": Car,
-  "Барилга, засварын тоног төхөөрөмж": Hammer,
-  "Арга хэмжээ, event-ийн хэрэгсэл": Music,
-  "Ахуйн болон өдөр тутмын хэрэглээ": Home,
-  "Аялал, outdoor хэрэгсэл": Plane,
-  "Фото, видео, контентын тоног төхөөрөмж": Camera,
-  "Тоглоом, entertainment": Gamepad2,
-  "Оффис, бизнесийн хэрэглээ": Briefcase,
-  "Хүнд машин механизм, тусгай хэрэгсэл": Truck,
-  "Хувцас, тусгай хэрэглээ": Shirt,
-  "Спорт, хобби": Dumbbell,
-  "Мал аж ахуй, хөдөө аж ахуйн хэрэгсэл": Leaf,
+  "Тээврийн хэрэгсэл": Car, "Барилга, засварын тоног төхөөрөмж": Hammer, "Арга хэмжээ, event-ийн хэрэгсэл": Music,
+  "Ахуйн болон өдөр тутмын хэрэглээ": Home, "Аялал, outdoor хэрэгсэл": Plane, "Фото, видео, контентын тоног төхөөрөмж": Camera,
+  "Тоглоом, entertainment": Gamepad2, "Оффис, бизнесийн хэрэглээ": Briefcase, "Хүнд машин механизм, тусгай хэрэгсэл": Truck,
+  "Хувцас, тусгай хэрэглээ": Shirt, "Спорт, хобби": Dumbbell, "Мал аж ахуй, хөдөө аж ахуйн хэрэгсэл": Leaf,
 };
 
 function iconByKeyword(name: string): LucideIcon {
   const t = normalizeText(name);
-  if (
-    t.includes("тээврийн") ||
-    t.includes("машин") ||
-    t.includes("suv") ||
-    t.includes("pickup") ||
-    t.includes("ачааны") ||
-    t.includes("микро") ||
-    t.includes("мото") ||
-    t.includes("скүүтер") ||
-    t.includes("унадаг дугуй") ||
-    t.includes("цахилгаан дугуй") ||
-    t.includes("caravan") ||
-    t.includes("trailer") ||
-    t.includes("vehicle") ||
-    t.includes("auto")
-  ) {
-    return Car;
-  }
-
-  if (
-    t.includes("барилга") ||
-    t.includes("засвар") ||
-    t.includes("тоног төхөөрөмж") ||
-    t.includes("өрөм") ||
-    t.includes("дрилл") ||
-    t.includes("бетон") ||
-    t.includes("хөрөө") ||
-    t.includes("гагнуур") ||
-    t.includes("шат") ||
-    t.includes("лазер") ||
-    t.includes("компрессор") ||
-    t.includes("генератор") ||
-    t.includes("насос") ||
-    t.includes("tool")
-  ) {
-    return Hammer;
-  }
-
-  if (
-    t.includes("арга хэмжээ") ||
-    t.includes("event") ||
-    t.includes("майхан") ||
-    t.includes("тайз") ||
-    t.includes("speaker") ||
-    t.includes("microphone") ||
-    t.includes("karaoke") ||
-    t.includes("projector") ||
-    t.includes("led") ||
-    t.includes("photo booth") ||
-    t.includes("гэрэлтүүлэг")
-  ) {
-    return Music;
-  }
-
-  if (
-    t.includes("ахуйн") ||
-    t.includes("өдөр тутмын") ||
-    t.includes("хүүхдийн тэрэг") ||
-    t.includes("машины суудал") ||
-    t.includes("нялх") ||
-    t.includes("wheelchair") ||
-    t.includes("өвчтөний ор") ||
-    t.includes("халаагуур") ||
-    t.includes("air purifier") ||
-    t.includes("vacuum") ||
-    t.includes("carpet cleaner") ||
-    t.includes("household")
-  ) {
-    return Home;
-  }
-
-  if (
-    t.includes("аялал") ||
-    t.includes("outdoor") ||
-    t.includes("кемп") ||
-    t.includes("унтлагын уут") ||
-    t.includes("хийн плитка") ||
-    t.includes("cool box") ||
-    t.includes("загасчлал") ||
-    t.includes("gps") ||
-    t.includes("walkie") ||
-    t.includes("portable battery") ||
-    t.includes("power bank") ||
-    t.includes("travel")
-  ) {
-    return Plane;
-  }
-
-  if (
-    t.includes("фото") ||
-    t.includes("видео") ||
-    t.includes("контент") ||
-    t.includes("camera") ||
-    t.includes("lens") ||
-    t.includes("gimbal") ||
-    t.includes("tripod") ||
-    t.includes("drone") ||
-    t.includes("action camera") ||
-    t.includes("lighting kit") ||
-    t.includes("teleprompter") ||
-    t.includes("backdrop")
-  ) {
-    return Camera;
-  }
-
-  if (
-    t.includes("тоглоом") ||
-    t.includes("entertainment") ||
-    t.includes("vr") ||
-    t.includes("board games") ||
-    t.includes("air hockey") ||
-    t.includes("sim racing") ||
-    t.includes("ps") ||
-    t.includes("nintendo") ||
-    t.includes("sega") ||
-    t.includes("projector + screen")
-  ) {
-    return Gamepad2;
-  }
-
-  if (
-    t.includes("оффис") ||
-    t.includes("бизнес") ||
-    t.includes("зөөврийн компьютер") ||
-    t.includes("printer") ||
-    t.includes("scanner") ||
-    t.includes("pos") ||
-    t.includes("barcode") ||
-    t.includes("label printer") ||
-    t.includes("meeting speakerphone") ||
-    t.includes("tablet") ||
-    t.includes("wi-fi") ||
-    t.includes("router") ||
-    t.includes("дэлгэц") ||
-    t.includes("office")
-  ) {
-    return Briefcase;
-  }
-
-  if (
-    t.includes("хүнд машин") ||
-    t.includes("тусгай хэрэгсэл") ||
-    t.includes("сэрээт ачигч") ||
-    t.includes("кран") ||
-    t.includes("ковш") ||
-    t.includes("индүү") ||
-    t.includes("excavator") ||
-    t.includes("pallet jack") ||
-    t.includes("hand stacker") ||
-    t.includes("machinery")
-  ) {
-    return Truck;
-  }
-
-  if (
-    t.includes("хувцас") ||
-    t.includes("гоёлын даашинз") ||
-    t.includes("үндэсний хувцас") ||
-    t.includes("костюм") ||
-    t.includes("тайзны хувцас") ||
-    t.includes("mascot") ||
-    t.includes("хамгаалалтын хувцас") ||
-    t.includes("dress")
-  ) {
-    return Shirt;
-  }
-
-  if (
-    t.includes("спорт") ||
-    t.includes("хобби") ||
-    t.includes("цана") ||
-    t.includes("snowboard") ||
-    t.includes("тэшүүр") ||
-    t.includes("фитнес") ||
-    t.includes("paddle board") ||
-    t.includes("kayak") ||
-    t.includes("tennis") ||
-    t.includes("boxing")
-  ) {
-    return Dumbbell;
-  }
-
-  if (
-    t.includes("мал аж ахуй") ||
-    t.includes("хөдөө аж ахуй") ||
-    t.includes("өвс хадах") ||
-    t.includes("сэндийлэгч") ||
-    t.includes("мотоблок") ||
-    t.includes("шүршигч") ||
-    t.includes("усалгааны насос") ||
-    t.includes("цахилгаан хашааны төхөөрөмж") ||
-    t.includes("agri") ||
-    t.includes("farm")
-  ) {
-    return Leaf;
-  }
-
-  if (
-    t.includes("гэр") ||
-    t.includes("орон сууц") ||
-    t.includes("house") ||
-    t.includes("home")
-  )
-    return Home;
-  if (t.includes("тавилга") || t.includes("furniture") || t.includes("sofa"))
-    return Sofa;
-  if (t.includes("мото") || t.includes("bike") || t.includes("унадаг"))
-    return Bike;
-  if (t.includes("тээвэр") || t.includes("truck") || t.includes("логистик"))
-    return Truck;
-  if (
-    t.includes("комп") ||
-    t.includes("computer") ||
-    t.includes("monitor") ||
-    t.includes("pc")
-  )
-    return Monitor;
-  if (
-    t.includes("утас") ||
-    t.includes("phone") ||
-    t.includes("mobile") ||
-    t.includes("smart")
-  )
-    return Smartphone;
+  if (t.includes("тээврийн") || t.includes("машин") || t.includes("suv") || t.includes("pickup") || t.includes("ачааны") || t.includes("микро") || t.includes("мото") || t.includes("скүүтер") || t.includes("унадаг дугуй") || t.includes("цахилгаан дугуй") || t.includes("caravan") || t.includes("trailer") || t.includes("vehicle") || t.includes("auto")) return Car;
+  if (t.includes("барилга") || t.includes("засвар") || t.includes("тоног төхөөрөмж") || t.includes("өрөм") || t.includes("дрилл") || t.includes("бетон") || t.includes("хөрөө") || t.includes("гагнуур") || t.includes("шат") || t.includes("лазер") || t.includes("компрессор") || t.includes("генератор") || t.includes("насос") || t.includes("tool")) return Hammer;
+  if (t.includes("арга хэмжээ") || t.includes("event") || t.includes("майхан") || t.includes("тайз") || t.includes("speaker") || t.includes("microphone") || t.includes("karaoke") || t.includes("projector") || t.includes("led") || t.includes("photo booth") || t.includes("гэрэлтүүлэг")) return Music;
+  if (t.includes("ахуйн") || t.includes("өдөр тутмын") || t.includes("хүүхдийн тэрэг") || t.includes("машины суудал") || t.includes("нялх") || t.includes("wheelchair") || t.includes("өвчтөний ор") || t.includes("халаагуур") || t.includes("air purifier") || t.includes("vacuum") || t.includes("carpet cleaner") || t.includes("household")) return Home;
+  if (t.includes("аялал") || t.includes("outdoor") || t.includes("кемп") || t.includes("унтлагын уут") || t.includes("хийн плитка") || t.includes("cool box") || t.includes("загасчлал") || t.includes("gps") || t.includes("walkie") || t.includes("portable battery") || t.includes("power bank") || t.includes("travel")) return Plane;
+  if (t.includes("фото") || t.includes("видео") || t.includes("контент") || t.includes("camera") || t.includes("lens") || t.includes("gimbal") || t.includes("tripod") || t.includes("drone") || t.includes("action camera") || t.includes("lighting kit") || t.includes("teleprompter") || t.includes("backdrop")) return Camera;
+  if (t.includes("тоглоом") || t.includes("entertainment") || t.includes("vr") || t.includes("board games") || t.includes("air hockey") || t.includes("sim racing") || t.includes("ps") || t.includes("nintendo") || t.includes("sega") || t.includes("projector + screen")) return Gamepad2;
+  if (t.includes("оффис") || t.includes("бизнес") || t.includes("зөөврийн компьютер") || t.includes("printer") || t.includes("scanner") || t.includes("pos") || t.includes("barcode") || t.includes("label printer") || t.includes("meeting speakerphone") || t.includes("tablet") || t.includes("wi-fi") || t.includes("router") || t.includes("дэлгэц") || t.includes("office")) return Briefcase;
+  if (t.includes("хүнд машин") || t.includes("тусгай хэрэгсэл") || t.includes("сэрээт ачигч") || t.includes("кран") || t.includes("ковш") || t.includes("индүү") || t.includes("excavator") || t.includes("pallet jack") || t.includes("hand stacker") || t.includes("machinery")) return Truck;
+  if (t.includes("хувцас") || t.includes("гоёлын даашинз") || t.includes("үндэсний хувцас") || t.includes("костюм") || t.includes("тайзны хувцас") || t.includes("mascot") || t.includes("хамгаалалтын хувцас") || t.includes("dress")) return Shirt;
+  if (t.includes("спорт") || t.includes("хобби") || t.includes("цана") || t.includes("snowboard") || t.includes("тэшүүр") || t.includes("фитнес") || t.includes("paddle board") || t.includes("kayak") || t.includes("tennis") || t.includes("boxing")) return Dumbbell;
+  if (t.includes("мал аж ахуй") || t.includes("хөдөө аж ахуй") || t.includes("өвс хадах") || t.includes("сэндийлэгч") || t.includes("мотоблок") || t.includes("шүршигч") || t.includes("усалгааны насос") || t.includes("цахилгаан хашааны төхөөрөмж") || t.includes("agri") || t.includes("farm")) return Leaf;
+  if (t.includes("гэр") || t.includes("орон сууц") || t.includes("house") || t.includes("home")) return Home;
+  if (t.includes("тавилга") || t.includes("furniture") || t.includes("sofa")) return Sofa;
+  if (t.includes("мото") || t.includes("bike") || t.includes("унадаг")) return Bike;
+  if (t.includes("тээвэр") || t.includes("truck") || t.includes("логистик")) return Truck;
+  if (t.includes("комп") || t.includes("computer") || t.includes("monitor") || t.includes("pc")) return Monitor;
+  if (t.includes("утас") || t.includes("phone") || t.includes("mobile") || t.includes("smart")) return Smartphone;
   if (t.includes("бэлэг") || t.includes("gift")) return Gift;
-  if (t.includes("хөгжим") || t.includes("music") || t.includes("instrument"))
-    return Music;
-  if (t.includes("хүүхэд") || t.includes("baby") || t.includes("kid"))
-    return Baby;
-  if (
-    t.includes("амьтан") ||
-    t.includes("pet") ||
-    t.includes("dog") ||
-    t.includes("cat")
-  )
-    return Dog;
-  if (t.includes("бараа") || t.includes("item") || t.includes("product"))
-    return Package;
-
+  if (t.includes("хөгжим") || t.includes("music") || t.includes("instrument")) return Music;
+  if (t.includes("хүүхэд") || t.includes("baby") || t.includes("kid")) return Baby;
+  if (t.includes("амьтан") || t.includes("pet") || t.includes("dog") || t.includes("cat")) return Dog;
+  if (t.includes("бараа") || t.includes("item") || t.includes("product")) return Package;
   return Tag;
 }
 
 function buildUniqueIconMap(categoryNames: string[]) {
   const pool: LucideIcon[] = [
-    Briefcase,
-    Wrench,
-    Leaf,
-    HeartHandshake,
-    MapPin,
-    Users,
-    ClipboardList,
-    Shield,
-    Home,
-    PhoneCall,
-    Settings,
-    Building2,
-    Car,
-    Truck,
-    Monitor,
-    Smartphone,
-    Gift,
-    BadgeHelp,
-    Sofa,
-    Package,
-    Bike,
-    Shirt,
-    Music,
-    Gamepad2,
-    Baby,
-    Dog,
-    Scissors,
-    Scale,
-    TrendingUp,
-    FolderKanban,
-    Globe,
-    Camera,
-    Dumbbell,
-    GraduationCap,
-    Plane,
-    Ticket,
-    ShoppingCart,
-    Sparkles,
-    Hammer,
+    Briefcase, Wrench, Leaf, HeartHandshake, MapPin, Users, ClipboardList, Shield, Home, PhoneCall, Settings, Building2, Car, Truck, Monitor, Smartphone, Gift, BadgeHelp, Sofa, Package, Bike, Shirt, Music, Gamepad2, Baby, Dog, Scissors, Scale, TrendingUp, FolderKanban, Globe, Camera, Dumbbell, GraduationCap, Plane, Ticket, ShoppingCart, Sparkles, Hammer,
   ];
   const used = new Set<LucideIcon>();
   const map: Record<string, LucideIcon> = {};
   for (const name of categoryNames) {
     const override = CATEGORY_ICON_OVERRIDE[name];
-    if (override) {
-      map[name] = override;
-      used.add(override);
-    }
+    if (override) { map[name] = override; used.add(override); }
   }
-
   for (const name of categoryNames) {
     if (map[name]) continue;
     const keywordIcon = iconByKeyword(name);
-    if (keywordIcon !== Tag) {
-      map[name] = keywordIcon;
-      used.add(keywordIcon);
-    }
+    if (keywordIcon !== Tag) { map[name] = keywordIcon; used.add(keywordIcon); }
   }
-
   let i = 0;
   for (const name of categoryNames) {
     if (map[name]) continue;
@@ -644,107 +235,58 @@ function buildUniqueIconMap(categoryNames: string[]) {
     used.add(map[name]);
     i++;
   }
-
   return map;
 }
 
 function normalizeJob(raw: any): NormalizedJob {
-  const postedBy = raw?.postedBy ??
-    raw?.posted_by ??
-    {
+  const postedBy = raw?.postedBy ?? raw?.posted_by ?? {
       id: raw?.posted_by_id ?? null,
-      name: raw?.posted_by_name ?? raw?.posted_by_phone ??
-      "Unknown",
+      name: raw?.posted_by_name ?? raw?.posted_by_phone ?? "Unknown",
       phone: raw?.posted_by_phone ?? null,
-      photoUri: raw?.posted_by_photo ??
-      null,
+      photoUri: raw?.users?.photo_uri ?? raw?.photo_uri ?? raw?.posted_by_photo ?? null,
     };
-
   const postedDate = raw?.postedDate ?? raw?.created_at ?? raw?.updated_at;
   const sponsoredUntil = getSponsoredUntilDate(raw);
   const legacySponsored = !!(raw?.isSponsored ?? raw?.is_sponsored ?? false);
-  const isSponsoredByTime = sponsoredUntil
-    ?
-      sponsoredUntil.getTime() > Date.now()
-    : false;
-  const computedIsSponsored = sponsoredUntil
-    ?
-      isSponsoredByTime
-    : legacySponsored;
-
-  const location =
-    raw?.location && typeof raw.location === "object"
-      ?
-        raw.location
-      : raw?.address
-        ?
-          {
-            address: raw.address,
-            latitude: raw?.latitude ??
-            null,
-            longitude: raw?.longitude ??
-            null,
-          }
-        : null;
+  const isSponsoredByTime = sponsoredUntil ? sponsoredUntil.getTime() > Date.now() : false;
+  const computedIsSponsored = sponsoredUntil ? isSponsoredByTime : legacySponsored;
+  const location = raw?.location && typeof raw.location === "object" ? raw.location : raw?.address ? { address: raw.address, latitude: raw?.latitude ?? null, longitude: raw?.longitude ?? null } : null;
   const imageUrls = normalizeImageUrls(raw);
   const bumpedAt = getBumpedAtDate(raw);
-  const itemRatingAvg = asNumberOrNull(
-    raw?.itemRatingAvg ?? raw?.item_rating_avg,
-  );
-  const itemReviewCount =
-    asNumberOrNull(raw?.itemReviewCount ?? raw?.item_review_count) ?? 0;
-  const rentalCount =
-    asNumberOrNull(raw?.rentalCount ?? raw?.rental_count) ?? itemReviewCount;
+  const itemRatingAvg = asNumberOrNull(raw?.itemRatingAvg ?? raw?.item_rating_avg);
+  const itemReviewCount = asNumberOrNull(raw?.itemReviewCount ?? raw?.item_review_count) ?? 0;
+  const rentalCount = asNumberOrNull(raw?.rentalCount ?? raw?.rental_count) ?? itemReviewCount;
   return {
-    ...raw,
-    category_id: raw?.category_id ?? null,
-    subcategory_id: raw?.subcategory_id ??
-    null,
-    isSponsored: computedIsSponsored,
-    sponsoredUntil,
-    postType: raw?.postType ?? raw?.post_type ??
-    "job",
-    isActive: raw?.isActive ?? raw?.is_active ?? true,
-    postedBy,
-    postedDate: toSafeDate(postedDate),
-    category: raw?.category ??
-    null,
-    subcategory:
-      raw?.subcategory ??
-      raw?.subcategory_name ??
-      raw?.subcategories?.name ??
-    null,
-    location,
-    image_url: imageUrls[0] ??
-    null,
-    image_urls: imageUrls,
-    itemRatingAvg,
-    itemReviewCount,
-    rentalCount,
-    bumpedAt,
-    bumpCount: asNumberOrNull(raw?.bumpCount ?? raw?.bump_count) ??
-    0,
+    ...raw, category_id: raw?.category_id ?? null, subcategory_id: raw?.subcategory_id ?? null,
+    isSponsored: computedIsSponsored, sponsoredUntil, postType: raw?.postType ?? raw?.post_type ?? "job",
+    isActive: raw?.isActive ?? raw?.is_active ?? true, postedBy, postedDate: toSafeDate(postedDate),
+    category: raw?.category ?? null, subcategory: raw?.subcategory ?? raw?.subcategory_name ?? raw?.subcategories?.name ?? null,
+    location, image_url: imageUrls[0] ?? null, image_urls: imageUrls, itemRatingAvg, itemReviewCount,
+    rentalCount, bumpedAt, bumpCount: asNumberOrNull(raw?.bumpCount ?? raw?.bump_count) ?? 0,
   } as NormalizedJob;
 }
 
+// 🎯 FB Style JobCard (Expo Image-тэй, Зүрхтэй)
 function JobCard({
   job,
   getCategoryIcon,
+  isSaved,
+  onToggleSave,
 }: {
   job: Job;
   getCategoryIcon: (name: string) => LucideIcon;
+  isSaved: boolean;
+  onToggleSave: (id: string) => void;
 }) {
   const router = useRouter();
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
 
   const j = normalizeJob(job);
   const postedBy = j.postedBy;
-  const name = postedBy?.name ??
-  "Unknown";
+  const name = postedBy?.name ?? "Хэрэглэгч";
   const initial = (name[0] ?? "?").toUpperCase();
   const photoUri = postedBy?.photoUri ?? null;
-  const imageUrls: string[] = Array.isArray(j.image_urls) ?
-  j.image_urls : [];
+  const imageUrls: string[] = Array.isArray(j.image_urls) ? j.image_urls : [];
 
   const handleAvatarPress = () => {
     const userId = postedBy?.phone ?? postedBy?.id;
@@ -752,9 +294,8 @@ function JobCard({
     router.push(`/user-profile?userId=${encodeURIComponent(String(userId))}`);
   };
 
-  const handleCardPress = () => {
-    router.push(`/job-detail?id=${j.id}`);
-  };
+  const handleCardPress = () => { router.push(`/job-detail?id=${j.id}`); };
+  
   const formatDate = (date: Date) => {
     if (!date) return "Огноо алга";
     const now = new Date();
@@ -764,183 +305,95 @@ function JobCard({
     if (diffInDays === 1) return "Өчигдөр";
     return `${diffInDays} өдрийн өмнө`;
   };
+  
   if (j?.isActive === false) return null;
-
   const CatIcon = getCategoryIcon(j.category ?? "");
   const isSponsored = !!j.isSponsored;
-  const postedAtDate: Date =
-    j.postedDate ?? toSafeDate((j as any).created_at ?? (j as any).updated_at);
-  const itemRating = j.itemRatingAvg ?? (j as any).item_rating_avg ?? null;
-  const itemReviewCount =
-    j.itemReviewCount ??
-    (j as any).item_review_count ?? 0;
-  const rentalCount =
-    j.rentalCount ?? (j as any).rental_count ?? itemReviewCount;
-  const userRating =
-    postedBy?.userRatingAvg ?? (j as any).user_rating_avg ?? null;
-  const userReviewCount = postedBy?.userReviewCount ?? 0;
+  const postedAtDate: Date = j.postedDate ?? toSafeDate((j as any).created_at ?? (j as any).updated_at);
+
   return (
-    <TouchableOpacity
-      style={[styles.jobCard, { backgroundColor: colors.card }]}
-      activeOpacity={0.7}
-      onPress={handleCardPress}
-    >
-      <View style={styles.jobPosterSection}>
+    <TouchableOpacity style={[styles.jobCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={handleCardPress}>
+      <View style={styles.feedHeader}>
         <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.7}>
           {photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.posterAvatar} />
+            <Image source={{ uri: photoUri }} style={styles.feedAvatar} transition={200} />
           ) : (
-            <View
-              style={[styles.posterAvatar, { backgroundColor: colors.accent }]}
-            >
-              <Text
-                style={[
-                  styles.posterInitial,
-                  { color: 
-                  colors.headerText },
-                ]}
-              >
-                {initial}
-              </Text>
+            <View style={[styles.feedAvatar, { backgroundColor: colors.accent }]}>
+              <Text style={[styles.posterInitial, { color: colors.headerText }]}>{initial}</Text>
             </View>
           )}
         </TouchableOpacity>
-
-        <View 
-        style={styles.jobHeaderContent}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <CatIcon size={18} color={colors.text} />
-            <Text
-              style={[styles.jobTitle, { color: colors.headerText }]}
-              numberOfLines={1}
-            >
-              {j.category ?? "Категори"}
-            </Text>
-          </View>
-
-          {j.subcategory ?
-            (
-            <View
-              style={{
-                marginTop: 4,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                opacity: 0.85,
-              }}
-            >
-              <Tag size={14} color={colors.textSecondary} />
-              <Text
-                style={{ color: colors.textSecondary, fontSize: 13 }}
-                numberOfLines={1}
-              >
-                {j.subcategory}
-              </Text>
-            </View>
-          ) : (
-            <View style={{ height: 0 }} />
-          )}
-
-          {isSponsored ?
-            (
-            <Text
-              style={[styles.sponsoredUnderCategory, { color: "#FFB800" }]}
-              numberOfLines={1}
-            >
-              Sponsored
-            </Text>
-          ) : (
-            <View style={{ height: 0 }} />
-          )}
-
-          <View style={styles.jobMetaInfo}>
-            <Text style={[styles.posterName, { color: colors.textSecondary }]}>
-              {name}
-            </Text>
-            <Text style={[styles.metaDot, { color: colors.textSecondary }]}>
-              •
-            </Text>
-            <Text style={[styles.posterDate, { color: colors.textSecondary }]}>
-              {formatDate(postedAtDate)}
-            </Text>
+        
+        <View style={styles.feedHeaderInfo}>
+          <Text style={[styles.feedPosterName, { color: colors.text }]}>{name}</Text>
+          <View style={styles.feedMetaRow}>
+            <Text style={[styles.feedDate, { color: colors.textSecondary }]}>{formatDate(postedAtDate)}</Text>
+            {isSponsored && <Text style={[styles.feedSponsoredText, { color: colors.primary }]}> • Sponsored</Text>}
           </View>
         </View>
+
+        <TouchableOpacity 
+          style={{ padding: 4 }} 
+          onPress={(e) => { e.stopPropagation(); onToggleSave(j.id); }}
+        >
+          <Heart size={24} color={isSaved ? "#FF4B4B" : colors.textSecondary} fill={isSaved ? "#FF4B4B" : "transparent"} />
+        </TouchableOpacity>
       </View>
 
-      {imageUrls.length > 0 ?
-        (
+      <View style={styles.feedTextContent}>
+        {j.category && j.category !== "Зар" && j.category !== "Категори" && (
+           <Text style={[styles.feedMainTitle, { color: colors.text }]}>{j.title || j.category}</Text>
+        )}
+        {j.description && <Text style={[styles.feedMainDescription, { color: colors.text }]} numberOfLines={4}>{j.description}</Text>}
+      </View>
+
+      {imageUrls.length > 0 && (
         <View style={styles.jobImagesWrap}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.jobImagesScrollContent}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.jobImagesScrollContent}>
             {imageUrls.slice(0, 5).map((uri, index) => (
-              <Image
-                key={`${j.id}-img-${index}`}
-                source={{ uri }}
-                style={styles.jobPreviewImage}
-              />
+              <Image key={`${j.id}-img-${index}`} source={{ uri }} style={styles.jobPreviewImage} contentFit="cover" transition={300} />
             ))}
           </ScrollView>
         </View>
-      ) : null}
+      )}
 
-      <View style={styles.jobContent}>
-        <Text
-          style={[styles.jobDescription, { color: colors.textSecondary }]}
-          numberOfLines={3}
-        >
-          {j.description}
-        </Text>
+      <View style={styles.feedFooter}>
+        <View style={[styles.feedTagBadge, { backgroundColor: colors.backgroundSecondary }]}>
+          <CatIcon size={14} color={colors.textSecondary} />
+          <Text style={[styles.feedTagText, { color: colors.textSecondary }]} numberOfLines={1}>{j.category ?? "Категори"}</Text>
+        </View>
+        {j.subcategory ? (
+          <View style={[styles.feedTagBadge, { backgroundColor: colors.backgroundSecondary }]}>
+            <Tag size={14} color={colors.textSecondary} />
+            <Text style={[styles.feedTagText, { color: colors.textSecondary }]} numberOfLines={1}>{j.subcategory}</Text>
+          </View>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
 }
 
-// 🎯 ЗАСВАР 1: Шинэ, шууд дарж сонгодог Static Theme Selector (хуучин ThemeSwipePicker-ийг орлосон)
 function ThemeSelector({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { currentTheme, setTheme, colors } = useTheme() as any;
-
-  const handleSelectTheme = (theme: ThemeType) => {
-    if (typeof setTheme === "function") setTheme(theme);
-    setTimeout(() => onClose(), 250); 
-  };
-
+  const handleSelectTheme = (theme: ThemeType) => { if (typeof setTheme === "function") setTheme(theme); setTimeout(() => onClose(), 250); };
   const themeOptions: { type: ThemeType; name: string; description: string }[] = [
-    { type: "purple", name: "Purple", description: "Нил ягаан өнгө" },
-    { type: "peach", name: "Peach", description: "Тоорын зөөлөн өнгө" },
-    { type: "sky", name: "Sky", description: "Тэнгэрийн цэнхэр өнгө" },
-    { type: "navy", name: "Navy", description: "Бараан хөх өнгө" },
-    { type: "gray", name: "Gray", description: "Саарал өнгө" },
-    { type: "mint", name: "Mint", description: "Минт ногоон өнгө" },
+    { type: "purple", name: "Purple", description: "Нил ягаан өнгө" }, { type: "peach", name: "Peach", description: "Тоорын зөөлөн өнгө" },
+    { type: "sky", name: "Sky", description: "Тэнгэрийн цэнхэр өнгө" }, { type: "navy", name: "Navy", description: "Бараан хөх өнгө" },
+    { type: "gray", name: "Gray", description: "Саарал өнгө" }, { type: "mint", name: "Mint", description: "Минт ногоон өнгө" },
   ];
-
-  const PREVIEW_BACKGROUNDS: Record<ThemeType, string> = {
-    purple: "#6E0AB0", peach: "#FFE3DD", navy: "#201A2E", gray: "#D0D2D8", mint: "#8FE3CF", sky: "#AFC6D9"
-  };
-
+  const PREVIEW_BACKGROUNDS: Record<ThemeType, string> = { purple: "#6E0AB0", peach: "#FFE3DD", navy: "#201A2E", gray: "#D0D2D8", mint: "#8FE3CF", sky: "#AFC6D9" };
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <TouchableOpacity style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" }} activeOpacity={1} onPress={onClose} />
         <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 20, paddingBottom: 40, paddingHorizontal: 20, backgroundColor: colors.background }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.text }}>Theme сонгох</Text>
-            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}><X size={24} color={colors.text} /></TouchableOpacity>
-          </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}><Text style={{ fontSize: 20, fontWeight: "700", color: colors.text }}>Theme сонгох</Text><TouchableOpacity onPress={onClose} style={{ padding: 4 }}><X size={24} color={colors.text} /></TouchableOpacity></View>
           <View style={{ gap: 12 }}>
             {themeOptions.map((option) => {
               const isSelected = currentTheme === option.type;
               return (
                 <TouchableOpacity key={option.type} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.backgroundSecondary, borderColor: isSelected ? colors.primary : colors.border, borderWidth: isSelected ? 2 : 1 }} onPress={() => handleSelectTheme(option.type)} activeOpacity={0.7}>
-                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                    <View style={{ width: 44, height: 44, borderRadius: 22, marginRight: 16, borderWidth: 1, backgroundColor: PREVIEW_BACKGROUNDS[option.type], borderColor: colors.border }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: "600", color: colors.text, marginBottom: 2 }}>{option.name}</Text>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>{option.description}</Text>
-                    </View>
-                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}><View style={{ width: 44, height: 44, borderRadius: 22, marginRight: 16, borderWidth: 1, backgroundColor: PREVIEW_BACKGROUNDS[option.type], borderColor: colors.border }} /><View style={{ flex: 1 }}><Text style={{ fontSize: 16, fontWeight: "600", color: colors.text, marginBottom: 2 }}>{option.name}</Text><Text style={{ fontSize: 12, color: colors.textSecondary }}>{option.description}</Text></View></View>
                   {isSelected && <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}><Check size={18} color={colors.headerText} strokeWidth={3} /></View>}
                 </TouchableOpacity>
               );
@@ -953,219 +406,87 @@ function ThemeSelector({ visible, onClose }: { visible: boolean; onClose: () => 
 }
 
 export default function HomeScreen() {
-  const { jobs, loadJobs, isLoading, searchJobs, clearSearch } = useJobs();
+  const { jobs, loadJobs, isLoading, searchJobs, clearSearch, savedJobIds, toggleSaveJob } = useJobs();
   const { colors, currentTheme } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const isSmall = width < 380;
 
   const [selectedFilter, setSelectedFilter] = useState<FilterType>("all");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-  const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState<
-    string[]
-  >([]);
+  const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState<string[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [dbCategories, setDbCategories] = useState<DbCategoryRow[]>([]);
-  const [dbSubcategories, setDbSubcategories] = useState<DbSubcategoryRow[]>(
-    [],
-  );
+  const [dbSubcategories, setDbSubcategories] = useState<DbSubcategoryRow[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
-  const [openCategoryIds, setOpenCategoryIds] = useState<
-    Record<string, boolean>
-  >({});
+  const [openCategoryIds, setOpenCategoryIds] = useState<Record<string, boolean>>({});
   const [searchText, setSearchText] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 🎯 ЗАСВАР 2: Гацалтаас сэргийлэх 5 секундын хамгаалалт (timeout)
   const [safeIsLoading, setSafeIsLoading] = useState(true);
-
-  useEffect(() => {
-    setSafeIsLoading(isLoading);
-    if (isLoading) {
-      const fallbackTimer = setTimeout(() => {
-        setSafeIsLoading(false);
-      }, 5000);
-      return () => clearTimeout(fallbackTimer);
-    }
-  }, [isLoading]);
+  useEffect(() => { setSafeIsLoading(isLoading); if (isLoading) { const fallbackTimer = setTimeout(() => { setSafeIsLoading(false); }, 5000); return () => clearTimeout(fallbackTimer); } }, [isLoading]);
 
   const searchJobsRef = useRef(searchJobs);
   const clearSearchRef = useRef(clearSearch);
-  useEffect(() => {
-    searchJobsRef.current = searchJobs;
-  }, [searchJobs]);
-  useEffect(() => {
-    clearSearchRef.current = clearSearch;
-  }, [clearSearch]);
+  useEffect(() => { searchJobsRef.current = searchJobs; }, [searchJobs]);
+  useEffect(() => { clearSearchRef.current = clearSearch; }, [clearSearch]);
 
   const [homeBanners, setHomeBanners] = useState<any[]>([]);
-  const loadHomeBanners = useCallback(async () => {
-    try {
-      const b = await fetchBanners("home_feed", 3);
-      setHomeBanners(b ?? []);
-    } catch (e) {
-      console.log("FETCH HOME BANNERS ERROR:", e);
-      setHomeBanners([]);
-    }
-  }, []);
+  const loadHomeBanners = useCallback(async () => { try { const b = await fetchBanners("home_feed", 3); setHomeBanners(b ?? []); } catch (e) { setHomeBanners([]); } }, []);
+
   const fetchCategories = useCallback(async () => {
     setCategoriesLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("categories")
-        .select("id,name,sort_order")
-        .order("sort_order", { ascending: true });
-
-      if (error) throw error;
-      setDbCategories((data as DbCategoryRow[]) ?? []);
-
-      const { data: subs, error: subErr } = await supabase
-        .from("subcategories")
-        .select("id,name,category_id,sort_order")
-        .order("sort_order", { ascending: true });
-
-      if (subErr) throw subErr;
-      setDbSubcategories((subs as DbSubcategoryRow[]) ?? []);
-    } catch (e) {
-      console.log("FETCH CATEGORIES ERROR:", e);
-      setDbCategories([]);
-      setDbSubcategories([]);
-    } finally {
-      setCategoriesLoading(false);
-    }
+      const { data, error } = await supabase.from("categories").select("id,name,sort_order").order("sort_order", { ascending: true });
+      if (error) throw error; setDbCategories((data as DbCategoryRow[]) ?? []);
+      const { data: subs, error: subErr } = await supabase.from("subcategories").select("id,name,category_id,sort_order").order("sort_order", { ascending: true });
+      if (subErr) throw subErr; setDbSubcategories((subs as DbSubcategoryRow[]) ?? []);
+    } catch (e) { setDbCategories([]); setDbSubcategories([]); } finally { setCategoriesLoading(false); }
   }, []);
-  useEffect(() => {
-    fetchCategories();
-  }, [fetchCategories]);
 
-  useEffect(() => {
-    loadHomeBanners();
-  }, [loadHomeBanners]);
-  useEffect(() => {
-    if (!lastUpdatedAt && jobs.length > 0) {
-      setLastUpdatedAt(new Date());
-    }
-  }, [jobs, lastUpdatedAt]);
+  useEffect(() => { fetchCategories(); }, [fetchCategories]);
+  useEffect(() => { loadHomeBanners(); }, [loadHomeBanners]);
+  useEffect(() => { if (!lastUpdatedAt && jobs.length > 0) setLastUpdatedAt(new Date()); }, [jobs, lastUpdatedAt]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       const q = searchText.trim();
-      await Promise.all([
-        q
-          ? searchJobsRef.current
-            ? searchJobsRef.current(q)
-            : Promise.resolve()
-          : loadJobs(),
-        fetchCategories(),
-        loadHomeBanners(),
-      ]);
+      await Promise.all([q ? searchJobsRef.current ? searchJobsRef.current(q) : Promise.resolve() : loadJobs(), fetchCategories(), loadHomeBanners()]);
       setLastUpdatedAt(new Date());
-    } catch (e) {
-      console.log("REFRESH ERROR:", e);
-    } finally {
-      setRefreshing(false);
-    }
+    } catch (e) {} finally { setRefreshing(false); }
   }, [loadJobs, fetchCategories, searchText, loadHomeBanners]);
-  const normalizedJobs: NormalizedJob[] = useMemo(
-    () => (jobs as any[]).map(normalizeJob),
-    [jobs],
-  );
-  const subByCategoryId = useMemo(() => {
-    const m: Record<string, DbSubcategoryRow[]> = {};
-    for (const s of dbSubcategories) {
-      if (!m[s.category_id]) m[s.category_id] = [];
-      m[s.category_id].push(s);
-    }
-    return m;
-  }, [dbSubcategories]);
-  const categoryById = useMemo(() => {
-    const map: Record<string, DbCategoryRow> = {};
-    for (const item of dbCategories) map[item.id] = item;
-    return map;
-  }, [dbCategories]);
-  const subcategoryById = useMemo(() => {
-    const map: Record<string, DbSubcategoryRow> = {};
-    for (const item of dbSubcategories) map[item.id] = item;
-    return map;
-  }, [dbSubcategories]);
-  const categoryNames = useMemo(
-    () => dbCategories.map((c) => c.name).filter(Boolean),
-    [dbCategories],
-  );
-  const categoryIconMap = useMemo(
-    () => buildUniqueIconMap(categoryNames),
-    [categoryNames],
-  );
-  const getCategoryIcon = useCallback(
-    (name: string) => {
-      if (!name) return Tag;
-      return categoryIconMap[name] ?? Tag;
-    },
-    [categoryIconMap],
-  );
-  const selectedCategoryNames = useMemo(
-    () =>
-      selectedCategoryIds.map((id) => categoryById[id]?.name).filter(Boolean),
-    [selectedCategoryIds, categoryById],
-  );
-  const selectedSubcategoryNames = useMemo(
-    () =>
-      selectedSubcategoryIds
-        .map((id) => subcategoryById[id]?.name)
-        .filter(Boolean),
-    [selectedSubcategoryIds, subcategoryById],
-  );
+
+  const normalizedJobs: NormalizedJob[] = useMemo(() => (jobs as any[]).map(normalizeJob), [jobs]);
+  const subByCategoryId = useMemo(() => { const m: Record<string, DbSubcategoryRow[]> = {}; for (const s of dbSubcategories) { if (!m[s.category_id]) m[s.category_id] = []; m[s.category_id].push(s); } return m; }, [dbSubcategories]);
+  const categoryById = useMemo(() => { const map: Record<string, DbCategoryRow> = {}; for (const item of dbCategories) map[item.id] = item; return map; }, [dbCategories]);
+  const subcategoryById = useMemo(() => { const map: Record<string, DbSubcategoryRow> = {}; for (const item of dbSubcategories) map[item.id] = item; return map; }, [dbSubcategories]);
+  const categoryNames = useMemo(() => dbCategories.map((c) => c.name).filter(Boolean), [dbCategories]);
+  const categoryIconMap = useMemo(() => buildUniqueIconMap(categoryNames), [categoryNames]);
+  const getCategoryIcon = useCallback((name: string) => { if (!name) return Tag; return categoryIconMap[name] ?? Tag; }, [categoryIconMap]);
+  const selectedCategoryNames = useMemo(() => selectedCategoryIds.map((id) => categoryById[id]?.name).filter(Boolean), [selectedCategoryIds, categoryById]);
+  const selectedSubcategoryNames = useMemo(() => selectedSubcategoryIds.map((id) => subcategoryById[id]?.name).filter(Boolean), [selectedSubcategoryIds, subcategoryById]);
+  
   const filteredJobs = useMemo(() => {
     return normalizedJobs
       .filter((job) => {
         if (job?.isActive === false) return false;
         const available = Number((job as any)?.available_quantity ?? (job as any)?.availableQuantity ?? (job as any)?.quantity ?? 1);
         if (Number.isFinite(available) && available <= 0) return false;
-
         let matches = true;
-
-        if (selectedFilter === "need") {
-          matches = matches && job.postType === "worker";
-        } else if (selectedFilter === "rent") {
-          matches = matches && job.postType === "job";
-        }
-
+        if (selectedFilter === "need") matches = matches && job.postType === "worker";
+        else if (selectedFilter === "rent") matches = matches && job.postType === "job";
         const hasMain = selectedCategoryIds.length > 0;
         const hasSub = selectedSubcategoryIds.length > 0;
-
         if (hasMain || hasSub) {
-          const mainOk = hasMain
-            ? selectedCategoryIds.some((id) => {
-                const pickedName = categoryById[id]?.name;
-                return (
-                  (!!job.category_id && String(job.category_id) === id) ||
-                  (!!pickedName &&
-                    !!job.category &&
-                    normalizeText(job.category) === normalizeText(pickedName))
-                );
-              })
-            : true;
-          const subOk = hasSub
-            ?
-              selectedSubcategoryIds.some((id) => {
-                const pickedName = subcategoryById[id]?.name;
-                return (
-                  (!!job.subcategory_id && String(job.subcategory_id) === id) ||
-                  (!!pickedName &&
-                    !!job.subcategory &&
-                    normalizeText(job.subcategory) ===
-                      normalizeText(pickedName))
-                );
-              })
-            : true;
+          const mainOk = hasMain ? selectedCategoryIds.some((id) => { const pickedName = categoryById[id]?.name; return ((!!job.category_id && String(job.category_id) === id) || (!!pickedName && !!job.category && normalizeText(job.category) === normalizeText(pickedName))); }) : true;
+          const subOk = hasSub ? selectedSubcategoryIds.some((id) => { const pickedName = subcategoryById[id]?.name; return ((!!job.subcategory_id && String(job.subcategory_id) === id) || (!!pickedName && !!job.subcategory && normalizeText(job.subcategory) === normalizeText(pickedName))); }) : true;
           matches = matches && (hasSub ? subOk : mainOk);
         }
-
         return matches;
       })
       .sort((a, b) => {
@@ -1175,544 +496,134 @@ export default function HomeScreen() {
         const bPosted = b?.postedDate?.getTime?.() ?? 0;
         return bPosted - aPosted;
       });
-  }, [
-    normalizedJobs,
-    selectedFilter,
-    selectedCategoryIds,
-    selectedSubcategoryIds,
-    categoryById,
-    subcategoryById,
-  ]);
-  const toggleOpen = (id: string) => {
-    setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-  const toggleMain = (catId: string) => {
-    setSelectedCategoryIds((prev) => {
-      const on = prev.includes(catId);
-      const next = on ? prev.filter((x) => x !== catId) : [...prev, catId];
+  }, [normalizedJobs, selectedFilter, selectedCategoryIds, selectedSubcategoryIds, categoryById, subcategoryById]);
 
-      if (on) {
-        const subs = (subByCategoryId[catId] ?? []).map((s) => s.id);
-        setSelectedSubcategoryIds((current) =>
-          current.filter((id) => !subs.includes(id)),
-        );
-      }
-
-      return next;
-    });
-  };
-  const toggleSub = (catId: string, subId: string) => {
-    setSelectedCategoryIds((prev) =>
-      prev.includes(catId) ? prev : [...prev, catId],
-    );
-    setSelectedSubcategoryIds((prev) => {
-      const on = prev.includes(subId);
-      return on ? prev.filter((x) => x !== subId) : [...prev, subId];
-    });
-  };
-
-  const matchesSearch = useCallback(
-    (text: string) => searchMatch(text, categorySearch),
-    [categorySearch],
-  );
-  const canApply =
-    selectedCategoryIds.length > 0 || selectedSubcategoryIds.length > 0;
+  const toggleOpen = (id: string) => { setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] })); };
+  const toggleMain = (catId: string) => { setSelectedCategoryIds((prev) => { const on = prev.includes(catId); const next = on ? prev.filter((x) => x !== catId) : [...prev, catId]; if (on) { const subs = (subByCategoryId[catId] ?? []).map((s) => s.id); setSelectedSubcategoryIds((current) => current.filter((id) => !subs.includes(id))); } return next; }); };
+  const toggleSub = (catId: string, subId: string) => { setSelectedCategoryIds((prev) => prev.includes(catId) ? prev : [...prev, catId]); setSelectedSubcategoryIds((prev) => { const on = prev.includes(subId); return on ? prev.filter((x) => x !== subId) : [...prev, subId]; }); };
+  const matchesSearch = useCallback((text: string) => searchMatch(text, categorySearch), [categorySearch]);
+  const canApply = selectedCategoryIds.length > 0 || selectedSubcategoryIds.length > 0;
+  
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
-
     searchTimer.current = setTimeout(async () => {
       const q = searchText.trim();
-
       try {
-        if (!q) {
-          if (clearSearchRef.current) await clearSearchRef.current();
-        } else {
-          if (searchJobsRef.current) await searchJobsRef.current(q);
-        }
+        if (!q) { if (clearSearchRef.current) await clearSearchRef.current(); } else { if (searchJobsRef.current) await searchJobsRef.current(q); }
         setLastUpdatedAt(new Date());
-      } catch (e) {
-        console.log("SEARCH ERROR:", e);
-      }
+      } catch (e) {}
     }, 350);
-
-    return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    };
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchText]);
-  const clearTopSearch = useCallback(async () => {
-    setSearchText("");
-    try {
-      if (clearSearchRef.current) await clearSearchRef.current();
-      setLastUpdatedAt(new Date());
-    } catch (e) {
-      console.log("CLEAR SEARCH ERROR:", e);
-    }
-  }, []);
+  
+  const clearTopSearch = useCallback(async () => { setSearchText(""); try { if (clearSearchRef.current) await clearSearchRef.current(); setLastUpdatedAt(new Date()); } catch (e) {} }, []);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <SafeAreaView
-        edges={["top"]}
-        style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}
-      >
+      <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
         <View style={styles.header}>
-          <Text style={[styles.greeting, { color: colors.headerText }]}>
-            Сайн байна уу
-          </Text>
-          
+          <Text style={[styles.greeting, { color: colors.headerText }]}>Сайн байна уу</Text>
           <View style={styles.headerRight}>
-            <Image
-              source={getLogoSource(currentTheme)}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+            <Image source={getLogoSource(currentTheme)} style={styles.logo} contentFit="contain" />
           </View>
         </View>
 
         <View style={styles.searchRow}>
           <View style={styles.searchContainer}>
             <Search size={20} color="#666666" />
-            <TextInput
-              style={[styles.searchInput, { color: "#111111" }]}
-              placeholder="Хайх"
-              placeholderTextColor="#666666"
-              value={searchText}
-              onChangeText={setSearchText}
-              returnKeyType="search"
-            />
-            {!!searchText.trim() && (
-              <TouchableOpacity
-                onPress={clearTopSearch}
-                activeOpacity={0.8}
-                style={{ padding: 4 }}
-              >
-                <X size={18} color="#666666" />
-              </TouchableOpacity>
-            )}
+            <TextInput style={[styles.searchInput, { color: "#111111" }]} placeholder="Хайх" placeholderTextColor="#666666" value={searchText} onChangeText={setSearchText} returnKeyType="search" />
+            {!!searchText.trim() && (<TouchableOpacity onPress={clearTopSearch} activeOpacity={0.8} style={{ padding: 4 }}><X size={18} color="#666666" /></TouchableOpacity>)}
           </View>
-          
-          <TouchableOpacity 
-            style={[styles.categoryIconBtn, { backgroundColor: colors.background, borderColor: colors.border }]} 
-            onPress={() => setShowCategoryModal(true)}
-          >
-            <ClipboardList size={22} color={colors.primary} />
-          </TouchableOpacity>
+          <TouchableOpacity style={[styles.categoryIconBtn, { backgroundColor: colors.background, borderColor: colors.border }]} onPress={() => setShowCategoryModal(true)}><ClipboardList size={22} color={colors.primary} /></TouchableOpacity>
         </View>
 
-        {(selectedCategoryNames.length > 0 ||
-          selectedSubcategoryNames.length > 0) && (
+        {(selectedCategoryNames.length > 0 || selectedSubcategoryNames.length > 0) && (
           <View style={styles.selectedCategoryContainer}>
-            <View
-              style={[
-                styles.selectedCategoryBadge,
-                { backgroundColor: colors.backgroundSecondary },
-              ]}
-            >
+            <View style={[styles.selectedCategoryBadge, { backgroundColor: colors.backgroundSecondary }]}>
               <View style={{ flex: 1 }}>
-                {selectedCategoryNames.length > 0 && (
-                  <Text
-                    style={[
-                      styles.selectedCategoryText,
-                      { color: colors.text },
-                    ]}
-                  >
-                    Категори: {selectedCategoryNames.join(", ")}
-                  </Text>
-                )}
-                {selectedSubcategoryNames.length > 0 && (
-                  <Text
-                    style={[
-                      styles.selectedCategoryText,
-                      { color: colors.text, marginTop: 4 },
-                    ]}
-                  >
-                    Дэд: {selectedSubcategoryNames.join(", ")}
-                  </Text>
-                )}
+                {selectedCategoryNames.length > 0 && <Text style={[styles.selectedCategoryText, { color: colors.text }]}>Категори: {selectedCategoryNames.join(", ")}</Text>}
+                {selectedSubcategoryNames.length > 0 && <Text style={[styles.selectedCategoryText, { color: colors.text, marginTop: 4 }]}>Дэд: {selectedSubcategoryNames.join(", ")}</Text>}
               </View>
-
-              <TouchableOpacity
-                onPress={() => {
-                  setSelectedCategoryIds([]);
-                  setSelectedSubcategoryIds([]);
-                }}
-                style={styles.clearCategoryButton}
-                activeOpacity={0.7}
-              >
-                <X size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setSelectedCategoryIds([]); setSelectedSubcategoryIds([]); }} style={styles.clearCategoryButton} activeOpacity={0.7}><X size={18} color={colors.textSecondary} /></TouchableOpacity>
             </View>
           </View>
         )}
       </SafeAreaView>
 
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Шинэ зарууд
-          </Text>
-
-          <TouchableOpacity
-            onPress={async () => {
-              setSelectedFilter("all");
-              setSelectedCategoryIds([]);
-              setSelectedSubcategoryIds([]);
-              await clearTopSearch();
-            }}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.seeAll, { color: colors.text }]}>
-              Бүгдийг харах
-            </Text>
-          </TouchableOpacity>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Шинэ зарууд</Text>
+          <TouchableOpacity onPress={async () => { setSelectedFilter("all"); setSelectedCategoryIds([]); setSelectedSubcategoryIds([]); await clearTopSearch(); }} activeOpacity={0.75}><Text style={[styles.seeAll, { color: colors.text }]}>Бүгдийг харах</Text></TouchableOpacity>
         </View>
 
-        {/* 🎯 ЗАСВАР 3: Ачаалж дуусаагүй гацсан үед автоматаар зогсоох `safeIsLoading` ашигласан */}
+        {/* 🎯 ШИНЭ: Skeleton loader харуулж байна */}
         {safeIsLoading && !refreshing && (
-          <View style={{ paddingVertical: 16, alignItems: "center" }}>
-            <ActivityIndicator />
+          <View>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
           </View>
         )}
 
-        {lastUpdatedAt && (
-          <Text
-            style={{
-              paddingHorizontal: 20,
-              marginBottom: 10,
-              opacity: 0.6,
-              color: colors.textSecondary,
-            }}
-          >
-            Сүүлийн шинэчлэлт: {lastUpdatedAt.toLocaleTimeString()}
-          </Text>
-        )}
+        {lastUpdatedAt && <Text style={{ paddingHorizontal: 20, marginBottom: 10, opacity: 0.6, color: colors.textSecondary }}>Сүүлийн шинэчлэлт: {lastUpdatedAt.toLocaleTimeString()}</Text>}
 
         {!safeIsLoading && filteredJobs.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              Зар олдсонгүй
-            </Text>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Хайлтын үг эсвэл шүүлтүүрээ өөрчлөөд дахин үзээрэй
-            </Text>
-          </View>
+          <View style={styles.emptyWrap}><Text style={[styles.emptyTitle, { color: colors.text }]}>Зар олдсонгүй</Text><Text style={[styles.emptyText, { color: colors.textSecondary }]}>Хайлтын үг эсвэл шүүлтүүрээ өөрчлөөд дахин үзээрэй</Text></View>
         ) : (
           filteredJobs.map((job, idx) => {
             const oneBased = idx + 1;
             const shouldShowBanner = oneBased >= 6 && (oneBased - 6) % 20 === 0;
-
             return (
               <React.Fragment key={job.id}>
-                <JobCard job={job as Job} getCategoryIcon={getCategoryIcon} />
-
-                {shouldShowBanner && homeBanners.length > 0 ? (
-                  <View style={{ marginTop: 8, marginBottom: 12 }}>
-                    <BannerCarousel banners={homeBanners} />
-                  </View>
-                ) : null}
+                <JobCard 
+                  job={job as Job} 
+                  getCategoryIcon={getCategoryIcon} 
+                  isSaved={savedJobIds.includes(job.id)} 
+                  onToggleSave={toggleSaveJob} 
+                />
+                {shouldShowBanner && homeBanners.length > 0 ? (<View style={{ marginTop: 8, marginBottom: 12 }}><BannerCarousel banners={homeBanners} /></View>) : null}
               </React.Fragment>
             );
           })
         )}
-
         <View style={styles.bottomPadding} />
       </ScrollView>
 
-      <TouchableOpacity
-        style={[styles.floatingButton, { backgroundColor: colors.primary }]}
-        onPress={() => setShowThemeSelector(true)}
-        activeOpacity={0.8}
-      >
-        <Palette size={24} color={colors.headerText} />
-      </TouchableOpacity>
+      <TouchableOpacity style={[styles.floatingButton, { backgroundColor: colors.primary }]} onPress={() => setShowThemeSelector(true)} activeOpacity={0.8}><Palette size={24} color={colors.headerText} /></TouchableOpacity>
+      <ThemeSelector visible={showThemeSelector} onClose={() => setShowThemeSelector(false)} />
 
-      <ThemeSelector
-        visible={showThemeSelector}
-        onClose={() => setShowThemeSelector(false)}
-      />
-
-      <Modal
-        visible={showCategoryModal}
-        animationType="slide"
-        transparent
-        statusBarTranslucent
-        onShow={() => {
-          Keyboard.dismiss();
-        }}
-        onRequestClose={() => setShowCategoryModal(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setShowCategoryModal(false)}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalKeyboardWrap}
-          >
-            <Pressable
-              onPress={(e) => e.stopPropagation()}
-              style={[
-                styles.modalContent,
-                {
-                  backgroundColor: colors.card,
-                  paddingBottom: Math.max(insets.bottom, 12) + 12,
-                },
-              ]}
-            >
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  Категори сонгох
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setShowCategoryModal(false)}
-                  style={styles.closeButton}
-                >
-                  <X size={24} color={colors.text} />
-                </TouchableOpacity>
-              </View>
-
-              <TextInput
-                style={[
-                  styles.modalSearchInput,
-                  {
-                    backgroundColor: colors.backgroundSecondary,
-                    color: colors.text,
-                  },
-                ]}
-                placeholder="Категори / дэд хайх..."
-                placeholderTextColor={colors.textSecondary}
-                value={categorySearch}
-                onChangeText={setCategorySearch}
-              />
-
-              {(selectedCategoryIds.length > 0 ||
-              selectedSubcategoryIds.length > 0) && (
-                <TouchableOpacity
-                  style={[
-                    styles.clearButton,
-                    { backgroundColor: colors.accent },
-                  ]}
-                  onPress={() => {
-                    setSelectedCategoryIds([]);
-                    setSelectedSubcategoryIds([]);
-                    setCategorySearch("");
-                    setShowCategoryModal(false);
-                  }}
-                >
-                  <Text
-                    style={[styles.clearButtonText, { color: colors.text }]}
-                  >
-                    Бүгдийг харах
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              <ScrollView
-                style={styles.categoryList}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
+      <Modal visible={showCategoryModal} animationType="slide" transparent statusBarTranslucent onShow={() => { Keyboard.dismiss(); }} onRequestClose={() => setShowCategoryModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowCategoryModal(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalKeyboardWrap}>
+            <Pressable onPress={(e) => e.stopPropagation()} style={[styles.modalContent, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 12) + 12 }]}>
+              <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Категори сонгох</Text><TouchableOpacity onPress={() => setShowCategoryModal(false)} style={styles.closeButton}><X size={24} color={colors.text} /></TouchableOpacity></View>
+              <TextInput style={[styles.modalSearchInput, { backgroundColor: colors.backgroundSecondary, color: colors.text }]} placeholder="Категори / дэд хайх..." placeholderTextColor={colors.textSecondary} value={categorySearch} onChangeText={setCategorySearch} />
+              {(selectedCategoryIds.length > 0 || selectedSubcategoryIds.length > 0) && (<TouchableOpacity style={[styles.clearButton, { backgroundColor: colors.accent }]} onPress={() => { setSelectedCategoryIds([]); setSelectedSubcategoryIds([]); setCategorySearch(""); setShowCategoryModal(false); }}><Text style={[styles.clearButtonText, { color: colors.text }]}>Бүгдийг харах</Text></TouchableOpacity>)}
+              <ScrollView style={styles.categoryList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 {categoriesLoading ? (
-                  <View
-                    style={{
-                      paddingVertical: 24,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <ActivityIndicator />
-                    <Text
-                      style={{ marginTop: 10, color: colors.textSecondary }}
-                    >
-                      Категори татаж байна...
-                    </Text>
-                  </View>
+                  <View style={{ paddingVertical: 24, alignItems: "center", justifyContent: "center" }}><ActivityIndicator /><Text style={{ marginTop: 10, color: colors.textSecondary }}>Категори татаж байна...</Text></View>
                 ) : dbCategories.length === 0 ? (
-                  <View
-                    style={{
-                      paddingVertical: 24,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: colors.textSecondary,
-                        textAlign: "center",
-                      }}
-                    >
-                      Категори олдсонгүй.
-                      {"\n"}(Supabase дээр seed ажилласан эсэхээ шалгаарай)
-                    </Text>
-                  </View>
+                  <View style={{ paddingVertical: 24, alignItems: "center", justifyContent: "center" }}><Text style={{ color: colors.textSecondary, textAlign: "center" }}>Категори олдсонгүй.</Text></View>
                 ) : (
-                  dbCategories
-                    .filter((c) => {
+                  dbCategories.filter((c) => { const subs = subByCategoryId[c.id] ?? []; return matchesSearch(c.name) || subs.some((s) => matchesSearch(s.name)); }).map((c) => {
                       const subs = subByCategoryId[c.id] ?? [];
                       const categoryMatches = matchesSearch(c.name);
-                      const hasMatchingSub = subs.some((s) =>
-                        matchesSearch(s.name),
-                      );
-                      return categoryMatches ||
-                        hasMatchingSub;
-                    })
-                    .map((c) => {
-                      const subs = subByCategoryId[c.id] ?? [];
-                      const categoryMatches = matchesSearch(c.name);
-                      const hasMatchingSub = subs.some((s) =>
-                        matchesSearch(s.name),
-                      );
                       const isSearching = !!categorySearch.trim();
-
-                      const isOpen = isSearching
-                        ? categoryMatches ||
-                          hasMatchingSub ||
-                          !!openCategoryIds[c.id]
-                        : !!openCategoryIds[c.id];
-
+                      const isOpen = isSearching ? categoryMatches || subs.some((s) => matchesSearch(s.name)) || !!openCategoryIds[c.id] : !!openCategoryIds[c.id];
                       const mainOn = selectedCategoryIds.includes(c.id);
                       const MainIcon = getCategoryIcon(c.name);
-
-                      const visibleSubs = isSearching
-                        ? categoryMatches
-                          ? subs
-                          : subs.filter((s) => matchesSearch(s.name))
-                        : subs;
+                      const visibleSubs = isSearching ? categoryMatches ? subs : subs.filter((s) => matchesSearch(s.name)) : subs;
                       return (
                         <View key={c.id} style={{ marginBottom: 8 }}>
-                          <TouchableOpacity
-                            style={[
-                              styles.categoryItem,
-                              {
-                                backgroundColor: colors.backgroundSecondary,
-                                flexDirection: "row",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                gap: 10,
-                              },
-                              mainOn && { backgroundColor: colors.accent },
-                            ]}
-                            activeOpacity={0.85}
-                            onPress={() => toggleOpen(c.id)}
-                          >
-                            <View style={{ flex: 1 }}>
-                              <View
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  gap: 10,
-                                }}
-                              >
-                                <MainIcon size={18} color={colors.text} />
-                                <Text
-                                  style={[
-                                    styles.categoryItemText,
-                                    {
-                                      color: colors.text,
-                                      fontWeight: mainOn ? "800" : "700",
-                                    },
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  {c.name}
-                                </Text>
-                              </View>
-
-                              {subs.length > 0 ? (
-                                <Text
-                                  style={{
-                                    marginTop: 2,
-                                    opacity: 0.6,
-                                    color: colors.textSecondary,
-                                  }}
-                                  numberOfLines={1}
-                                >
-                                  {isOpen
-                                    ? "Дэдүүдийг нуух"
-                                    : "Дэдүүдийг харах"}
-                                </Text>
-                              ) : (
-                                <View style={{ height: 0 }} />
-                              )}
-                            </View>
-
-                            <TouchableOpacity
-                              onPress={() => toggleMain(c.id)}
-                              activeOpacity={0.85}
-                              style={{
-                                paddingHorizontal: 10,
-                                paddingVertical: 7,
-                                borderRadius: 10,
-                                borderWidth: 1,
-                                borderColor: "rgba(0,0,0,0.12)",
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  fontWeight: "800",
-                                  color: colors.text,
-                                }}
-                              >
-                                {mainOn ? "Сонгосон" : "Сонгох"}
-                              </Text>
-                            </TouchableOpacity>
+                          <TouchableOpacity style={[styles.categoryItem, { backgroundColor: colors.backgroundSecondary, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }, mainOn && { backgroundColor: colors.accent }]} activeOpacity={0.85} onPress={() => toggleOpen(c.id)}>
+                            <View style={{ flex: 1 }}><View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><MainIcon size={18} color={colors.text} /><Text style={[styles.categoryItemText, { color: colors.text, fontWeight: mainOn ? "800" : "700" }]} numberOfLines={1}>{c.name}</Text></View>{subs.length > 0 ? (<Text style={{ marginTop: 2, opacity: 0.6, color: colors.textSecondary }} numberOfLines={1}>{isOpen ? "Дэдүүдийг нуух" : "Дэдүүдийг харах"}</Text>) : (<View style={{ height: 0 }} />)}</View>
+                            <TouchableOpacity onPress={() => toggleMain(c.id)} activeOpacity={0.85} style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: "rgba(0,0,0,0.12)" }}><Text style={{ fontWeight: "800", color: colors.text }}>{mainOn ? "Сонгосон" : "Сонгох"}</Text></TouchableOpacity>
                           </TouchableOpacity>
-
                           {isOpen && visibleSubs.length > 0 && (
-                            <View
-                              style={{ paddingLeft: 12, paddingTop: 6, gap: 6 }}
-                            >
+                            <View style={{ paddingLeft: 12, paddingTop: 6, gap: 6 }}>
                               {visibleSubs.map((s) => {
-                                const subOn = selectedSubcategoryIds.includes(
-                                  s.id,
-                                );
-
-                                return (
-                                  <TouchableOpacity
-                                    key={s.id}
-                                    activeOpacity={0.85}
-                                    onPress={() => toggleSub(c.id, s.id)}
-                                    style={[
-                                      styles.categoryItem,
-                                      {
-                                        backgroundColor:
-                                          colors.backgroundSecondary,
-                                        paddingVertical: 12,
-                                      },
-                                      subOn && {
-                                        backgroundColor: colors.accent,
-                                      },
-                                    ]}
-                                  >
-                                    <View
-                                      style={{
-                                        flexDirection: "row",
-                                        alignItems: "center",
-                                        gap: 10,
-                                      }}
-                                    >
-                                      <Tag size={16} color={colors.text} />
-                                      <Text
-                                        style={[
-                                          styles.categoryItemText,
-                                          {
-                                            color: colors.text,
-                                            fontWeight: subOn ? "800" : "600",
-                                          },
-                                        ]}
-                                      >
-                                        {s.name} {subOn ? "✓" : ""}
-                                      </Text>
-                                    </View>
-                                  </TouchableOpacity>
-                                );
+                                const subOn = selectedSubcategoryIds.includes(s.id);
+                                return (<TouchableOpacity key={s.id} activeOpacity={0.85} onPress={() => toggleSub(c.id, s.id)} style={[styles.categoryItem, { backgroundColor: colors.backgroundSecondary, paddingVertical: 12 }, subOn && { backgroundColor: colors.accent }]}><View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><Tag size={16} color={colors.text} /><Text style={[styles.categoryItemText, { color: colors.text, fontWeight: subOn ? "800" : "600" }]}>{s.name} {subOn ? "✓" : ""}</Text></View></TouchableOpacity>);
                               })}
                             </View>
                           )}
@@ -1721,24 +632,7 @@ export default function HomeScreen() {
                     })
                 )}
               </ScrollView>
-
-              <TouchableOpacity
-                style={[
-                  styles.applyButton,
-                  { backgroundColor: colors.accent },
-                  !canApply && { opacity: 0.45 },
-                ]}
-                disabled={!canApply}
-                onPress={() => {
-                  setShowCategoryModal(false);
-                  setCategorySearch("");
-                }}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.applyButtonText, { color: colors.text }]}>
-                  Сонгох
-                </Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={[styles.applyButton, { backgroundColor: colors.accent }, !canApply && { opacity: 0.45 }]} disabled={!canApply} onPress={() => { setShowCategoryModal(false); setCategorySearch(""); }} activeOpacity={0.85}><Text style={[styles.applyButtonText, { color: colors.text }]}>Сонгох</Text></TouchableOpacity>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -1750,369 +644,58 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { paddingBottom: 16, zIndex: 10, elevation: 10 },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
   greeting: { fontSize: 18, fontWeight: "600" },
   logo: { width: 140, height: 60 },
-
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 16,
-    gap: 10,
-    marginBottom: 12,
-  },
-  searchContainer: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 10,
-  },
+  searchRow: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, gap: 10, marginBottom: 12 },
+  searchContainer: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, gap: 10 },
   searchInput: { flex: 1, fontSize: 16, padding: 0 },
-  categoryIconBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-
+  categoryIconBtn: { width: 48, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   content: { flex: 1 },
   contentContainer: { paddingTop: 16 },
-
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: "700" },
   seeAll: { fontSize: 14, fontWeight: "600" },
-
-  jobCard: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    borderRadius: 16,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-
-  ratingLine: {
-    marginTop: 6,
-  },
-  ratingLineText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  jobMetaInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
-    gap: 6,
-  },
-  metaDot: { fontSize: 12, color: "#666666" },
-
-  jobPosterSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    gap: 12,
-  },
-  jobHeaderContent: { flex: 1 },
-
-  jobImagesWrap: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  jobImagesScrollContent: {
-    paddingRight: 4,
-    gap: 8,
-  },
-  jobPreviewImage: {
-    width: 150,
-    height: 110,
-    borderRadius: 12,
-    backgroundColor: "#E9E9E9",
-  },
-
-  jobContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    paddingTop: 0,
-    gap: 6,
-  },
-
-  jobTitle: { fontSize: 18, fontWeight: "700", color: "#1A1A1A" },
-  jobDescription: { fontSize: 14, color: "#666666", lineHeight: 20 },
-
-  posterAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#F8E75D",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  posterInitial: { fontSize: 20, fontWeight: "700", color: "#1A1A1A" },
-  posterName: { fontSize: 13, fontWeight: "400", color: "#666666" },
-  posterDate: { fontSize: 13, fontWeight: "400", color: "#666666" },
-
-  sponsoredUnderCategory: {
-    fontSize: 14,
-    fontWeight: "800",
-    marginTop: 6,
-    color: "#FFB800",
-  },
-
-  emptyWrap: {
-    paddingHorizontal: 24,
-    paddingVertical: 36,
-    alignItems: "center",
-  },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-
+  jobCard: { marginHorizontal: 20, marginBottom: 12, borderRadius: 16, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  feedHeader: { flexDirection: "row", alignItems: "center", padding: 16, paddingBottom: 10, gap: 12 },
+  feedAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E9E9E9", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  posterInitial: { fontSize: 18, fontWeight: "700" },
+  feedHeaderInfo: { flex: 1, justifyContent: "center" },
+  feedPosterName: { fontSize: 16, fontWeight: "700", marginBottom: 2 },
+  feedMetaRow: { flexDirection: "row", alignItems: "center" },
+  feedDate: { fontSize: 13 },
+  feedSponsoredText: { fontSize: 13, fontWeight: "700" },
+  feedTextContent: { paddingHorizontal: 16, paddingBottom: 12 },
+  feedMainTitle: { fontSize: 16, fontWeight: "800", marginBottom: 6 },
+  feedMainDescription: { fontSize: 15, lineHeight: 22 },
+  feedFooter: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 16, paddingTop: 4, gap: 8, flexWrap: "wrap" },
+  feedTagBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, gap: 6 },
+  feedTagText: { fontSize: 13, fontWeight: "600" },
+  jobImagesWrap: { paddingHorizontal: 16, paddingBottom: 12 },
+  jobImagesScrollContent: { paddingRight: 4, gap: 8 },
+  jobPreviewImage: { width: 150, height: 110, borderRadius: 12, backgroundColor: "#E9E9E9" },
+  emptyWrap: { paddingHorizontal: 24, paddingVertical: 36, alignItems: "center" },
+  emptyTitle: { fontSize: 17, fontWeight: "700", marginBottom: 8 },
+  emptyText: { fontSize: 14, textAlign: "center", lineHeight: 20 },
   bottomPadding: { height: 20 },
-
-  filterContainer: {
-    flexDirection: "row",
-    zIndex: 20,
-    elevation: 20,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
-    gap: 10,
-  },
-  filterButton: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F9F9F9",
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "#F9F9F9",
-  },
-  filterButtonActive: {
-    backgroundColor: "#1A1A1A",
-    borderColor: "#1A1A1A",
-  },
-  touchSafeButton: {
-    zIndex: 30,
-    elevation: 30,
-  },
-  filterButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    textAlign: "center",
-    flexShrink: 1,
-  },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalKeyboardWrap: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    paddingHorizontal: 20,
-    maxHeight: "82%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", justifyContent: "flex-end" },
+  modalKeyboardWrap: { flex: 1, justifyContent: "flex-end" },
+  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 20, paddingHorizontal: 20, maxHeight: "82%" },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: "700" },
   closeButton: { padding: 4 },
-
-  modalSearchInput: {
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 15,
-    marginBottom: 12,
-  },
-  clearButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    alignItems: "center",
-  },
+  modalSearchInput: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, marginBottom: 12 },
+  clearButton: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, marginBottom: 12, alignItems: "center" },
   clearButtonText: { fontSize: 15, fontWeight: "600" },
-
-  applyButton: {
-    marginTop: 8,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-  },
+  applyButton: { marginTop: 8, paddingVertical: 12, borderRadius: 12, alignItems: "center" },
   applyButtonText: { fontSize: 15, fontWeight: "800" },
-
   categoryList: { marginBottom: 8 },
-  categoryItem: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: "#F9F9F9",
-  },
+  categoryItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, backgroundColor: "#F9F9F9" },
   categoryItemText: { fontSize: 15 },
-
-  floatingButton: {
-    position: "absolute",
-    right: 20,
-    bottom: 90,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-
-  selectedCategoryContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  selectedCategoryBadge: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 8,
-  },
+  floatingButton: { position: "absolute", right: 20, bottom: 90, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8 },
+  selectedCategoryContainer: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+  selectedCategoryBadge: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, gap: 8 },
   selectedCategoryText: { fontSize: 14, fontWeight: "700" },
   clearCategoryButton: { padding: 4 },
-
-  themeOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.18)",
-  },
-  themeSheet: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 12,
-    paddingHorizontal: 0,
-  },
-  themeSheetHeader: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingBottom: 8,
-    position: "relative",
-  },
-  themeHandle: {
-    width: 44,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "#D0D2D8",
-  },
-  themeCloseButton: {
-    position: "absolute",
-    right: 18,
-    top: -4,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F6F4F8",
-  },
-  themeIntroRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 18,
-  },
-  themeIntroTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#201A2E",
-  },
-  themeCircleWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-  },
-  themeCircleOuter: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 2,
-    borderColor: "transparent",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "transparent",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0,
-    shadowRadius: 10,
-    elevation: 0,
-  },
-  themeCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  themeCircleActive: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
 });

@@ -5,33 +5,26 @@ import { supabase } from "@/lib/supabase";
 
 const USER_STORAGE_KEY = "@user_data";
 const ADMIN_UNLOCKED_KEY = "@admin_unlocked";
-
 const ADMIN_PANEL_PASSWORD = "Tseba0114*";
 
 const normalizePhone = (phone: string) => {
   const digits = String(phone ?? "").replace(/[^\d]/g, "");
-
   if (!digits) return "";
-
   if (digits.startsWith("976")) {
     return `+${digits}`;
   }
-
   if (digits.length === 8) {
     return `+976${digits}`;
   }
-
   return String(phone ?? "").trim();
 };
 
 const phoneToEmail = (phone: string) => {
   const normalizedPhone = normalizePhone(phone);
   const digits = normalizedPhone.replace(/[^\d]/g, "").trim();
-
   if (!digits) {
     throw new Error("Утасны дугаар буруу байна.");
   }
-
   return `u${digits}@example.com`.toLowerCase();
 };
 
@@ -44,6 +37,8 @@ export interface User {
   sponsoredFrom?: string | null;
   sponsoredUntil?: string | null;
   lastActiveAt?: string | null;
+  // 🎯 ЗАСВАР: Эрх хадгалах хувьсагчийг нэмж өглөө
+  available_post_credits?: number; 
 }
 
 type DbUserRow = {
@@ -55,6 +50,8 @@ type DbUserRow = {
   sponsored_from: string | null;
   sponsored_until: string | null;
   last_active_at: string | null;
+  // 🎯 ЗАСВАР: Эрхийн баганыг нэмж өглөө
+  available_post_credits: number | null; 
 };
 
 function mapProfileRowToUser(data: DbUserRow, fallbackPhone?: string): User {
@@ -67,6 +64,8 @@ function mapProfileRowToUser(data: DbUserRow, fallbackPhone?: string): User {
     sponsoredFrom: data.sponsored_from ?? null,
     sponsoredUntil: data.sponsored_until ?? null,
     lastActiveAt: data.last_active_at ?? null,
+    // 🎯 ЗАСВАР: Баазаас ирсэн эрхийг апп руу залгаж өгөв
+    available_post_credits: data.available_post_credits ?? 0, 
   };
 }
 
@@ -74,7 +73,6 @@ export const [AuthContext, useAuth] = createContextHook(() => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-
   const mountedRef = useRef(true);
 
   const persistUser = useCallback(async (profile: User | null) => {
@@ -108,10 +106,11 @@ export const [AuthContext, useAuth] = createContextHook(() => {
         ? normalizePhone(fallbackPhone)
         : undefined;
 
+      // 🎯 ЗАСВАР: available_post_credits баганыг татаж авах query-д нэмэв
       const { data, error } = await supabase
         .from("users")
         .select(
-          "id, phone, name, photo_uri, is_super_admin, sponsored_from, sponsored_until, last_active_at"
+          "id, phone, name, photo_uri, is_super_admin, sponsored_from, sponsored_until, last_active_at, available_post_credits"
         )
         .eq("id", uid)
         .single<DbUserRow>();
@@ -134,7 +133,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
         const retry = await supabase
           .from("users")
           .select(
-            "id, phone, name, photo_uri, is_super_admin, sponsored_from, sponsored_until, last_active_at"
+            "id, phone, name, photo_uri, is_super_admin, sponsored_from, sponsored_until, last_active_at, available_post_credits"
           )
           .eq("id", uid)
           .single<DbUserRow>();
@@ -145,17 +144,14 @@ export const [AuthContext, useAuth] = createContextHook(() => {
 
         const profile = mapProfileRowToUser(retry.data, normalizedFallbackPhone);
         await persistUser(profile);
-
         if (mountedRef.current) {
           setUser(profile);
         }
-
         return profile;
       }
 
       const profile = mapProfileRowToUser(data, normalizedFallbackPhone);
       await persistUser(profile);
-
       if (mountedRef.current) {
         setUser(profile);
       }
@@ -270,12 +266,8 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       });
 
       if (error) {
-        if (
-          String(error.message || "").toLowerCase().includes("email logins are disabled")
-        ) {
-          throw new Error(
-            "Supabase дээр Email provider унтраалттай байна. Энэ auth бүтэц нь дотроо email/password ашигладаг тул Email provider-аа асаана уу."
-          );
+        if (String(error.message || "").toLowerCase().includes("email logins are disabled")) {
+          throw new Error("Supabase дээр Email provider унтраалттай байна. Энэ auth бүтэц нь дотроо email/password ашигладаг тул Email provider-аа асаана уу.");
         }
         throw error;
       }
@@ -306,15 +298,12 @@ export const [AuthContext, useAuth] = createContextHook(() => {
         const message = String(error.message || "").toLowerCase();
 
         if (message.includes("email logins are disabled")) {
-          throw new Error(
-            "Supabase дээр Email provider унтраалттай байна. Энэ auth бүтэц нь утасны дугаарыг hidden email болгож нэвтэрдэг тул Email provider-аа асаана уу."
-          );
+          throw new Error("Supabase дээр Email provider унтраалттай байна. Энэ auth бүтэц нь утасны дугаарыг hidden email болгож нэвтэрдэг тул Email provider-аа асаана уу.");
         }
 
         if (message.includes("invalid login credentials")) {
           throw new Error("Утасны дугаар эсвэл нууц үг буруу байна.");
         }
-
         throw error;
       }
 
@@ -335,9 +324,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
 
   const resetPassword = useCallback(
     async (_phone: string, _newPassword: string) => {
-      throw new Error(
-        "Одоогийн AuthContext бүтэц нь phone→hidden email/password auth ашиглаж байна. Logged-out хэрэглэгчийн нууц үгийг зөвхөн OTP-оор шууд солихын тулд тусдаа recovery flow эсвэл server function хэрэгтэй."
-      );
+      throw new Error("Одоогийн AuthContext бүтэц нь phone→hidden email/password auth ашиглаж байна. Logged-out хэрэглэгчийн нууц үгийг зөвхөн OTP-оор шууд солихын тулд тусдаа recovery flow эсвэл server function хэрэгтэй.");
     },
     []
   );
@@ -378,7 +365,6 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       }
 
       const email = phoneToEmail(phone);
-
       const reauth = await supabase.auth.signInWithPassword({
         email,
         password: currentPassword,
@@ -480,26 +466,20 @@ export const [AuthContext, useAuth] = createContextHook(() => {
   return {
     user,
     isLoading,
-
     register,
     login,
     logout,
     resetPassword,
     updateProfile,
-
     changePassword,
     deleteAccount,
-
     isAuthenticated: user !== null,
     isSuperAdmin: user?.isSuperAdmin === true,
-
     isAdminUnlocked,
     unlockAdmin,
     lockAdmin,
-
     isSponsoredActive: sponsoredActive,
     isSponsoredScheduled: sponsoredStartsIn,
-
     refetchProfile,
   };
 });

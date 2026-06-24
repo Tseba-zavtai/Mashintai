@@ -25,6 +25,7 @@ import {
   EyeOff,
   Images,
   TrendingUp,
+  ChevronLeft, // 🎯 ЗАСВАР: Буцах товчны айконыг нэмсэн
 } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/lib/supabase"; 
@@ -256,16 +257,19 @@ export default function MyJobsScreen() {
   );
 
   return (
-    <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          title: "Миний зарууд",
-          headerStyle: { backgroundColor: colors.background },
-          headerTitleStyle: { fontSize: 18, fontWeight: "700", color: colors.text },
-          headerShadowVisible: false,
-        }}
-      />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
+      
+      {/* 🎯 ЗАСВАР 1: Expo-ийн унаган муухай толгойг бүр мөсөн нуух */}
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* 🎯 ЗАСВАР 2: Таны апп-ын үндсэн ижилхэн толгой (Custom Header) */}
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 }}>
+        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75} style={{ padding: 4 }}>
+          <ChevronLeft size={28} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>Миний зарууд</Text>
+        <View style={{ width: 40 }} /> {/* Текстийг яг голлуулахын тулд */}
+      </View>
 
       <View style={[styles.toolsRow, { backgroundColor: colors.background }]}>
         <TouchableOpacity style={[styles.toolButton, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => setShowInactive((v) => !v)}>
@@ -369,7 +373,7 @@ export default function MyJobsScreen() {
         )}
         <View style={styles.bottomPadding} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

@@ -243,7 +243,7 @@ export default function LocationScreen() {
           >
             <Locate size={18} color={selectedFilter === "near" ? "#fff" : colors.text} />
             <Text style={[styles.filterButtonText, { color: selectedFilter === "near" ? "#fff" : colors.text }]}>
-              Надтай ойр (1км)
+              Надтай ойр
             </Text>
           </TouchableOpacity>
 

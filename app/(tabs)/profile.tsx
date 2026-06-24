@@ -31,6 +31,8 @@ import {
   EyeOff,
   MessageSquare,
   Info,
+  Star,
+  Heart, // 🎯 ШИНЭ: Зүрхний айкон
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
@@ -46,10 +48,7 @@ import { getLogoSource } from "@/constants/logo";
 
 const APP_VERSION = "1.0.0";
 const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
-
-// ⚠️ АНХААР: Supabase дээрх Storage савны нэрээ яг том жижиг үсгээр нь тааруулж бичих!
-// Саяны зургаас харахад таны савны нэр "UserProfile" байсан тул энд ингэж засав.
-const STORAGE_BUCKET = "UserProfile"; 
+const STORAGE_BUCKET = "avatars";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -66,6 +65,7 @@ export default function ProfileScreen() {
     refetchProfile,
     changePassword,
   } = useAuth() as any;
+
   const { colors, currentTheme } = useTheme();
   const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
 
@@ -83,21 +83,15 @@ export default function ProfileScreen() {
   const [pwShow, setPwShow] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false); 
-  
-  const [rentedFromOthersCount, setRentedFromOthersCount] = useState(0);
+
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(true);
 
   const formatRating = (value: any) => {
     if (value === null || value === undefined || value === "") return "Шинэ";
     const n = Number(value);
     return Number.isFinite(n) ? n.toFixed(1) : "Шинэ";
   };
-
-  const myEmployerJobs = useMemo(() => {
-    if (!user) return [];
-    return jobs.filter(
-      (job) => job.postType === "job" && job.postedBy.phone === user.phone,
-    );
-  }, [jobs, user]);
 
   const myProfileStats = useMemo(() => {
     if (!user) {
@@ -124,35 +118,74 @@ export default function ProfileScreen() {
     refetchProfile?.().catch(() => {});
   }, []);
 
-  // 🎯 ЗУРАГ ОРУУЛАХ ХЭСГИЙН 100% ЗАССАН ЛОГИК
+  useEffect(() => {
+    const fetchReviews = async () => {
+      if (!user?.id) return;
+      try {
+        setLoadingReviews(true);
+        const { data, error } = await supabase
+          .from("rental_reviews")
+          .select(`
+            id, 
+            user_rating, 
+            item_rating, 
+            comment, 
+            created_at, 
+            users!reviewer_id(name, photo_uri)
+          `)
+          .eq("reviewed_user_id", user.id)
+          .not("comment", "is", null)
+          .neq("comment", "")
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          const { data: fallbackData } = await supabase
+            .from("rental_reviews")
+            .select('*')
+            .eq("reviewed_user_id", user.id)
+            .not("comment", "is", null)
+            .neq("comment", "")
+            .order("created_at", { ascending: false });
+          setReviews(fallbackData || []);
+        } else {
+          setReviews(data || []);
+        }
+      } catch (e) {
+        console.log("Fetch reviews error:", e);
+      } finally {
+        setLoadingReviews(false);
+      }
+    };
+
+    fetchReviews();
+  }, [user?.id]);
+
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.5, // 0.7-аас 0.5 болгов, илүү хурдан хуулагдана.
+        quality: 0.5, 
       });
 
       if (!result.canceled && result.assets[0]) {
         setIsUploadingImage(true);
         const imageUri = result.assets[0].uri;
 
-        // 1. Утасны зургийг Blob (файлын өгөгдөл) болгож хувиргана. 
-        // Энэ алхам байхгүй бол Supabase зураг хүлээж авдаггүй.
         const response = await fetch(imageUri);
-        const fileData = await response.blob();
+        const arrayBuffer = await response.arrayBuffer();
 
         const userId = user?.id || "anonymous";
-        const fileExt = imageUri.substring(imageUri.lastIndexOf('.') + 1);
+        const fileExt = imageUri.substring(imageUri.lastIndexOf('.') + 1).toLowerCase() || 'jpeg';
+        const mimeType = fileExt === 'jpg' ? 'image/jpeg' : `image/${fileExt}`;
         const fileName = `avatar-${userId}-${Date.now()}.${fileExt}`;
         const filePath = `${fileName}`;
 
-        // 2. Supabase Storage руу хуулах (ArrayBuffer биш, Blob ашиглана)
         const { error: uploadError } = await supabase.storage
           .from(STORAGE_BUCKET)
-          .upload(filePath, fileData, {
-            contentType: `image/${fileExt}`, // Автоматаар jpeg эсвэл png танина
+          .upload(filePath, arrayBuffer, {
+            contentType: mimeType,
             upsert: true,
           });
 
@@ -161,14 +194,11 @@ export default function ProfileScreen() {
           throw new Error("Storage permission эсвэл холболтын алдаа гарлаа");
         }
 
-        // 3. Хуулсан зургаа ил гаргах линк үүсгэх
         const { data: publicData } = supabase.storage
           .from(STORAGE_BUCKET)
           .getPublicUrl(filePath);
 
-        // 4. Тэр линкээ AuthContext.tsx-д байгаа updateProfile-рүү явуулж бааздаа хадгалах
         if (publicData?.publicUrl) {
-          // Энд цаг хугацааны тамга (timestamp) нэмснээр утас хуучин зургийг кэшлэхгүй (cache) шууд шинэ зургийг харуулдаг.
           const freshUrl = `${publicData.publicUrl}?t=${Date.now()}`;
           await updateProfile({ photoUri: freshUrl });
         }
@@ -204,7 +234,6 @@ export default function ProfileScreen() {
       router.push("/admin");
       return;
     }
-
     setAdminPassword("");
     setIsAdminModalVisible(true);
   };
@@ -382,7 +411,6 @@ export default function ProfileScreen() {
 
             <SponsorCountdown />
 
-            {/* Дэлгэрэнгүй Үнэлгээ болон Түрээслүүлсэн тоо энд харагдана */}
             <Text style={[styles.profileRatingText, { color: colors.text }]}>
               ★ {formatRating(myProfileStats.userRatingAvg)} ·{" "}
               {myProfileStats.userReviewCount} үнэлгээ
@@ -415,7 +443,7 @@ export default function ProfileScreen() {
           flexDirection: "row", 
           justifyContent: "space-between", 
           alignItems: "center", 
-          marginBottom: 16 
+          marginBottom: 24 
         }}>
           <View>
             <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary }}>Зар оруулах боломжит эрх</Text>
@@ -426,45 +454,83 @@ export default function ProfileScreen() {
             onPress={() => router.push({ pathname: "/sponsor-payment", params: { targetType: "credit" } })}
             activeOpacity={0.8}
           >
-            <Text style={{ color: colors.headerText, fontWeight: "800", fontSize: 13 }}>Эрх авах (5,000₮)</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.statsContainer}>
-          <TouchableOpacity
-            style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
-            activeOpacity={0.7}
-            onPress={() => router.push({ pathname: "/my-jobs", params: { type: "job" } })}
-          >
-            <Text style={[styles.statNumber, { color: colors.text }]}>
-              {myEmployerJobs.length}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-              Түрээслүүлэх зар
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
-            activeOpacity={0.7}
-            onPress={() => router.push("/rental-requests")}
-          >
-            <Text style={[styles.statNumber, { color: colors.text }]}>
-              {rentedFromOthersCount}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-              Нийт түрээслэсэн
-            </Text>
+             <Text style={{ color: colors.headerText, fontWeight: "800", fontSize: 13 }}>Эрх авах (5,000₮)</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Хэрэглэгчдийн сэтгэгдэл
+          </Text>
+          {loadingReviews ? (
+            <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
+          ) : reviews.length === 0 ? (
+            <View style={[styles.emptyReviewBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              <MessageSquare size={32} color={colors.textSecondary} style={{ marginBottom: 10 }} />
+              <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "500" }}>Одоогоор сэтгэгдэл байхгүй байна</Text>
+            </View>
+          ) : (
+            <View style={{ marginHorizontal: 20, gap: 12 }}>
+              {reviews.map((r) => {
+                const reviewerName = r.users?.name || r.reviewer?.name || "Хэрэглэгч";
+                const reviewerPhoto = r.users?.photo_uri || r.reviewer?.photo_uri || null;
+                const rating = r.user_rating || r.item_rating || 5;
+                const date = new Date(r.created_at).toLocaleDateString();
+
+                return (
+                  <View key={r.id} style={[styles.reviewCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                    <View style={styles.reviewHeader}>
+                      <View style={[styles.reviewAvatar, { backgroundColor: colors.backgroundSecondary }]}>
+                        {reviewerPhoto ? (
+                          <Image source={{ uri: reviewerPhoto }} style={{ width: "100%", height: "100%" }} />
+                        ) : (
+                          <User size={18} color={colors.textSecondary} />
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.reviewerName, { color: colors.text }]}>{reviewerName}</Text>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>{date}</Text>
+                      </View>
+                      <View style={styles.reviewStars}>
+                        <Star size={14} fill="#FFB800" color="#FFB800" />
+                        <Text style={[styles.reviewRatingText, { color: colors.text }]}>{rating.toFixed(1)}</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.reviewComment, { color: colors.text }]}>{r.comment}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.section}>
+           <Text style={[styles.sectionTitle, { color: colors.text }]}>
             Аккаунт
           </Text>
           <View
             style={[styles.menuList, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
           >
+            {/* 🎯 ШИНЭ: Хадгалсан зарууд руу орох товч */}
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomColor: colors.border }]}
+              activeOpacity={0.7}
+              onPress={() => router.push("/saved-jobs" as any)}
+            >
+              <View style={[styles.menuIconContainer, { backgroundColor: "rgba(255, 75, 75, 0.1)" }]}>
+                <Heart size={20} color="#FF4B4B" />
+              </View>
+              <View style={styles.menuTextContainer}>
+                <Text style={[styles.menuText, { color: colors.text }]}>
+                  Хадгалсан зарууд
+                </Text>
+                <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>
+                  Таны зүрх дарж хадгалсан зарууд
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomColor: colors.border }]}
               activeOpacity={0.7}
@@ -479,12 +545,12 @@ export default function ProfileScreen() {
                 <MapPin size={20} color={colors.textSecondary} />
               </View>
               <View style={styles.menuTextContainer}>
-                <Text style={[styles.menuText, { color: colors.text }]}>
+                 <Text style={[styles.menuText, { color: colors.text }]}>
                   Байршил
                 </Text>
                 <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>
                   Өөрийн байршлаа тохируулах
-                </Text>
+                 </Text>
               </View>
               <ChevronRight size={20} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -498,14 +564,14 @@ export default function ProfileScreen() {
                 style={[
                   styles.menuIconContainer,
                   { backgroundColor: colors.backgroundSecondary },
-                ]}
+                 ]}
               >
                 <Lock size={20} color={colors.textSecondary} />
               </View>
               <Text style={[styles.menuText, { color: colors.text }]}>
                 Нууц үг өөрчлөх
               </Text>
-              <ChevronRight size={20} color={colors.textSecondary} />
+               <ChevronRight size={20} color={colors.textSecondary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -519,7 +585,7 @@ export default function ProfileScreen() {
                   { backgroundColor: colors.backgroundSecondary },
                 ]}
               >
-                <Palette size={20} color={colors.textSecondary} />
+                 <Palette size={20} color={colors.textSecondary} />
               </View>
               <View style={styles.menuTextContainer}>
                 <Text style={[styles.menuText, { color: colors.text }]}>
@@ -530,7 +596,7 @@ export default function ProfileScreen() {
                 </Text>
               </View>
               <ChevronRight size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
+             </TouchableOpacity>
 
             {isSuperAdmin && (
               <TouchableOpacity
@@ -538,7 +604,7 @@ export default function ProfileScreen() {
                 activeOpacity={0.7}
                 onPress={openAdminPanel}
               >
-                <View
+                 <View
                   style={[styles.menuIconContainer, styles.adminIconContainer]}
                 >
                   <Shield size={20} color="#FF9500" />
@@ -573,7 +639,7 @@ export default function ProfileScreen() {
                   <Lock size={20} color={colors.textSecondary} />
                 </View>
                 <Text style={[styles.menuText, { color: colors.text }]}>
-                  Admin panel түгжих
+                   Admin panel түгжих
                 </Text>
                 <ChevronRight size={20} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -581,7 +647,7 @@ export default function ProfileScreen() {
 
             <TouchableOpacity
               style={[
-                styles.menuItem,
+                 styles.menuItem,
                 {
                   borderBottomColor: colors.border,
                   opacity: deleteBusy ? 0.6 : 1,
@@ -591,7 +657,7 @@ export default function ProfileScreen() {
               activeOpacity={0.7}
               onPress={handleDeleteAccount}
               disabled={deleteBusy}
-            >
+              >
               <View
                 style={[
                   styles.menuIconContainer,
@@ -604,7 +670,7 @@ export default function ProfileScreen() {
                   <Trash2 size={20} color={colors.error} />
                 )}
               </View>
-              <Text style={[styles.menuText, { color: colors.error }]}>
+               <Text style={[styles.menuText, { color: colors.error }]}>
                 {deleteBusy ? "Устгаж байна..." : "Профайл устгах"}
               </Text>
               <ChevronRight size={20} color={colors.textSecondary} />
@@ -614,7 +680,7 @@ export default function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Тусламж
+             Тусламж
           </Text>
           <View
             style={[styles.menuList, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
@@ -622,19 +688,19 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomColor: colors.border }]}
               activeOpacity={0.7}
-              onPress={() => router.push("/feedback" as Href)}
+               onPress={() => router.push("/feedback" as Href)}
             >
               <View
                 style={[
                   styles.menuIconContainer,
                   { backgroundColor: colors.backgroundSecondary },
-                ]}
+                  ]}
               >
                 <MessageSquare size={20} color={colors.textSecondary} />
               </View>
               <View style={styles.menuTextContainer}>
                 <Text style={[styles.menuText, { color: colors.text }]}>
-                  Санал хүсэлт
+                   Санал хүсэлт
                 </Text>
                 <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>
                   Сайжруулах санал, хүсэлт илгээх
@@ -647,7 +713,7 @@ export default function ProfileScreen() {
               style={[styles.menuItem, { borderBottomColor: colors.border }]}
               activeOpacity={0.7}
               onPress={() => router.push("/help")}
-            >
+             >
               <View
                 style={[
                   styles.menuIconContainer,
@@ -660,14 +726,14 @@ export default function ProfileScreen() {
                 Тусламж
               </Text>
               <ChevronRight size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
+             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomColor: colors.border }]}
               activeOpacity={0.7}
               onPress={() => {
                 Alert.alert(
-                  "Гарах",
+                   "Гарах",
                   "Та системээс гарахдаа итгэлтэй байна уу?",
                   [
                     { text: "Үгүй", style: "cancel" },
@@ -694,7 +760,7 @@ export default function ProfileScreen() {
               <Text style={[styles.menuText, { color: colors.error }]}>
                 Гарах
               </Text>
-              <ChevronRight size={20} color={colors.textSecondary} />
+               <ChevronRight size={20} color={colors.textSecondary} />
             </TouchableOpacity>
 
             <View style={[styles.versionRow, { borderBottomWidth: 0 }]}>
@@ -707,7 +773,7 @@ export default function ProfileScreen() {
                 <Info size={16} color={colors.textSecondary} />
               </View>
               <Text
-                style={[styles.versionText, { color: colors.textSecondary }]}
+                 style={[styles.versionText, { color: colors.textSecondary }]}
               >
                 Version {APP_VERSION}
               </Text>
@@ -718,7 +784,7 @@ export default function ProfileScreen() {
         <View style={styles.bottomPadding} />
       </ScrollView>
 
-      <ThemeSelector
+       <ThemeSelector
         visible={showThemeSelector}
         onClose={() => setShowThemeSelector(false)}
       />
@@ -739,7 +805,7 @@ export default function ProfileScreen() {
             onPress={() => setIsEditModalVisible(false)}
           >
             <TouchableOpacity
-              activeOpacity={1}
+               activeOpacity={1}
               onPress={(e) => e.stopPropagation()}
             >
               <View
@@ -751,12 +817,12 @@ export default function ProfileScreen() {
                 <View style={styles.modalHeader}>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>
                     Нэр өөрчлөх
-                  </Text>
+                   </Text>
                   <TouchableOpacity
                     onPress={() => setIsEditModalVisible(false)}
                   >
                     <X size={24} color={colors.text} />
-                  </TouchableOpacity>
+                   </TouchableOpacity>
                 </View>
                 <TextInput
                   style={[
@@ -766,7 +832,7 @@ export default function ProfileScreen() {
                       color: colors.text,
                       borderColor: colors.border,
                     },
-                  ]}
+                   ]}
                   value={editedName}
                   onChangeText={setEditedName}
                   placeholder="Нэр оруулах"
@@ -777,7 +843,7 @@ export default function ProfileScreen() {
                   style={[
                     styles.saveButton,
                     { backgroundColor: colors.primary },
-                  ]}
+                   ]}
                   onPress={handleSaveName}
                   activeOpacity={0.8}
                 >
@@ -792,7 +858,7 @@ export default function ProfileScreen() {
       </Modal>
 
       <Modal
-        visible={isPwModalVisible}
+         visible={isPwModalVisible}
         animationType="slide"
         transparent
         onRequestClose={() => setIsPwModalVisible(false)}
@@ -807,7 +873,7 @@ export default function ProfileScreen() {
             onPress={() => setIsPwModalVisible(false)}
           >
             <TouchableOpacity
-              activeOpacity={1}
+               activeOpacity={1}
               onPress={(e) => e.stopPropagation()}
             >
               <View
@@ -819,7 +885,7 @@ export default function ProfileScreen() {
                 <View style={styles.modalHeader}>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>
                     Нууц үг өөрчлөх
-                  </Text>
+                   </Text>
                   <TouchableOpacity onPress={() => setIsPwModalVisible(false)}>
                     <X size={24} color={colors.text} />
                   </TouchableOpacity>
@@ -868,7 +934,7 @@ export default function ProfileScreen() {
                   ]}
                   value={newPw2}
                   onChangeText={setNewPw2}
-                  placeholder="Шинэ нууц үг (дахин)"
+                   placeholder="Шинэ нууц үг (дахин)"
                   placeholderTextColor={colors.textSecondary}
                   secureTextEntry={!pwShow}
                 />
@@ -901,7 +967,7 @@ export default function ProfileScreen() {
                   onPress={handleChangePassword}
                   activeOpacity={0.8}
                   disabled={pwBusy}
-                >
+                  >
                   <Text style={[styles.saveButtonText, { color: colors.headerText }]}>
                     {pwBusy ? "Сольж байна..." : "Хадгалах"}
                   </Text>
@@ -913,7 +979,7 @@ export default function ProfileScreen() {
       </Modal>
 
       <Modal
-        visible={isAdminModalVisible}
+         visible={isAdminModalVisible}
         animationType="slide"
         transparent
         onRequestClose={() => setIsAdminModalVisible(false)}
@@ -928,7 +994,7 @@ export default function ProfileScreen() {
             onPress={() => setIsAdminModalVisible(false)}
           >
             <TouchableOpacity
-              activeOpacity={1}
+               activeOpacity={1}
               onPress={(e) => e.stopPropagation()}
             >
               <View
@@ -940,7 +1006,7 @@ export default function ProfileScreen() {
                 <View style={styles.modalHeader}>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>
                     Admin panel
-                  </Text>
+                   </Text>
                   <TouchableOpacity
                     onPress={() => {
                       setIsAdminModalVisible(false);
@@ -952,7 +1018,7 @@ export default function ProfileScreen() {
                 </View>
 
                 <Text
-                  style={[styles.adminHint, { color: colors.textSecondary }]}
+                   style={[styles.adminHint, { color: colors.textSecondary }]}
                 >
                   Админ панел руу орохын тулд нууц үгээ оруулна уу.
                 </Text>
@@ -986,7 +1052,7 @@ export default function ProfileScreen() {
                   onPress={handleUnlockAdmin}
                   activeOpacity={0.8}
                   disabled={isUnlockingAdmin}
-                >
+                  >
                   <Text style={[styles.saveButtonText, { color: colors.headerText }]}>
                     {isUnlockingAdmin ? "Шалгаж байна..." : "Нээх"}
                   </Text>
@@ -1027,9 +1093,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
-    gap: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    gap: 16,
   },
   avatar: {
     width: 70,
@@ -1040,6 +1106,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   avatarImage: { width: 70, height: 70 },
+  
   cameraIcon: {
     position: "absolute",
     bottom: 0,
@@ -1072,25 +1139,14 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
 
-  statsContainer: {
-    flexDirection: "row",
-    marginHorizontal: 20,
-    gap: 12,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 20,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statNumber: { fontSize: 28, fontWeight: "700" as const, marginBottom: 4 },
-  statLabel: { fontSize: 12, textAlign: "center", fontWeight: "500" },
+  emptyReviewBox: { marginHorizontal: 20, padding: 24, borderRadius: 16, borderWidth: 1, alignItems: "center" },
+  reviewCard: { padding: 16, borderRadius: 16, borderWidth: 1 },
+  reviewHeader: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10 },
+  reviewAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  reviewerName: { fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  reviewStars: { flexDirection: "row", alignItems: "center", gap: 4 },
+  reviewRatingText: { fontSize: 14, fontWeight: "800" },
+  reviewComment: { fontSize: 14, lineHeight: 20 },
 
   section: { marginBottom: 24 },
   sectionTitle: {
