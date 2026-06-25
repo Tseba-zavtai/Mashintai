@@ -1,377 +1,234 @@
 // app/my-jobs.tsx
-import {
-  Alert,
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React, { useMemo, useState, useEffect } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Eye, EyeOff, Trash2, Pause, Play, TrendingUp, Award, Clock, Image as ImageIcon, Star } from "lucide-react-native";
 import { Stack, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  MapPin,
-  Clock,
-  Briefcase,
-  BadgeDollarSign,
-  Trash2,
-  PauseCircle,
-  PlayCircle,
-  Eye,
-  EyeOff,
-  Images,
-  TrendingUp,
-  ChevronLeft, // 🎯 ЗАСВАР: Буцах товчны айконыг нэмсэн
-} from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
-import { supabase } from "@/lib/supabase"; 
 
-function isNonEmptyString(value: any): value is string {
-  return typeof value === "string" && value.trim().length > 0;
+function formatTimeLeft(date: Date | null) {
+  if (!date) return null;
+  const now = new Date().getTime();
+  const diff = date.getTime() - now;
+  if (diff <= 0) return "Хугацаа дууссан";
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+  const mins = Math.floor((diff / 1000 / 60) % 60);
+  const secs = Math.floor((diff / 1000) % 60);
+
+  return `${days} хоног ${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
-function normalizeImageUrls(job: any): string[] {
-  const source = job?.image_urls ?? job?.imageUrls ?? null;
-  if (Array.isArray(source)) {
-    return source.filter(isNonEmptyString);
-  }
-  if (typeof source === "string" && source.trim()) {
-    try {
-      const parsed = JSON.parse(source);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(isNonEmptyString);
-      }
-    } catch {
-      return [source];
-    }
-  }
-  const fallback = job?.image_url ?? job?.imageUrl ?? null;
-  if (typeof fallback === "string" && fallback.trim()) {
-    return [fallback];
-  }
-  return [];
-}
-
-function toSafeDate(value: any): Date {
-  if (!value) return new Date();
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? new Date() : d;
-}
-
-function getSponsoredUntilDate(job: any): Date | null {
-  const raw = job?.sponsoredUntil ?? job?.sponsored_until ?? null;
-  if (!raw) return null;
-  const d = toSafeDate(raw);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
-
-function isJobSponsoredNow(job: any, nowTs = Date.now()): boolean {
-  const sponsoredUntil = getSponsoredUntilDate(job);
-  if (sponsoredUntil) {
-    return sponsoredUntil.getTime() > nowTs;
-  }
-  return Boolean(job?.isSponsored || job?.is_sponsored);
-}
-
-function getSponsoredUntilText(job: any, nowTs = Date.now()): string | null {
-  const d = getSponsoredUntilDate(job);
-  if (!d) return null;
-  if (d.getTime() <= nowTs) return null;
-  return d.toLocaleString();
-}
-
-function formatCountdown(ms: number) {
-  if (ms <= 0) return "0 хоног 00:00:00";
-  const totalSeconds = Math.floor(ms / 1000);
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  const hh = String(hours).padStart(2, "0");
-  const mm = String(minutes).padStart(2, "0");
-  const ss = String(seconds).padStart(2, "0");
-
-  return `${days} хоног ${hh}:${mm}:${ss}`;
-}
-
-function getSponsoredCountdownText(job: any, nowTs = Date.now()): string | null {
-  const d = getSponsoredUntilDate(job);
-  if (!d) return null;
-  const diff = d.getTime() - nowTs;
-  if (diff <= 0) return null;
-  return formatCountdown(diff);
-}
-
-function asNumberOrNull(value: any): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function formatRating(value: any) {
-  const n = asNumberOrNull(value);
-  return n == null ? "Шинэ" : n.toFixed(1);
-}
-
-function getBumpedAtText(job: any): string | null {
-  const raw = job?.bumpedAt ?? job?.bumped_at ?? null;
-  if (!raw) return null;
-  const d = toSafeDate(raw);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString();
-}
-
-function getJobAddress(job: any): string | null {
-  const location = job?.location;
-  if (typeof location === "string" && location.trim()) return location;
-  if (typeof location?.address === "string" && location.address.trim()) {
-    return location.address;
-  }
-  if (typeof job?.address === "string" && job.address.trim()) return job.address;
-  return null;
+function formatDateToYMD(date: Date | null) {
+  if (!date) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const h = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${y}.${m}.${d}, ${h}:${min}`;
 }
 
 export default function MyJobsScreen() {
   const router = useRouter();
   const { jobs, deleteJob, toggleJobActive } = useJobs() as any;
-  const { user } = useAuth();
-  const { colors, currentTheme } = useTheme();
+  const { user } = useAuth() as any;
+  const { colors } = useTheme();
   
   const [showInactive, setShowInactive] = useState(false);
-  const [nowTs, setNowTs] = useState(Date.now());
-  const buttonTextColor = currentTheme === "navy" ? "#F8E75D" : "#1A1A1A";
-  const buttonBackgroundColor = currentTheme === "navy" ? "#2A2A2A" : colors.primary;
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [, setCurrentTime] = useState(Date.now());
 
+  // Таймер шинэчлэх
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNowTs(Date.now());
-    }, 1000);
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const myJobsRaw = useMemo(() => {
-    return (jobs as any[]).filter((job: any) => {
-      if (!user) return false;
-      const jobPhone = job?.postedBy?.phone ?? job?.posted_by_phone ?? null;
-      const jobUserId = job?.postedBy?.id ?? job?.posted_by_id ?? null;
-      return jobPhone === user.phone || jobUserId === user.id;
-    });
-  }, [jobs, user]);
-
   const myJobs = useMemo(() => {
-    return myJobsRaw.filter((job: any) =>
-      showInactive ? true : (job?.isActive ?? job?.is_active ?? true) === true,
-    );
-  }, [myJobsRaw, showInactive]);
+    if (!user) return [];
+    let list = (jobs as any[]).filter((job: any) => {
+      const postedBy = job?.postedBy ?? {};
+      return String(postedBy.phone ?? postedBy.id ?? "") === String(user.phone ?? user.id ?? "");
+    });
+    
+    if (!showInactive) {
+      list = list.filter(j => j.isActive !== false && j.is_active !== false);
+    }
+    return list;
+  }, [jobs, user, showInactive]);
 
-  const formatDate = useCallback((date: Date) => {
-    const safeDate = toSafeDate(date);
-    const now = new Date();
-    const diff = Math.floor((now.getTime() - safeDate.getTime()) / (1000 * 60 * 60 * 24));
-    if (diff <= 0) return "Өнөөдөр";
-    if (diff === 1) return "Өчигдөр";
-    if (diff < 7) return `${diff} хоногийн өмнө`;
-    if (diff < 30) return `${Math.floor(diff / 7)} долоо хоногийн өмнө`;
-    return `${Math.floor(diff / 30)} сарын өмнө`;
-  }, []);
-
-  const confirmDelete = useCallback((jobId: string) => {
-    Alert.alert("Устгах уу?", "Та энэ зараа устгах гэж байна. Storage дээрх зургууд бас устна.", [
+  const handleDelete = (jobId: string) => {
+    Alert.alert("Анхаар", "Та энэ зарыг устгахдаа итгэлтэй байна уу?", [
       { text: "Болих", style: "cancel" },
-      {
-        text: "Устгах",
-        style: "destructive",
+      { 
+        text: "Устгах", 
+        style: "destructive", 
         onPress: async () => {
           try {
+            setLoadingId(jobId);
             await deleteJob(jobId);
-          } catch (e: any) {
-            Alert.alert("Алдаа", e?.message ?? "Устгахад алдаа гарлаа");
+          } catch (e) {
+            Alert.alert("Алдаа", "Устгахад алдаа гарлаа");
+          } finally {
+            setLoadingId(null);
           }
-        },
-      },
-    ]);
-  }, [deleteJob]);
-
-  const confirmDeactivate = useCallback((jobId: string) => {
-    Alert.alert("Идэвхигүй болгох уу?", "Энэ зар Home дээр харагдахгүй болно.", [
-      { text: "Болих", style: "cancel" },
-      {
-        text: "Идэвхигүй болгох",
-        onPress: async () => {
-          try {
-            await toggleJobActive(jobId, false);
-          } catch (e: any) {
-            Alert.alert("Алдаа", e?.message ?? "Идэвхигүй болгоход алдаа гарлаа");
-          }
-        },
-      },
-    ]);
-  }, [toggleJobActive]);
-
-  const activate = useCallback(
-    async (jobId: string) => {
-      const postCredits = (user as any)?.available_post_credits ?? 0;
-      
-      if (postCredits <= 0) {
-        Alert.alert("Эрх дууссан", "Таны зар оруулах/амилуулах эрх дууссан байна. Профайл хэсгээс эрхээ цэнэглэнэ үү.", [
-          { text: "Хаах", style: "cancel" },
-          { text: "Профайл руу", onPress: () => router.push("/profile") }
-        ]);
-        return;
+        } 
       }
+    ]);
+  };
 
-      Alert.alert("Зараа амилуулах уу?", `1 зарын эрхийг ашиглан энэ зараа дахин Home Screen дээр 30 хоногийн турш идэвхтэй байршуулах уу? (Үлдсэн эрх: ${postCredits})`, [
-        { text: "Болих", style: "cancel" },
-        {
-          text: "Идэвхжүүлэх",
-          onPress: async () => {
-            try {
-              const { error: creditError } = await supabase.from("users").update({ available_post_credits: Math.max(0, postCredits - 1) }).eq("id", user?.id);
-              if (creditError) throw creditError;
+  const handleToggleActive = async (jobId: string, currentStatus: boolean) => {
+    try {
+      setLoadingId(jobId);
+      await toggleJobActive(jobId, !currentStatus);
+    } catch (e) {
+      Alert.alert("Алдаа", "Төлөв өөрчлөхөд алдаа гарлаа");
+    } finally {
+      setLoadingId(null);
+    }
+  };
 
-              const { error: jobError } = await supabase
-                .from("jobs")
-                .update({ 
-                  is_active: true, 
-                  created_at: new Date().toISOString()
-                })
-                .eq("id", jobId);
-              if (jobError) throw jobError;
-
-              await toggleJobActive(jobId, true);
-              Alert.alert("Амжилттай", "Таны зарыг дахин 30 хоногоор амжилттай амилууллаа.");
-            } catch (e: any) {
-              Alert.alert("Алдаа", e?.message ?? "Идэвхжүүлэхэд алдаа гарлаа");
-            }
-          }
-        }
-      ]);
-    },
-    [toggleJobActive, user, router],
-  );
+  const getDaysAgoText = (date: Date | null) => {
+    if (!date) return "";
+    const diff = Date.now() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    if (days === 0) return "Өнөөдөр";
+    if (days === 1) return "Өчигдөр";
+    return `${days} хоногийн өмнө`;
+  };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
-      
-      {/* 🎯 ЗАСВАР 1: Expo-ийн унаган муухай толгойг бүр мөсөн нуух */}
-      <Stack.Screen options={{ headerShown: false }} />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
+      {/* 🎯 АЛДААГ ЗАССАН ХЭСЭГ: headerBackTitleVisible устгасан тул гацахгүй */}
+      <Stack.Screen 
+        options={{ 
+          title: "Миний зарууд",
+          headerShown: true
+        }} 
+      />
 
-      {/* 🎯 ЗАСВАР 2: Таны апп-ын үндсэн ижилхэн толгой (Custom Header) */}
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 }}>
-        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75} style={{ padding: 4 }}>
-          <ChevronLeft size={28} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={{ fontSize: 18, fontWeight: "800", color: colors.text }}>Миний зарууд</Text>
-        <View style={{ width: 40 }} /> {/* Текстийг яг голлуулахын тулд */}
-      </View>
-
-      <View style={[styles.toolsRow, { backgroundColor: colors.background }]}>
-        <TouchableOpacity style={[styles.toolButton, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => setShowInactive((v) => !v)}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+        
+        {/* Идэвхгүйг харуулах товч */}
+        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.background, borderColor: colors.border }]} onPress={() => setShowInactive(!showInactive)} activeOpacity={0.7}>
           {showInactive ? <EyeOff size={18} color={colors.text} /> : <Eye size={18} color={colors.text} />}
-          <Text style={[styles.toolButtonText, { color: colors.text }]}>{showInactive ? "Идэвхгүйг нуух" : "Идэвхгүйг харуулах"}</Text>
+          <Text style={[styles.filterBtnText, { color: colors.text }]}>{showInactive ? "Идэвхгүйг нуух" : "Идэвхгүйг харуулах"}</Text>
         </TouchableOpacity>
-      </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
         {myJobs.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Briefcase size={64} color={colors.textSecondary} strokeWidth={1.5} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Таны оруулсан зар одоогоор байхгүй байна.
-            </Text>
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>Зар олдсонгүй</Text>
           </View>
         ) : (
           myJobs.map((job: any) => {
-            const active = job?.isActive ?? job?.is_active ?? true;
-            const imageUrls = normalizeImageUrls(job);
-            const postedDate = toSafeDate(job?.postedDate ?? job?.created_at ?? job?.updated_at);
-            const address = getJobAddress(job);
-            const sponsored = isJobSponsoredNow(job, nowTs);
-            const sponsoredUntilText = getSponsoredUntilText(job, nowTs);
-            const sponsoredCountdownText = getSponsoredCountdownText(job, nowTs);
-            const itemRatingAvg = job?.itemRatingAvg ?? job?.item_rating_avg ?? null;
-            const itemReviewCount = job?.itemReviewCount ?? job?.item_review_count ?? 0;
-            const rentalCount = job?.rentalCount ?? job?.rental_count ?? itemReviewCount;
-            const bumpedAtText = getBumpedAtText(job);
+            const img = job.image_urls?.[0] || job.image_url;
+            const imgCount = job.image_urls?.length || 0;
+            const isActive = job.isActive !== false && job.is_active !== false;
+            const rating = job.itemRatingAvg || job.item_rating_avg || 0;
+            const reviewCount = job.itemReviewCount || job.item_review_count || 0;
+            const rentalCount = job.rentalCount || job.rental_count || 0;
+            
+            const isSponsored = job.isSponsored || job.is_sponsored;
+            const sponsoredUntil = job.sponsoredUntil || job.sponsored_until ? new Date(job.sponsoredUntil || job.sponsored_until) : null;
+            const isCurrentlySponsored = isSponsored && sponsoredUntil && sponsoredUntil.getTime() > Date.now();
 
             return (
-              <View key={job.id} style={[styles.jobCard, { backgroundColor: colors.background }]}>
-                <View style={styles.jobHeader}>
-                  <Text style={[styles.jobTitle, { color: colors.text }]} numberOfLines={2}>{job.title || job.category || "Зар"}</Text>
-                  <View style={styles.badgesCol}>
-                    <View style={[styles.categoryBadge, { backgroundColor: colors.backgroundSecondary }]}><Text style={[styles.categoryText, { color: colors.text }]} numberOfLines={1}>{job.category || "Категори"}</Text></View>
-                    <View style={[styles.statusBadge, { backgroundColor: active ? "rgba(0,180,90,0.12)" : "rgba(200,50,50,0.12)" }]}><Text style={[styles.statusText, { color: active ? "#00B45A" : "#C83232" }]}>{active ? "Идэвхтэй" : "Идэвхгүй"}</Text></View>
+              <View key={job.id} style={[styles.jobCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                
+                {/* Толгой хэсэг */}
+                <View style={styles.cardHeader}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={[styles.jobTitle, { color: colors.text }]} numberOfLines={2}>{job.title || job.category}</Text>
+                  </View>
+                  <View style={[styles.statusBadge, { backgroundColor: isActive ? "rgba(16, 185, 129, 0.15)" : colors.backgroundSecondary }]}>
+                    <Text style={[styles.statusText, { color: isActive ? "#059669" : colors.textSecondary }]}>{isActive ? "Идэвхтэй" : "Идэвхгүй"}</Text>
                   </View>
                 </View>
 
-                {!!job.subcategory && <Text style={[styles.subcategoryText, { color: colors.textSecondary }]} numberOfLines={1}>{job.subcategory}</Text>}
-
-                <View style={styles.ratingInfoBox}>
-                  <Text style={[styles.ratingInfoText, { color: colors.textSecondary }]}>★ {formatRating(itemRatingAvg)} эд зүйл · {itemReviewCount} үнэлгээ · {rentalCount} түрээс</Text>
-                  {bumpedAtText && <Text style={[styles.bumpedText, { color: colors.textSecondary }]}>Сүүлд дээш гаргасан: {bumpedAtText}</Text>}
-                </View>
-
-                {job.description && <Text style={[styles.jobDescription, { color: colors.textSecondary }]} numberOfLines={2}>{job.description}</Text>}
-
-                {imageUrls.length > 0 && (
-                  <View style={styles.imagesSection}>
-                    <View style={styles.imagesLabelRow}><Images size={16} color={colors.textSecondary} /><Text style={[styles.imagesLabelText, { color: colors.textSecondary }]}>{imageUrls.length} зураг</Text></View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.imageScrollContent}>
-                      {imageUrls.slice(0, 5).map((uri, index) => <Image key={`${job.id}-img-${index}`} source={{ uri }} style={styles.previewImage} />)}
-                    </ScrollView>
+                {job.subcategory && (
+                  <View style={[styles.categoryPill, { backgroundColor: colors.backgroundSecondary }]}>
+                    <Text style={[styles.categoryPillText, { color: colors.textSecondary }]} numberOfLines={1}>{job.subcategory}</Text>
                   </View>
                 )}
 
-                <View style={styles.jobFooter}>
-                  {address && <View style={styles.jobInfo}><MapPin size={14} color={colors.textSecondary} /><Text style={[styles.jobInfoText, { color: colors.textSecondary }]} numberOfLines={1}>{address}</Text></View>}
-                  <View style={styles.jobInfo}><Clock size={14} color={colors.textSecondary} /><Text style={[styles.jobInfoText, { color: colors.textSecondary }]}>{formatDate(postedDate)}</Text></View>
+                <View style={styles.statsRow}>
+                  <Star size={12} color={colors.textSecondary} style={{ marginRight: 4 }} />
+                  <Text style={[styles.statsText, { color: colors.textSecondary }]}>
+                    {rating > 0 ? rating.toFixed(1) : "Шинэ эд зүйл"} · {reviewCount} үнэлгээ · {rentalCount} түрээс
+                  </Text>
                 </View>
 
-                <View style={styles.actionsRow}>
-                  <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => confirmDelete(job.id)}><Trash2 size={18} color={colors.text} /><Text style={[styles.actionText, { color: colors.text }]}>Устгах</Text></TouchableOpacity>
-                  {active ? (
-                    <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => confirmDeactivate(job.id)}><PauseCircle size={18} color={colors.text} /><Text style={[styles.actionText, { color: colors.text }]}>Идэвхигүй</Text></TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.border }]} activeOpacity={0.7} onPress={() => activate(job.id)}><PlayCircle size={18} color={colors.text} /><Text style={[styles.actionText, { color: colors.text }]}>Идэвхжүүлэх</Text></TouchableOpacity>
-                  )}
+                <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={2}>{job.description}</Text>
+
+                {/* Зураг */}
+                {imgCount > 0 && (
+                  <View style={styles.imageSection}>
+                    <View style={styles.imageCountWrap}>
+                      <ImageIcon size={14} color={colors.textSecondary} />
+                      <Text style={[styles.imageCountText, { color: colors.textSecondary }]}>{imgCount} зураг</Text>
+                    </View>
+                    <Image source={{ uri: img }} style={styles.thumbnail} contentFit="cover" />
+                  </View>
+                )}
+
+                <View style={styles.timeWrap}>
+                  <Clock size={14} color={colors.textSecondary} />
+                  <Text style={[styles.timeText, { color: colors.textSecondary }]}>{getDaysAgoText(job.postedDate || new Date(job.created_at))}</Text>
                 </View>
 
-                <TouchableOpacity
-                  style={[styles.bumpButton, { borderColor: colors.border }]}
-                  activeOpacity={0.7}
+                {/* Үйлдлийн товчнууд (Устгах, Идэвхгүй) */}
+                <View style={styles.actionsGrid}>
+                  <TouchableOpacity style={[styles.halfBtn, { borderColor: colors.border }]} onPress={() => handleDelete(job.id)} disabled={loadingId === job.id}>
+                    <Trash2 size={16} color={colors.text} />
+                    <Text style={[styles.halfBtnText, { color: colors.text }]}>Устгах</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={[styles.halfBtn, { borderColor: colors.border }]} onPress={() => handleToggleActive(job.id, isActive)} disabled={loadingId === job.id}>
+                    {loadingId === job.id ? <ActivityIndicator size="small" /> : (isActive ? <Pause size={16} color={colors.text} /> : <Play size={16} color={colors.text} />)}
+                    <Text style={[styles.halfBtnText, { color: colors.text }]}>{isActive ? "Идэвхгүй" : "Идэвхтэй"}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* 🎯 BUMP ТОВЧ (QPay рүү үсэрнэ) */}
+                <TouchableOpacity 
+                  style={[styles.fullBtn, { borderColor: colors.border }]} 
                   onPress={() => router.push({ pathname: "/sponsor-payment", params: { jobId: job.id, targetType: "bump" } })}
+                  activeOpacity={0.7}
                 >
-                  <TrendingUp size={18} color={colors.text} />
-                  <Text style={[styles.bumpButtonText, { color: colors.text }]}>Зараа дээш гаргах (1,000₮)</Text>
+                  <TrendingUp size={16} color={colors.text} />
+                  <Text style={[styles.fullBtnText, { color: colors.text }]}>Зараа дээш гаргах (1,000₮)</Text>
                 </TouchableOpacity>
 
-                {sponsored ? (
-                  <View style={[styles.sponsoredBadgeWrapper, { backgroundColor: currentTheme === "navy" ? "rgba(248,231,93,0.12)" : "rgba(0,0,0,0.04)", borderColor: currentTheme === "navy" ? "rgba(248,231,93,0.25)" : "rgba(0,0,0,0.08)" }]}>
-                    <View style={[styles.sponsoredBadge, { backgroundColor: buttonBackgroundColor }]}><BadgeDollarSign size={18} color={buttonTextColor} strokeWidth={2} /><Text style={[styles.sponsoredBadgeText, { color: buttonTextColor }]}>Sponsored зар</Text></View>
-                    {sponsoredCountdownText && <Text style={[styles.sponsoredCountdownText, { color: colors.text }]}>Үлдсэн: {sponsoredCountdownText}</Text>}
-                    {sponsoredUntilText && <Text style={[styles.sponsoredUntilText, { color: colors.textSecondary }]}>Дуусах: {sponsoredUntilText}</Text>}
+                {/* SPONSOR ХЭСЭГ */}
+                {isCurrentlySponsored ? (
+                  <View style={[styles.sponsoredBox, { backgroundColor: "rgba(109, 40, 217, 0.05)", borderColor: "#6D28D9" }]}>
+                    <View style={[styles.sponsoredBtn, { backgroundColor: "#6D28D9" }]}>
+                      <Award size={16} color="#fff" />
+                      <Text style={[styles.sponsoredBtnText, { color: "#fff" }]}>Sponsored зар</Text>
+                    </View>
+                    <Text style={[styles.sponsoredTimer, { color: colors.text }]}>Үлдсэн: {formatTimeLeft(sponsoredUntil)}</Text>
+                    <Text style={[styles.sponsoredEnd, { color: colors.textSecondary }]}>Дуусах: {formatDateToYMD(sponsoredUntil)}</Text>
                   </View>
                 ) : (
-                  <TouchableOpacity
-                    style={[styles.sponsorButton, { backgroundColor: buttonBackgroundColor }]}
-                    activeOpacity={0.7}
+                  <TouchableOpacity 
+                    style={[styles.fullBtn, { backgroundColor: "#6D28D9", borderColor: "#6D28D9" }]} 
                     onPress={() => router.push({ pathname: "/sponsor-payment", params: { jobId: job.id, targetType: "sponsor" } })}
+                    activeOpacity={0.8}
                   >
-                    <BadgeDollarSign size={18} color={buttonTextColor} strokeWidth={2} />
-                    <Text style={[styles.sponsorButtonText, { color: buttonTextColor }]}>Sponsored зар болгох</Text>
+                    <Award size={16} color="#fff" />
+                    <Text style={[styles.fullBtnText, { color: "#fff" }]}>Sponsored зар</Text>
                   </TouchableOpacity>
                 )}
+
               </View>
             );
           })
         )}
-        <View style={styles.bottomPadding} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -379,45 +236,43 @@ export default function MyJobsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  toolsRow: { marginHorizontal: 20, marginTop: 10, borderRadius: 12, padding: 10 },
-  toolButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
-  toolButtonText: { fontSize: 13, fontWeight: "600" },
   content: { flex: 1 },
-  contentContainer: { paddingTop: 16, paddingHorizontal: 20 },
-  emptyContainer: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 80 },
-  emptyText: { fontSize: 16, marginTop: 16 },
-  jobCard: { borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  jobHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, gap: 12 },
-  jobTitle: { flex: 1, fontSize: 18, fontWeight: "700" },
-  badgesCol: { gap: 8, alignItems: "flex-end", maxWidth: "45%" },
-  categoryBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, maxWidth: "100%" },
-  categoryText: { fontSize: 12, fontWeight: "600" },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  statusText: { fontSize: 12, fontWeight: "700" },
-  subcategoryText: { fontSize: 13, marginBottom: 8, fontWeight: "600" },
-  ratingInfoBox: { marginBottom: 10, gap: 4 },
-  ratingInfoText: { fontSize: 12, fontWeight: "700" },
-  bumpedText: { fontSize: 11 },
-  jobDescription: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
-  imagesSection: { marginBottom: 12 },
-  imagesLabelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
-  imagesLabelText: { fontSize: 13, fontWeight: "600" },
-  imageScrollContent: { paddingRight: 4, gap: 8 },
-  previewImage: { width: 120, height: 90, borderRadius: 12, backgroundColor: "#E9E9E9" },
-  jobFooter: { flexDirection: "row", alignItems: "center", gap: 16, flexWrap: "wrap" },
-  jobInfo: { flexDirection: "row", alignItems: "center", gap: 4, maxWidth: "100%" },
-  jobInfoText: { fontSize: 13, flexShrink: 1 },
-  actionsRow: { marginTop: 14, flexDirection: "row", gap: 10 },
-  actionBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: 12, borderWidth: 1 },
-  actionText: { fontSize: 14, fontWeight: "600" },
-  bumpButton: { marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1 },
-  bumpButtonText: { fontSize: 14, fontWeight: "700" },
-  sponsorButton: { marginTop: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12 },
-  sponsorButtonText: { fontSize: 14, fontWeight: "600" },
-  sponsoredBadgeWrapper: { marginTop: 16, borderRadius: 12, borderWidth: 1, padding: 10, gap: 8 },
-  sponsoredBadge: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12 },
-  sponsoredBadgeText: { fontSize: 14, fontWeight: "600" },
-  sponsoredCountdownText: { fontSize: 15, textAlign: "center", fontWeight: "800" },
-  sponsoredUntilText: { fontSize: 12, textAlign: "center", fontWeight: "500" },
-  bottomPadding: { height: 20 }
+  contentContainer: { padding: 16, paddingBottom: 40, gap: 16 },
+  filterBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 12, borderWidth: 1, gap: 8 },
+  filterBtnText: { fontSize: 14, fontWeight: '600' },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  emptyTitle: { fontSize: 15 },
+  
+  jobCard: { borderRadius: 16, padding: 16, borderWidth: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  jobTitle: { fontSize: 18, fontWeight: '800' },
+  categoryPill: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginBottom: 10 },
+  categoryPillText: { fontSize: 12, fontWeight: '500' },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  statusText: { fontSize: 12, fontWeight: '700' },
+  
+  statsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  statsText: { fontSize: 13, fontWeight: '600' },
+  descText: { fontSize: 14, lineHeight: 20, marginBottom: 14 },
+  
+  imageSection: { marginBottom: 14 },
+  imageCountWrap: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  imageCountText: { fontSize: 13 },
+  thumbnail: { width: 90, height: 90, borderRadius: 12, backgroundColor: '#EAEAEA' },
+  
+  timeWrap: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
+  timeText: { fontSize: 13 },
+  
+  actionsGrid: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  halfBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderWidth: 1, borderRadius: 12, gap: 8 },
+  halfBtnText: { fontSize: 14, fontWeight: '600' },
+  
+  fullBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderWidth: 1, borderRadius: 12, gap: 8, marginBottom: 10 },
+  fullBtnText: { fontSize: 14, fontWeight: '700' },
+
+  sponsoredBox: { borderWidth: 1, borderRadius: 12, padding: 12, alignItems: 'center' },
+  sponsoredBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 10, width: '100%', gap: 8, marginBottom: 12 },
+  sponsoredBtnText: { fontSize: 15, fontWeight: '700' },
+  sponsoredTimer: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
+  sponsoredEnd: { fontSize: 12 },
 });

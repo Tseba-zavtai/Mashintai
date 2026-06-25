@@ -296,7 +296,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
   
-  // 🎯 ШИНЭ: Хадгалсан заруудын ID-г барьж байх State
+  // Хадгалсан заруудын ID-г барьж байх State
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
 
   const mountedRef = useRef(true);
@@ -323,7 +323,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
     } catch (error) { throw error; }
   }, []);
 
-  // 🎯 ШИНЭ: Баазаас хадгалсан заруудыг татах
+  // Баазаас хадгалсан заруудыг татах
   const loadSavedJobs = useCallback(async () => {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -344,7 +344,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
     }
   }, []);
 
-  // 🎯 ШИНЭ: Зүрх дарах үед Хадгалах/Устгах үйлдэл хийх
+  // 🎯 ЗАСВАРЛАГДСАН: Давхардаж хадгалахгүй, UI шууд өөрчлөгдөнө, Алдаа заахгүй!
   const toggleSaveJob = useCallback(async (jobId: string) => {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -354,22 +354,32 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       const isSaved = savedJobIds.includes(jobId);
 
       if (isSaved) {
+        // 1. Устгах үйлдэл
+        setSavedJobIds(prev => prev.filter(id => id !== jobId)); // UI-г шууд өөрчлөх
         const { error } = await supabase
           .from("saved_jobs")
           .delete()
           .match({ user_id: uid, job_id: jobId });
         if (error) throw error;
-        setSavedJobIds(prev => prev.filter(id => id !== jobId));
       } else {
+        // 2. Нэмэх үйлдэл
+        setSavedJobIds(prev => [...prev, jobId]); // UI-г шууд өөрчлөх
         const { error } = await supabase
           .from("saved_jobs")
           .insert({ user_id: uid, job_id: jobId });
-        if (error) throw error;
-        setSavedJobIds(prev => [...prev, jobId]);
+          
+        // Хэрвээ баазад аль хэдийн хадгалагдсан байвал (23505 кодтой алдаа) чимээгүй өнгөрнө!
+        if (error && error.code === '23505') {
+          console.log("Аль хэдийн хадгалагдсан байна, алдаа заах шаардлагагүй.");
+        } else if (error) {
+          throw error;
+        }
       }
     } catch (e: any) {
       console.error("Toggle save job error:", e);
-      throw e;
+      // Алдаа гарвал буцаагаад хуучин байдалд нь оруулна
+      const isSaved = savedJobIds.includes(jobId);
+      setSavedJobIds(prev => isSaved ? prev.filter(id => id !== jobId) : [...prev, jobId]);
     }
   }, [savedJobIds]);
 
@@ -524,7 +534,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
   useEffect(() => {
     loadJobs();
     loadUserLocation();
-    loadSavedJobs(); // 🎯 ШИНЭ: Апп асах үед хадгалсан зарууд татагдана
+    loadSavedJobs(); // Апп асах үед хадгалсан зарууд татагдана
     loadRentalRequests().catch(() => {});
   }, [loadJobs, loadUserLocation, loadSavedJobs, loadRentalRequests]);
 
@@ -650,6 +660,6 @@ export const [JobsContext, useJobs] = createContextHook(() => {
     jobs, addJob, sponsorJob, updateJobCategory, deleteJob, toggleJobActive, bumpJob, submitRentalReview,
     rentalRequests, loadRentalRequests, createRentalRequest, approveRentalRequest, rejectRentalRequest,
     isLoading, userLocation, saveUserLocation, loadJobs, searchJobs, clearSearch,
-    savedJobIds, toggleSaveJob, // 🎯 ШИНЭ: Хадгалсан зарууд болон хадгалах үйлдэл
+    savedJobIds, toggleSaveJob,
   };
 });

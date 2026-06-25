@@ -48,6 +48,7 @@
     },
     "android": {
       "package": "mn.tureestei.app",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",

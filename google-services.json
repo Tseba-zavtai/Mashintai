@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "385305446818",
+    "project_id": "tureesly",
+    "storage_bucket": "tureesly.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:385305446818:android:ddb1f92131f1cf62fc8afb",
+        "android_client_info": {
+          "package_name": "mn.tureestei.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAnLHiwCiO9TWVtVcY5jEQKkiNYGfvi7mg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

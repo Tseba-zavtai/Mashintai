@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { useJobs } from "@/contexts/JobsContext";
+import * as ExpoLinking from "expo-linking"; // 🎯 ШИНЭ: Deep link үүсгэх сан
 import {
   Phone,
   MapPin,
@@ -163,13 +164,24 @@ export default function JobDetailScreen() {
     } catch (error) { Alert.alert("Алдаа", "Утас руу залгах явцад алдаа гарлаа"); }
   };
 
+  // 🎯 ШИНЭЧЛЭГДСЭН: Deep Link (Апп руу үсрэх линк) ашиглан Share хийх
   const handleSharePress = async () => {
     try {
       const priceText = jobPrice > 0 ? `${jobPrice.toLocaleString()} ₮/өдөр` : "Үнэ тохиролцоно";
       const titleText = job.title || job.subcategory || job.category || "Зар";
-      const shareMessage = `Tureesly дээрх энэ зарыг сонирхоод үзээрэй!\n\n🔹 ${titleText}\n💰 Үнэ: ${priceText}\n\nЯг одоо Tureesly апп руу орж дэлгэрэнгүйг харна уу!`;
-      await Share.share({ message: shareMessage, title: "Tureesly - Түрээсийн нэгдсэн платформ" });
-    } catch (error) { console.log("Share error:", error); }
+      
+      // Апп руу шууд үсрэх линк үүсгэх (Жишээ нь: tureesly://job-detail?id=12345)
+      const deepLink = ExpoLinking.createURL(`/job-detail`, { queryParams: { id: job.id } });
+      
+      const shareMessage = `Tureesly дээрх энэ зарыг сонирхоод үзээрэй!\n\n🔹 ${titleText}\n💰 Үнэ: ${priceText}\n\n👇 Яг одоо энд дарж дэлгэрэнгүйг харна уу:\n${deepLink}`;
+      
+      await Share.share({ 
+        message: shareMessage, 
+        title: "Tureesly - Түрээсийн нэгдсэн платформ" 
+      });
+    } catch (error) { 
+      console.log("Share error:", error); 
+    }
   };
 
   const openRentModal = () => {

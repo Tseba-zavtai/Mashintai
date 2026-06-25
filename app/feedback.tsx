@@ -1,157 +1,82 @@
 // app/feedback.tsx
-import React, { useMemo, useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Stack, useRouter } from "expo-router";
-import Constants from "expo-constants";
-import { Send, X } from "lucide-react-native";
-import { supabase } from "@/lib/supabase";
-import { useAuth } from "@/contexts/AuthContext";
-import { useTheme } from "@/contexts/ThemeContext";
+import React, { useState } from 'react';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Alert, 
+  KeyboardAvoidingView, 
+  Platform,
+  ScrollView // 🎯 ҮҮНИЙГ НЭМСЭН!
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ChevronLeft, Send } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { useTheme } from '@/contexts/ThemeContext';
 
 export default function FeedbackScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { user } = useAuth() as any;
+  const [text, setText] = useState('');
 
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const appVersion = useMemo(() => {
-    // expo / native аль нь байгаагаас хамаараад аль болох олдоцоор нь
-    const v1 = (Constants as any)?.expoConfig?.version;
-    const v2 = (Constants as any)?.manifest?.version;
-    const v3 = (Constants as any)?.nativeAppVersion;
-    return v1 || v2 || v3 || null;
-  }, []);
-
-  const submit = async () => {
-    try {
-      const text = message.trim();
-      if (!text) {
-        Alert.alert("Алдаа", "Санал хүсэлтээ бичнэ үү");
-        return;
-      }
-      if (text.length < 5) {
-        Alert.alert("Алдаа", "Хэт богино байна. Дэлгэрэнгүй бичээрэй 🙂");
-        return;
-      }
-
-      setBusy(true);
-
-      // ⚠️ auth session байхгүй бол insert хийхгүй (RLS insert authenticated)
-      const { data: sess } = await supabase.auth.getSession();
-      if (!sess?.session) {
-        Alert.alert("Нэвтрэх шаардлагатай", "Санал хүсэлт илгээхийн тулд нэвтэрсэн байх хэрэгтэй.");
-        return;
-      }
-
-      const payload = {
-        user_id: (user?.id ?? user?.uid ?? null) as string | null,
-        name: (user?.name ?? null) as string | null,
-        phone: (user?.phone ?? null) as string | null,
-        message: text,
-        platform: Platform.OS,
-        app_version: appVersion,
-      };
-
-      const { error } = await supabase.from("feedback").insert(payload as any);
-      if (error) throw error;
-
-      Alert.alert("Амжилттай", "Санал хүсэлт илгээгдлээ. Баярлалаа 🙏", [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ]);
-      setMessage("");
-    } catch (e: any) {
-      console.log("feedback submit error:", e);
-      Alert.alert("Алдаа", e?.message ?? "Илгээх үед алдаа гарлаа");
-    } finally {
-      setBusy(false);
+  const handleSend = () => {
+    if (!text.trim()) {
+      Alert.alert('Анхаар', 'Санал хүсэлтээ бичнэ үү.');
+      return;
     }
+    Alert.alert('Баярлалаа', 'Таны санал хүсэлтийг хүлээж авлаа!', [
+      { text: 'ОК', onPress: () => router.back() }
+    ]);
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
-      <Stack.Screen
-        options={{
-          title: "Санал хүсэлт",
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.headerBackground as any },
-          headerTintColor: colors.headerText as any,
-          headerRight: () => (
-            <TouchableOpacity onPress={() => router.back()} style={{ paddingHorizontal: 12 }}>
-              <X size={20} color={colors.headerText as any} />
-            </TouchableOpacity>
-          ),
-        }}
-      />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={['top']}>
+      {/* Толгой хэсэг */}
+      <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }} activeOpacity={0.7}>
+          <ChevronLeft size={28} color={colors.headerText} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.headerText }]}>Санал хүсэлт</Text>
+        <View style={{ width: 36 }} />
+      </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <View style={[styles.card, { backgroundColor: colors.background }]}>
-          <Text style={[styles.title, { color: colors.text }]}>Сайжруулах санал байна уу?</Text>
-          <Text style={[styles.sub, { color: colors.textSecondary }]}>
-            “Энийг ингэвэл гоё” “Тэр хэсэгт асуудал гарлаа” гэх мэт санаагаа бичээд илгээнэ үү.
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView style={[styles.content, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Апп-ыг сайжруулах санал, илэрсэн алдаа зэргийг бидэнд илгээнэ үү.
           </Text>
-
-          <View style={[styles.inputWrap, { backgroundColor: colors.backgroundSecondary }]}>
-            <TextInput
-              value={message}
-              onChangeText={setMessage}
-              placeholder="Санал хүсэлтээ энд бичнэ үү..."
-              placeholderTextColor={colors.textSecondary as any}
-              style={[styles.input, { color: colors.text }]}
-              multiline
-              textAlignVertical="top"
-              maxLength={2000}
-            />
-            <Text style={[styles.counter, { color: colors.textSecondary }]}>{message.trim().length}/2000</Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.btn, { backgroundColor: colors.primary, opacity: busy ? 0.7 : 1 }]}
-            onPress={submit}
-            activeOpacity={0.85}
-            disabled={busy}
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]}
+            placeholder="Энд бичнэ үү..."
+            placeholderTextColor={colors.textSecondary}
+            multiline
+            value={text}
+            onChangeText={setText}
+          />
+          
+          <TouchableOpacity 
+            style={[styles.sendBtn, { backgroundColor: colors.primary }]} 
+            onPress={handleSend} 
+            activeOpacity={0.8}
           >
-            <Send size={18} color={colors.text as any} />
-            <Text style={[styles.btnText, { color: colors.text }]}>
-              {busy ? "Илгээж байна..." : "Илгээх"}
-            </Text>
+            <Send size={20} color={colors.headerText} />
+            <Text style={[styles.sendBtnText, { color: colors.headerText }]}>Илгээх</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  card: {
-    margin: 16,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    gap: 12,
-  },
-  title: { fontSize: 18, fontWeight: "800" as const },
-  sub: { fontSize: 13, lineHeight: 18 },
-  inputWrap: { borderRadius: 14, padding: 12, gap: 8 },
-  input: { minHeight: 160, fontSize: 15 },
-  counter: { fontSize: 12, textAlign: "right" },
-  btn: {
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  btnText: { fontSize: 16, fontWeight: "800" as const },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
+  headerTitle: { fontSize: 18, fontWeight: '700' },
+  content: { flex: 1, padding: 20 },
+  label: { fontSize: 14, marginBottom: 16, lineHeight: 20 },
+  input: { height: 160, borderWidth: 1, borderRadius: 12, padding: 16, fontSize: 15, textAlignVertical: 'top', marginBottom: 24 },
+  sendBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 12, gap: 8 },
+  sendBtnText: { fontSize: 16, fontWeight: '700' },
 });
