@@ -33,7 +33,7 @@ import {
   Star,
   Heart,
   Briefcase,
-  Info, // 🎯 Version-д зориулж нэмэв
+  Info,
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
@@ -86,6 +86,10 @@ export default function ProfileScreen() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [isReviewsModalVisible, setIsReviewsModalVisible] = useState(false);
+
+  // 🎯 ЗАСВАР: Сэдэвт тохируулан текстийн өнгийг динамик болгох логик
+  const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
+  const creditButtonTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
 
   const myJobs = useMemo(() => {
     if (!user) return [];
@@ -289,7 +293,7 @@ export default function ProfileScreen() {
       <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: colors.headerText }]}>Профайл</Text>
-          <Image source={logoSource} style={styles.logo} resizeMode="contain" />
+          <Image source={logoSource} style={[styles.logo, { tintColor: colors.headerText }]} resizeMode="contain" />
         </View>
       </SafeAreaView>
 
@@ -313,9 +317,13 @@ export default function ProfileScreen() {
         <View style={{ marginHorizontal: 20, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <View>
             <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary }}>Зар оруулах боломжит эрх</Text>
-            <Text style={{ fontSize: 18, fontWeight: "900", marginTop: 2, color: colors.primary }}>{user?.available_post_credits ?? 0} эрх үлдсэн</Text>
+            {/* 🎯 ЗАСВАР: Эрх үлдсэн текстийн өнгийг үргэлж хатуу Нил ягаан (#6E0AB0) болгож бэхжүүлэв */}
+            <Text style={{ fontSize: 18, fontWeight: "900", marginTop: 2, color: "#6E0AB0" }}>{user?.available_post_credits ?? 0} эрх үлдсэн</Text>
           </View>
-          <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.primary }} onPress={() => router.push({ pathname: "/sponsor-payment", params: { targetType: "credit" } })} activeOpacity={0.8}><Text style={{ color: colors.headerText, fontWeight: "800", fontSize: 13 }}>Эрх авах (5,000₮)</Text></TouchableOpacity>
+          {/* 🎯 ЗАСВАР: Товчлуурын текстийн өнгийг дүрмийн дагуу динамик оноов */}
+          <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.primary }} onPress={() => router.push({ pathname: "/sponsor-payment", params: { targetType: "credit" } })} activeOpacity={0.8}>
+            <Text style={{ color: creditButtonTextColor, fontWeight: "800", fontSize: 13 }}>Эрх авах (5,000₮)</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
@@ -410,7 +418,6 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* 🎯 ЯГ ЭНД НЭМНЭ: Version харуулах хэсэг */}
         <View style={{ alignItems: 'center', marginTop: 24, marginBottom: 10 }}>
           <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '600' }}>
             Хувилбар 1.0.0
@@ -443,7 +450,7 @@ export default function ProfileScreen() {
                 </View>
                 <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={editedName} onChangeText={setEditedName} placeholder="Нэр оруулах" placeholderTextColor={colors.textSecondary} autoFocus />
                 <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary }]} onPress={handleSaveName} activeOpacity={0.8}>
-                  <Text style={[styles.saveButtonText, { color: colors.headerText }]}>Хадгалах</Text>
+                  <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>Хадгалах</Text>
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
@@ -468,7 +475,7 @@ export default function ProfileScreen() {
                   <Text style={{ color: colors.text, fontWeight: "700" }}>{pwShow ? "Нууцлах" : "Харах"}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary, opacity: pwBusy ? 0.7 : 1 }]} onPress={handleChangePassword} activeOpacity={0.8} disabled={pwBusy}>
-                  <Text style={[styles.saveButtonText, { color: colors.headerText }]}>{pwBusy ? "Сольж байна..." : "Хадгалах"}</Text>
+                  <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>{pwBusy ? "Сольж байна..." : "Хадгалах"}</Text>
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
@@ -488,7 +495,7 @@ export default function ProfileScreen() {
                 <Text style={{ fontSize: 13, marginBottom: 12, color: colors.textSecondary }}>Админ панел руу орохын тулд нууц үгээ оруулна уу.</Text>
                 <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={adminPassword} onChangeText={setAdminPassword} placeholder="Admin password" placeholderTextColor={colors.textSecondary} secureTextEntry autoFocus autoCapitalize="none" />
                 <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary, opacity: isUnlockingAdmin ? 0.7 : 1 }]} onPress={handleUnlockAdmin} activeOpacity={0.8} disabled={isUnlockingAdmin}>
-                  <Text style={[styles.saveButtonText, { color: colors.headerText }]}>{isUnlockingAdmin ? "Шалгаж байна..." : "Нээх"}</Text>
+                  <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>{isUnlockingAdmin ? "Шалгаж байна..." : "Нээх"}</Text>
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>

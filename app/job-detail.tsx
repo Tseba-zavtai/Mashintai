@@ -14,13 +14,12 @@ import {
   ActivityIndicator,
   Share,
 } from "react-native";
-// 🎯 ШИНЭ: Expo Image ашиглаж байна
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { useJobs } from "@/contexts/JobsContext";
-import * as ExpoLinking from "expo-linking"; // 🎯 ШИНЭ: Deep link үүсгэх сан
+import * as ExpoLinking from "expo-linking"; 
 import {
   Phone,
   MapPin,
@@ -107,6 +106,10 @@ export default function JobDetailScreen() {
   const [rentSubmitting, setRentSubmitting] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false); 
 
+  // 🎯 ЗАСВАР: Текстүүдийн өнгөний зохицлыг theme тус бүрээр динамик оноож байна
+  const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
+  const buttonTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
+
   if (!job) {
     return (
       <>
@@ -115,7 +118,7 @@ export default function JobDetailScreen() {
           <View style={styles.notFound}>
             <Text style={[styles.notFoundText, { color: colors.text }]}>Зар олдсонгүй</Text>
             <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.primary }]} activeOpacity={0.8}>
-              <Text style={[styles.backBtnText, { color: "#FFFFFF" }]}>Буцах</Text>
+              <Text style={[styles.backBtnText, { color: buttonTextColor }]}>Буцах</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -134,9 +137,6 @@ export default function JobDetailScreen() {
   const itemReviewCount = (job as any).itemReviewCount ?? (job as any).item_review_count ?? 0;
   const rentalCount = (job as any).rentalCount ?? (job as any).rental_count ?? itemReviewCount;
 
-  const posterUserRating = postedBy?.userRatingAvg ?? null;
-  const posterUserReviewCount = postedBy?.userReviewCount ?? 0;
-  const posterRentalCount = postedBy?.rentalCount ?? 0;
   const availableQuantity = Number((job as any).available_quantity ?? (job as any).availableQuantity ?? (job as any).quantity ?? 1);
   const jobPrice = Number(job.price || 0);
 
@@ -164,15 +164,12 @@ export default function JobDetailScreen() {
     } catch (error) { Alert.alert("Алдаа", "Утас руу залгах явцад алдаа гарлаа"); }
   };
 
-  // 🎯 ШИНЭЧЛЭГДСЭН: Deep Link (Апп руу үсрэх линк) ашиглан Share хийх
   const handleSharePress = async () => {
     try {
       const priceText = jobPrice > 0 ? `${jobPrice.toLocaleString()} ₮/өдөр` : "Үнэ тохиролцоно";
       const titleText = job.title || job.subcategory || job.category || "Зар";
       
-      // Апп руу шууд үсрэх линк үүсгэх (Жишээ нь: tureesly://job-detail?id=12345)
       const deepLink = ExpoLinking.createURL(`/job-detail`, { queryParams: { id: job.id } });
-      
       const shareMessage = `Tureesly дээрх энэ зарыг сонирхоод үзээрэй!\n\n🔹 ${titleText}\n💰 Үнэ: ${priceText}\n\n👇 Яг одоо энд дарж дэлгэрэнгүйг харна уу:\n${deepLink}`;
       
       await Share.share({ 
@@ -211,12 +208,12 @@ export default function JobDetailScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
-        <View style={[styles.header, { backgroundColor: colors.primary, borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { backgroundColor: colors.headerBackground, borderBottomColor: colors.border }]}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}><Text style={[styles.backButton, { color: "#FFFFFF" }]}>←</Text></TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: "#FFFFFF" }]}>Зарын дэлгэрэнгүй</Text>
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}><Text style={[styles.backButton, { color: colors.headerText }]}>←</Text></TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: colors.headerText }]}>Зарын дэлгэрэнгүй</Text>
           </View>
-          <Image source={getLogoSource(currentTheme)} style={[styles.logo, { tintColor: "#FFFFFF" }]} contentFit="contain" />
+          <Image source={getLogoSource(currentTheme)} style={[styles.logo, { tintColor: colors.headerText }]} contentFit="contain" />
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
@@ -224,7 +221,7 @@ export default function JobDetailScreen() {
             {postedBy?.photoUri ? (
               <Image source={{ uri: postedBy.photoUri }} style={styles.posterAvatar} contentFit="cover" transition={200} />
             ) : (
-              <View style={[styles.posterAvatar, { backgroundColor: colors.primary }]}><Text style={[styles.posterInitial, { color: "#FFFFFF" }]}>{initial}</Text></View>
+              <View style={[styles.posterAvatar, { backgroundColor: colors.primary }]}><Text style={[styles.posterInitial, { color: colors.headerBackground }]}>{initial}</Text></View>
             )}
             <View style={styles.posterInfo}>
               <Text style={[styles.posterName, { color: colors.text }]}>{posterName}</Text>
@@ -238,11 +235,12 @@ export default function JobDetailScreen() {
               <TouchableOpacity onPress={handleSharePress} style={[styles.shareIconWrap, { backgroundColor: colors.backgroundSecondary }]} activeOpacity={0.7}><Share2 size={22} color={colors.text} /></TouchableOpacity>
             </View>
             <View style={styles.priceContainer}>
-              <Tag size={20} color={colors.primary} />
-              <Text style={[styles.jobPrice, { color: colors.primary }]}>{jobPrice > 0 ? `${jobPrice.toLocaleString()} ₮` : "Үнэ тохиролцоно"}{jobPrice > 0 && <Text style={[styles.priceUnit, { color: colors.textSecondary }]}> / өдөр</Text>}</Text>
+              {/* 🎯 ЗАСВАР: Түүнчлэн иконы өнгийг үргэлж брэнд Нил ягаан болгож байна */}
+              <Tag size={20} color="#6E0AB0" />
+              {/* 🎯 ЗАСВАР: Үнийн текстийг ямар ч theme байсан үргэлж хатуу Нил ягаан (#6E0AB0) болгов */}
+              <Text style={[styles.jobPrice, { color: "#6E0AB0" }]}>{jobPrice > 0 ? `${jobPrice.toLocaleString()} ₮` : "Үнэ тохиролцоно"}{jobPrice > 0 && <Text style={[styles.priceUnit, { color: "#6E0AB0" }]}> / өдөр</Text>}</Text>
             </View>
             <View style={styles.badgesRow}>
-              <View style={[styles.typeBadge, { backgroundColor: colors.primary }]}><Text style={[styles.typeBadgeText, { color: colors.headerText }]}>{job.postType === "job" ? "Түрээсэлх" : "Түрээслүүлэг"}</Text></View>
               {job.isSponsored ? (<View style={[styles.sponsoredBadge, { backgroundColor: currentTheme === "navy" ? "#2A2A2A" : "#FFF5CC" }]}><Text style={[styles.sponsoredBadgeText, { color: currentTheme === "navy" ? "#F8E75D" : "#8A6500" }]}>Sponsored</Text></View>) : null}
             </View>
           </View>
@@ -288,22 +286,11 @@ export default function JobDetailScreen() {
                 <View style={styles.ratingLineLeft}>
                   <Star size={17} color={colors.text} fill="none" />
                   <View style={styles.ratingLineTextWrap}>
-                    <Text style={[styles.ratingLineTitle, { color: colors.text }]}>Зарын үнэлгээ</Text>
+                    <Text style={[styles.ratingLineTitle, { color: colors.text }]}>Хэрэглэгчдийн үнэлгээ</Text>
                     <Text style={[styles.ratingLineSub, { color: colors.textSecondary }]}>{itemReviewCount} үнэлгээ · {rentalCount} түрээслэлт</Text>
                   </View>
                 </View>
                 <Text style={[styles.ratingLineValue, { color: colors.text }]}>{formatRatingValue(itemRatingAvg, itemReviewCount)}</Text>
-              </View>
-              <View style={[styles.ratingDivider, { backgroundColor: colors.border }]} />
-              <View style={styles.ratingLine}>
-                <View style={styles.ratingLineLeft}>
-                  <Star size={17} color={colors.text} fill="none" />
-                  <View style={styles.ratingLineTextWrap}>
-                    <Text style={[styles.ratingLineTitle, { color: colors.text }]}>Түрээслүүлэгчийн үнэлгээ</Text>
-                    <Text style={[styles.ratingLineSub, { color: colors.textSecondary }]}>{posterUserReviewCount} үнэлгээ · {posterRentalCount} түрээслэлт</Text>
-                  </View>
-                </View>
-                <Text style={[styles.ratingLineValue, { color: colors.text }]}>{formatRatingValue(posterUserRating, posterUserReviewCount)}</Text>
               </View>
             </View>
           </View>
@@ -313,14 +300,16 @@ export default function JobDetailScreen() {
             <Text style={[styles.description, { color: colors.textSecondary }]}>{job.description || "-"}</Text>
           </View>
 
+          {/* 🎯 ЗАСВАР: Залгах товчны текст дээрх оноолт */}
           <TouchableOpacity style={[styles.callButton, { backgroundColor: colors.primary }]} onPress={handleCallPress} activeOpacity={0.8}>
-            <Phone size={20} color="#FFFFFF" />
-            <Text style={[styles.callButtonText, { color: "#FFFFFF" }]}>{posterPhone ? `Залгах: ${posterPhone}` : "Утасны дугаар алга"}</Text>
+            <Phone size={20} color={buttonTextColor} />
+            <Text style={[styles.callButtonText, { color: buttonTextColor }]}>{posterPhone ? `Залгах: ${posterPhone}` : "Утасны дугаар алга"}</Text>
           </TouchableOpacity>
 
+          {/* 🎯 ЗАСВАР: Түрээслэх товчны текст дээрх оноолт */}
           <TouchableOpacity style={[styles.reviewButton, { backgroundColor: colors.primary, borderColor: colors.primary, opacity: isOwnJob ? 0.55 : 1 }]} onPress={openRentModal} activeOpacity={0.8} disabled={isOwnJob}>
-            <Text style={[styles.reviewButtonText, { color: "#FFFFFF" }]}>Түрээслэх</Text>
-            <Text style={[styles.reviewButtonSubText, { color: "rgba(255, 255, 255, 0.75)" }]}>Түрээслэх хугацаа болон тоог сонгох</Text>
+            <Text style={[styles.reviewButtonText, { color: buttonTextColor }]}>Түрээслэх</Text>
+            <Text style={[styles.reviewButtonSubText, { color: buttonTextColor, opacity: 0.8 }]}>Түрээслэх хугацаа болон тоог сонгох</Text>
           </TouchableOpacity>
 
           <View style={styles.bottomPadding} />
@@ -362,8 +351,12 @@ export default function JobDetailScreen() {
               </TouchableOpacity>
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.modalCancelButton, { borderColor: colors.border }]} onPress={() => setRentModalVisible(false)} disabled={rentSubmitting}><Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text></TouchableOpacity>
-                <TouchableOpacity style={[styles.modalSubmitButton, { backgroundColor: agreeTerms ? colors.primary : colors.border }]} onPress={handleRentSubmit} disabled={rentSubmitting || !agreeTerms}>{rentSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={[styles.modalSubmitText, { color: agreeTerms ? "#FFFFFF" : colors.textSecondary }]}>Хүсэлт илгээх</Text>}</TouchableOpacity>
+                <TouchableOpacity style={[styles.modalCancelButton, { borderColor: colors.border }]} onPress={() => setRentModalVisible(false)} disabled={rentSubmitting}>
+                  <Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalSubmitButton, { backgroundColor: agreeTerms ? colors.primary : colors.border }]} onPress={handleRentSubmit} disabled={rentSubmitting || !agreeTerms}>
+                  {rentSubmitting ? <ActivityIndicator color={colors.headerBackground} /> : <Text style={[styles.modalSubmitText, { color: agreeTerms ? colors.headerBackground : colors.textSecondary }]}>Хүсэлт илгээх</Text>}
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -395,8 +388,6 @@ const styles = StyleSheet.create({
   jobPrice: { fontSize: 22, fontWeight: "800" },
   priceUnit: { fontSize: 14, fontWeight: "500" },
   badgesRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  typeBadge: { alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  typeBadgeText: { fontSize: 12, fontWeight: "600" },
   sponsoredBadge: { alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   sponsoredBadgeText: { fontSize: 12, fontWeight: "700" },
   imagesSection: { padding: 16, borderRadius: 16, marginBottom: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },

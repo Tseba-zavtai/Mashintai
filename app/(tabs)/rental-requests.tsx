@@ -60,7 +60,6 @@ export default function RentalRequestsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // 🎯 ЗАСВАР: Түрээслүүлэгчийн зөвшөөрөх үеийн Modal state
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -89,14 +88,12 @@ export default function RentalRequestsScreen() {
     }
   }, [loadRentalRequests]);
 
-  // 1. Түрээслүүлэгч хүсэлтийг зөвшөөрөх товч дарахад Modal нээнэ
   const openApproveModal = (id: string) => {
     setSelectedRequestId(id);
     setAgreeTerms(false);
     setTermsModalVisible(true);
   };
 
-  // Түрээслүүлэгч нөхцөлийг зөвшөөрч баталгаажуулах
   const confirmApprove = async () => {
     if (!selectedRequestId || busyId) return;
     try {
@@ -242,7 +239,7 @@ export default function RentalRequestsScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
-        <View style={[styles.header, { backgroundColor: colors.primary }]}>
+        <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
           <View style={styles.headerLeft}>
             <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75}>
               <ChevronLeft size={28} color={colors.headerText} />
@@ -297,7 +294,7 @@ export default function RentalRequestsScreen() {
                       </Text>
                       <View style={styles.detailsRow}>
                         <Text style={[styles.cardMeta, { color: colors.textSecondary }]}>Тоо: {item.quantity ?? 1}ш</Text>
-                        {item.rent_days ? <Text style={[styles.cardMeta, { color: colors.textSecondary }]}>· Хугацаа: {item.rent_days} хоног</Text> : null}
+                        {item.rent_days ? <Text style={[styles.cardMeta, { color: colors.textSecondary }]}>·  Хугацаа: {item.rent_days} хоног</Text> : null}
                       </View>
                       <Text style={[styles.dateText, { color: colors.textSecondary }]}>{formatDate(item.created_at)}</Text>
                     </View>
@@ -317,7 +314,8 @@ export default function RentalRequestsScreen() {
                       Төлөв: <Text style={{ color: '#34C759' }}>{statusLabel(item.status)}</Text>
                     </Text>
                     {item.total_price ? (
-                      <Text style={[styles.priceText, { color: colors.primary }]}>
+                      /* 🎯 ЗАСВАР: Түрээсийн нийт үнийн дүнгийн өнгийг ямар ч сэдэв дээр үргэлж хатуу Нил ягаан (#6E0AB0) болгов */
+                      <Text style={[styles.priceText, { color: "#6E0AB0" }]}>
                         {Number(item.total_price).toLocaleString()} ₮
                       </Text>
                     ) : null}
@@ -361,7 +359,7 @@ export default function RentalRequestsScreen() {
                     </View>
                   )}
 
-                  {/* ТҮРЭЭСЛЭГЧИЙН ҮЙЛДЛҮҮД */}
+                  {/* 🎯 ЗАСВАР: ТҮРЭЭСЛЭГЧИЙН ҮЙЛДЛҮҮД-ийг list.map хаалтан дотор зөв байрлалд оруулж алдааг засав */}
                   {isRequester && (
                     <View style={styles.actionsRow}>
                       {item.status === "approved" && (
@@ -400,7 +398,6 @@ export default function RentalRequestsScreen() {
           )}
         </ScrollView>
 
-        {/* 🎯 ЗАСВАР: Түрээслүүлэгчийн зөвшөөрөх үеийн Хариуцлагын санамж (Modal) */}
         <Modal
           visible={termsModalVisible}
           transparent
@@ -493,74 +490,17 @@ const styles = StyleSheet.create({
   actionButton: { flex: 1, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 },
   rejectButton: { borderWidth: 1 },
   actionText: { fontSize: 14, fontWeight: "800" },
-
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
-  },
-  termsModal: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 30,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "800" as const,
-    marginBottom: 8,
-  },
-  modalDesc: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  termsWrap: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
-  },
-  termsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  },
-  termsTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  termsDescText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  modalActions: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  modalCancelButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  modalSubmitButton: {
-    flex: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 48,
-  },
-  modalCancelText: {
-    fontSize: 15,
-    fontWeight: "700" as const,
-  },
-  modalSubmitText: {
-    fontSize: 15,
-    fontWeight: "800" as const,
-  },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  termsModal: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 30 },
+  modalTitle: { fontSize: 20, fontWeight: "800", marginBottom: 8 },
+  modalDesc: { fontSize: 14, lineHeight: 20, marginBottom: 16 },
+  termsWrap: { borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 20 },
+  termsHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  termsTitle: { fontSize: 15, fontWeight: "700" },
+  termsDescText: { fontSize: 13, lineHeight: 18 },
+  modalActions: { flexDirection: "row", gap: 10 },
+  modalCancelButton: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  modalSubmitButton: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: "center", justifyContent: "center", minHeight: 48 },
+  modalCancelText: { fontSize: 15, fontWeight: "700" },
+  modalSubmitText: { fontSize: 15, fontWeight: "800" },
 });

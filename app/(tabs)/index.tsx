@@ -23,7 +23,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from "react-native";
-// 🎯 ШИНЭ: Expo Image ашиглаж байна (маш хурдан, бас cache хийнэ)
+// 🎯 FB Style JobCard (Expo Image-тэй, Зүрхтэй)
 import { Image } from "expo-image";
 import {
   Search,
@@ -71,6 +71,7 @@ import {
   BadgeHelp,
   Dog,
   Heart,
+  RefreshCw, // 🎯 ШИНЭ: Дахин оролдох товчны икон
 } from "lucide-react-native";
 import {
   SafeAreaView,
@@ -91,16 +92,28 @@ import SkeletonCard from "@/components/SkeletonCard";
 
 type LucideIcon = React.ComponentType<{ size?: number; color?: string; fill?: string }>;
 type FilterType = "all" | "rent" | "need";
-
 type DbCategoryRow = { id: string; name: string; sort_order: number | null; };
 type DbSubcategoryRow = { id: string; name: string; category_id: string; sort_order: number | null; };
 
 type NormalizedJob = Job & {
-  category_id?: string | null; subcategory_id?: string | null; category?: string | null;
-  subcategory?: string | null; postType?: string | null; isActive?: boolean;
-  isSponsored?: boolean; sponsoredUntil?: Date | null; postedBy?: any; postedDate?: Date;
-  location?: any; image_url?: string | null; image_urls?: string[]; itemRatingAvg?: number | null;
-  itemReviewCount?: number; rentalCount?: number; bumpedAt?: Date | null; bumpCount?: number;
+  category_id?: string | null;
+  subcategory_id?: string | null; 
+  category?: string | null;
+  subcategory?: string | null; 
+  postType?: string | null; 
+  isActive?: boolean;
+  isSponsored?: boolean;
+  sponsoredUntil?: Date | null; 
+  postedBy?: any; 
+  postedDate?: Date;
+  location?: any; 
+  image_url?: string | null; 
+  image_urls?: string[]; 
+  itemRatingAvg?: number | null;
+  itemReviewCount?: number; 
+  rentalCount?: number; 
+  bumpedAt?: Date | null; 
+  bumpCount?: number;
 };
 
 function toSafeDate(value: any): Date {
@@ -266,7 +279,6 @@ function normalizeJob(raw: any): NormalizedJob {
   } as NormalizedJob;
 }
 
-// 🎯 FB Style JobCard (Expo Image-тэй, Зүрхтэй)
 function JobCard({
   job,
   getCategoryIcon,
@@ -295,7 +307,6 @@ function JobCard({
   };
 
   const handleCardPress = () => { router.push(`/job-detail?id=${j.id}`); };
-  
   const formatDate = (date: Date) => {
     if (!date) return "Огноо алга";
     const now = new Date();
@@ -305,12 +316,10 @@ function JobCard({
     if (diffInDays === 1) return "Өчигдөр";
     return `${diffInDays} өдрийн өмнө`;
   };
-  
   if (j?.isActive === false) return null;
   const CatIcon = getCategoryIcon(j.category ?? "");
   const isSponsored = !!j.isSponsored;
   const postedAtDate: Date = j.postedDate ?? toSafeDate((j as any).created_at ?? (j as any).updated_at);
-
   return (
     <TouchableOpacity style={[styles.jobCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={handleCardPress}>
       <View style={styles.feedHeader}>
@@ -381,8 +390,9 @@ function ThemeSelector({ visible, onClose }: { visible: boolean; onClose: () => 
     { type: "sky", name: "Sky", description: "Тэнгэрийн цэнхэр өнгө" }, { type: "navy", name: "Navy", description: "Бараан хөх өнгө" },
     { type: "gray", name: "Gray", description: "Саарал өнгө" }, { type: "mint", name: "Mint", description: "Минт ногоон өнгө" },
   ];
-  const PREVIEW_BACKGROUNDS: Record<ThemeType, string> = { purple: "#6E0AB0", peach: "#FFE3DD", navy: "#201A2E", gray: "#D0D2D8", mint: "#8FE3CF", sky: "#AFC6D9" };
+  const PREVIEW_BACKGROUNDS: Record<ThemeType, string> = { purple: "#6E0AB0", peach: "#FF6F61", navy: "#201A2E", gray: "#D0D2D8", mint: "#8FE3CF", sky: "#AFC6D9" };
   return (
+    /* 🎯 ЗАСВАР: onRequestClose={close} байсныг зөв зүйтэй onRequestClose={onClose} болгож лавшруулан засав */
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <TouchableOpacity style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" }} activeOpacity={1} onPress={onClose} />
@@ -406,7 +416,7 @@ function ThemeSelector({ visible, onClose }: { visible: boolean; onClose: () => 
 }
 
 export default function HomeScreen() {
-  const { jobs, loadJobs, isLoading, searchJobs, clearSearch, savedJobIds, toggleSaveJob } = useJobs();
+  const { jobs, loadJobs, isLoading, searchJobs, clearSearch, savedJobIds, toggleSaveJob } = useJobs() as any;
   const { colors, currentTheme } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -429,7 +439,6 @@ export default function HomeScreen() {
 
   const [safeIsLoading, setSafeIsLoading] = useState(true);
   useEffect(() => { setSafeIsLoading(isLoading); if (isLoading) { const fallbackTimer = setTimeout(() => { setSafeIsLoading(false); }, 5000); return () => clearTimeout(fallbackTimer); } }, [isLoading]);
-
   const searchJobsRef = useRef(searchJobs);
   const clearSearchRef = useRef(clearSearch);
   useEffect(() => { searchJobsRef.current = searchJobs; }, [searchJobs]);
@@ -437,7 +446,6 @@ export default function HomeScreen() {
 
   const [homeBanners, setHomeBanners] = useState<any[]>([]);
   const loadHomeBanners = useCallback(async () => { try { const b = await fetchBanners("home_feed", 3); setHomeBanners(b ?? []); } catch (e) { setHomeBanners([]); } }, []);
-
   const fetchCategories = useCallback(async () => {
     setCategoriesLoading(true);
     try {
@@ -447,11 +455,10 @@ export default function HomeScreen() {
       if (subErr) throw subErr; setDbSubcategories((subs as DbSubcategoryRow[]) ?? []);
     } catch (e) { setDbCategories([]); setDbSubcategories([]); } finally { setCategoriesLoading(false); }
   }, []);
-
   useEffect(() => { fetchCategories(); }, [fetchCategories]);
   useEffect(() => { loadHomeBanners(); }, [loadHomeBanners]);
   useEffect(() => { if (!lastUpdatedAt && jobs.length > 0) setLastUpdatedAt(new Date()); }, [jobs, lastUpdatedAt]);
-
+  
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -503,7 +510,7 @@ export default function HomeScreen() {
   const toggleSub = (catId: string, subId: string) => { setSelectedCategoryIds((prev) => prev.includes(catId) ? prev : [...prev, catId]); setSelectedSubcategoryIds((prev) => { const on = prev.includes(subId); return on ? prev.filter((x) => x !== subId) : [...prev, subId]; }); };
   const matchesSearch = useCallback((text: string) => searchMatch(text, categorySearch), [categorySearch]);
   const canApply = selectedCategoryIds.length > 0 || selectedSubcategoryIds.length > 0;
-  
+
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(async () => {
@@ -515,14 +522,19 @@ export default function HomeScreen() {
     }, 350);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchText]);
-  
+
   const clearTopSearch = useCallback(async () => { setSearchText(""); try { if (clearSearchRef.current) await clearSearchRef.current(); setLastUpdatedAt(new Date()); } catch (e) {} }, []);
+  
+  const handleRetryLoad = () => {
+    setSafeIsLoading(true);
+    onRefresh();
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
         <View style={styles.header}>
-          <Text style={[styles.greeting, { color: colors.headerText }]}>Сайн байна уу</Text>
+          <Text style={[styles.greeting, { color: colors.headerText }]}>Сайн байна уу!</Text>
           <View style={styles.headerRight}>
             <Image source={getLogoSource(currentTheme)} style={styles.logo} contentFit="contain" />
           </View>
@@ -556,7 +568,6 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={async () => { setSelectedFilter("all"); setSelectedCategoryIds([]); setSelectedSubcategoryIds([]); await clearTopSearch(); }} activeOpacity={0.75}><Text style={[styles.seeAll, { color: colors.text }]}>Бүгдийг харах</Text></TouchableOpacity>
         </View>
 
-        {/* 🎯 ШИНЭ: Skeleton loader харуулж байна */}
         {safeIsLoading && !refreshing && (
           <View>
             <SkeletonCard />
@@ -568,19 +579,26 @@ export default function HomeScreen() {
         {lastUpdatedAt && <Text style={{ paddingHorizontal: 20, marginBottom: 10, opacity: 0.6, color: colors.textSecondary }}>Сүүлийн шинэчлэлт: {lastUpdatedAt.toLocaleTimeString()}</Text>}
 
         {!safeIsLoading && filteredJobs.length === 0 ? (
-          <View style={styles.emptyWrap}><Text style={[styles.emptyTitle, { color: colors.text }]}>Зар олдсонгүй</Text><Text style={[styles.emptyText, { color: colors.textSecondary }]}>Хайлтын үг эсвэл шүүлтүүрээ өөрчлөөд дахин үзээрэй</Text></View>
+          <View style={styles.emptyWrap}>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Зар олдсонгүй</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary, marginBottom: 20 }]}>Интернет холболтоо шалгах эсвэл шүүлтүүрээ өөрчлөөд дахин үзээрэй.</Text>
+            
+            <TouchableOpacity 
+              style={[styles.retryButton, { backgroundColor: colors.primary }]} 
+              onPress={handleRetryLoad}
+              activeOpacity={0.8}
+            >
+              <RefreshCw size={18} color="#FFFFFF" />
+              <Text style={styles.retryButtonText}>Дахин ачааллах</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           filteredJobs.map((job, idx) => {
             const oneBased = idx + 1;
             const shouldShowBanner = oneBased >= 6 && (oneBased - 6) % 20 === 0;
             return (
               <React.Fragment key={job.id}>
-                <JobCard 
-                  job={job as Job} 
-                  getCategoryIcon={getCategoryIcon} 
-                  isSaved={savedJobIds.includes(job.id)} 
-                  onToggleSave={toggleSaveJob} 
-                />
+                <JobCard job={job as Job} getCategoryIcon={getCategoryIcon} isSaved={savedJobIds.includes(job.id)} onToggleSave={toggleSaveJob} />
                 {shouldShowBanner && homeBanners.length > 0 ? (<View style={{ marginTop: 8, marginBottom: 12 }}><BannerCarousel banners={homeBanners} /></View>) : null}
               </React.Fragment>
             );
@@ -629,7 +647,7 @@ export default function HomeScreen() {
                           )}
                         </View>
                       );
-                    })
+                   })
                 )}
               </ScrollView>
               <TouchableOpacity style={[styles.applyButton, { backgroundColor: colors.accent }, !canApply && { opacity: 0.45 }]} disabled={!canApply} onPress={() => { setShowCategoryModal(false); setCategorySearch(""); }} activeOpacity={0.85}><Text style={[styles.applyButtonText, { color: colors.text }]}>Сонгох</Text></TouchableOpacity>
@@ -675,9 +693,11 @@ const styles = StyleSheet.create({
   jobImagesWrap: { paddingHorizontal: 16, paddingBottom: 12 },
   jobImagesScrollContent: { paddingRight: 4, gap: 8 },
   jobPreviewImage: { width: 150, height: 110, borderRadius: 12, backgroundColor: "#E9E9E9" },
-  emptyWrap: { paddingHorizontal: 24, paddingVertical: 36, alignItems: "center" },
-  emptyTitle: { fontSize: 17, fontWeight: "700", marginBottom: 8 },
+  emptyWrap: { paddingHorizontal: 24, paddingVertical: 40, alignItems: "center", justifyContent: "center" },
+  emptyTitle: { fontSize: 18, fontWeight: "700", marginBottom: 8 },
   emptyText: { fontSize: 14, textAlign: "center", lineHeight: 20 },
+  retryButton: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  retryButtonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
   bottomPadding: { height: 20 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", justifyContent: "flex-end" },
   modalKeyboardWrap: { flex: 1, justifyContent: "flex-end" },

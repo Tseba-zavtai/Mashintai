@@ -8,7 +8,6 @@ import { Platform } from "react-native";
 import { JobsContext } from "@/contexts/JobsContext";
 import { AuthContext, useAuth } from "@/contexts/AuthContext";
 import { ThemeContext } from "@/contexts/ThemeContext";
-
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { supabase } from "@/lib/supabase";
@@ -93,8 +92,8 @@ function RootLayoutNav() {
   return (
     <Stack 
       screenOptions={{ 
-        headerShown: false, // ⚠️ ЭНЭ МАШ ЧУХАЛ: Expo-ийн бүх хуурамч давхар толгой, сумуудыг хаана!
-        animation: "slide_from_right" // Апп-ын бүх хуудас шилжилтийг ижил стандарттай болгов
+        headerShown: false, // Үндсэн бүх хуудасны системийн толгойг хаана
+        animation: "slide_from_right" 
       }}
     >
       <Stack.Screen name="auth" options={{ headerShown: false }} />
@@ -103,6 +102,10 @@ function RootLayoutNav() {
       <Stack.Screen name="review" options={{ headerShown: false }} />
       <Stack.Screen name="browse" options={{ headerShown: false }} />
       <Stack.Screen name="my-jobs" options={{ headerShown: false }} />
+      
+      {/* 🎯 ЗАСВАР: help хавтсыг бүртгэхдээ headerShown: false болгож системийн толгойг давхарлаж гаргахгүй хаана */}
+      <Stack.Screen name="help" options={{ headerShown: false }} />
+      
       <Stack.Screen name="location-picker" options={{ headerShown: false, animation: "slide_from_bottom" }} />
     </Stack>
   );

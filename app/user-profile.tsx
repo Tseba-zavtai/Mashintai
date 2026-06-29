@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabase";
 export default function UserProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, currentTheme } = useTheme();
   const { jobs, submitRentalReview, rentalRequests } = useJobs() as any;
   const { user: currentUser } = useAuth() as any;
 
@@ -21,10 +21,13 @@ export default function UserProfileScreen() {
   const [loadingUser, setLoadingUser] = useState(true);
   const [reviews, setReviews] = useState<any[]>([]);
 
-  // 🎯 ЗАСВАР 1: Анхны үнэлгээг 1 од болгов
   const [rating, setRating] = useState(1);
   const [comment, setComment] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+
+  // 🎯 ЗАСВАР: Текстийн өнгийг дүрмийн дагуу тохируулах
+  const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
+  const userBtnTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
 
   useEffect(() => {
     const fetchUserAndReviews = async () => {
@@ -120,7 +123,6 @@ export default function UserProfileScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top", "bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* 🎯 ЗАСВАР 2: Тогтмол гарчигтай, найдвартай буцах сумтай Толгой хэсэг */}
       <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }} activeOpacity={0.7}>
           <ChevronLeft size={28} color={colors.headerText} />
@@ -172,7 +174,7 @@ export default function UserProfileScreen() {
                 />
 
                 <TouchableOpacity style={[styles.submitReviewBtn, { backgroundColor: colors.primary }]} onPress={handleSubmitReview} disabled={reviewSubmitting} activeOpacity={0.8}>
-                  {reviewSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitReviewText}>Үнэлгээ илгээх</Text>}
+                  {reviewSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={[styles.submitReviewText, { color: userBtnTextColor }]}>Үнэлгээ илгээх</Text>}
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -224,7 +226,8 @@ export default function UserProfileScreen() {
                       )}
                       <View style={styles.jobInfo}>
                         <Text style={[styles.jobTitle, { color: colors.text }]} numberOfLines={2}>{job.title || job.category}</Text>
-                        <Text style={[styles.jobPrice, { color: colors.primary }]}>{Number(job.price).toLocaleString()} ₮</Text>
+                        {/* 🎯 ЗАСВАР: Зарын үнийг ямар ч сэдэв дээр үргэлж хатуу Нил ягаан (#6E0AB0) болгов */}
+                        <Text style={[styles.jobPrice, { color: "#6E0AB0" }]}>{Number(job.price).toLocaleString()} ₮</Text>
                       </View>
                     </TouchableOpacity>
                   );
@@ -256,7 +259,7 @@ const styles = StyleSheet.create({
   pendingReviewSub: { fontSize: 13, marginBottom: 8 },
   commentInput: { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginBottom: 16 },
   submitReviewBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  submitReviewText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  submitReviewText: { fontSize: 15, fontWeight: "700" },
   section: { marginBottom: 24 },
   sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: 12, marginLeft: 4 },
   emptyReviewBox: { padding: 24, borderRadius: 16, borderWidth: 1, alignItems: "center" },

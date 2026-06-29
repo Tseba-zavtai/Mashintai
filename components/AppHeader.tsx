@@ -26,7 +26,7 @@ export default function AppHeader({ title, showLogo = false }: HeaderProps) {
       {showLogo ? (
         <Image 
           source={getLogoSource(currentTheme)} 
-          style={styles.logo} 
+          style={[styles.logo, { tintColor: colors.headerText }]} 
           resizeMode="contain" 
         />
       ) : (
