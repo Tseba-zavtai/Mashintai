@@ -25,11 +25,11 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/lib/supabase";
-import { getLogoSource } from "@/constants/logo";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
+import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Нэгдсэн толгой
 
-// 🎯 ШИНЭ: Хайлтын логикуудыг эндээс дуудна!
+// Хайлтын логикуудыг эндээс дуудна!
 import { searchMatch, normalizeForSearch, cyrillicToLatin } from "@/lib/searchUtils";
 
 const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null;
@@ -138,8 +138,7 @@ export default function PostScreen() {
   const { addJob } = useJobs();
   const router = useRouter();
   const { isAuthenticated, user, refetchProfile } = useAuth() as any;
-  const { colors, currentTheme } = useTheme();
-  const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
+  const { colors } = useTheme();
 
   const postType = "job"; 
   const [description, setDescription] = useState("");
@@ -216,7 +215,6 @@ export default function PostScreen() {
 
   const selectedSubcategoryName = selectedSubcategoryObj?.name ?? null;
 
-  // 🎯 ШИНЭ: Imported searchMatch ашиглаж байна
   const visibleCategories = useMemo(() => {
     if (!categorySearch.trim()) return RENTAL_CATEGORIES;
     return RENTAL_CATEGORIES.filter((item) => searchMatch(item.name, categorySearch));
@@ -327,19 +325,20 @@ export default function PostScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.headerText }]}>Зар нэмэх</Text>
-          <Image source={logoSource} style={styles.logo} resizeMode="contain" />
-        </View>
-        <View style={styles.subtitleContainer}>
-          <Text style={[styles.headerSubtitle, { color: colors.headerText }]}>Түрээслүүлэх зарын дэлгэрэнгүй мэдээллээ оруулна уу</Text>
-        </View>
-      </SafeAreaView>
+    // 🎯 ЗАССАН: edges=["bottom"] болгож, "top"-ийг хасав
+    <SafeAreaView edges={["bottom"]} style={[styles.container, { backgroundColor: colors.background }]}>
+      
+      {/* 🎯 ЗАССАН: Нэгдсэн толгой хэсгийг орууллаа. Таб цэс тул showBack={false} байна */}
+      <AppHeader title="Зар нэмэх" showBack={false} />
 
       <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+          
+          {/* 🎯 ЗАССАН: Өмнө нь толгойд байсан тайлбар текстийг энд байрлуулав */}
+          <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 20 }}>
+            Түрээслүүлэх зарын дэлгэрэнгүй мэдээллээ оруулна уу
+          </Text>
+
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: colors.text }]}>Зарын мэдээлэл *</Text>
             <TextInput style={[styles.input, styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Зарын талаар дэлгэрэнгүй бич..." placeholderTextColor={colors.textSecondary} value={description} onChangeText={setDescription} multiline numberOfLines={6} textAlignVertical="top" editable={!submitting} scrollEnabled={false} autoCorrect={false} returnKeyType="default" blurOnSubmit={false} />
@@ -446,18 +445,13 @@ export default function PostScreen() {
           <View style={styles.bottomPadding} />
         </ScrollView>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { paddingBottom: 10 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8 },
-  logo: { width: 130, height: 54 },
-  headerTitle: { fontSize: 18, fontWeight: "600" },
-  subtitleContainer: { paddingHorizontal: 16, paddingBottom: 8 },
-  headerSubtitle: { fontSize: 14 },
+  // 🎯 ЗАССАН: Хуучин гараар зурсан header хэсгийн стилийг устгав
   keyboardView: { flex: 1 },
   content: { flex: 1 },
   contentContainer: { paddingTop: 20, paddingHorizontal: 20, paddingBottom: 24 },

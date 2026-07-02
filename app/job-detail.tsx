@@ -18,7 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { useJobs } from "@/contexts/JobsContext";
-import * as ExpoLinking from "expo-linking"; 
+import * as ExpoLinking from "expo-linking";
 import {
   Phone,
   MapPin,
@@ -40,6 +40,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getLogoSource } from "@/constants/logo";
 import { supabase } from "@/lib/supabase";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Нэгдсэн толгой
 
 function toSafeDate(value: any): Date {
   if (!value) return new Date();
@@ -93,12 +94,10 @@ export default function JobDetailScreen() {
   const { width } = useWindowDimensions();
   const job = useMemo(() => jobs.find((j: any) => j.id === id), [jobs, id]);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-
   const [rentModalVisible, setRentModalVisible] = useState(false);
   const [rentQuantity, setRentQuantity] = useState(1);
   const [rentSubmitting, setRentSubmitting] = useState(false);
-  const [agreeTerms, setAgreeTerms] = useState(false); 
-
+  const [agreeTerms, setAgreeTerms] = useState(false);
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date(Date.now() + 86400000));
   const [hasTime, setHasTime] = useState(false);
@@ -109,15 +108,16 @@ export default function JobDetailScreen() {
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
-
   const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
   const buttonTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
-
+  
   if (!job) {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
+        {/* 🎯 ЗАССАН: Зар олдоогүй дэлгэцийн толгойг бас засав */}
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
+          <AppHeader title="Зарын дэлгэрэнгүй" />
           <View style={styles.notFound}>
             <Text style={[styles.notFoundText, { color: colors.text }]}>Зар олдсонгүй</Text>
             <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.primary }]} activeOpacity={0.8}>
@@ -139,11 +139,10 @@ export default function JobDetailScreen() {
   const itemRatingAvg = (job as any).itemRatingAvg ?? (job as any).item_rating_avg ?? null;
   const itemReviewCount = (job as any).itemReviewCount ?? (job as any).item_review_count ?? 0;
   const rentalCount = (job as any).rentalCount ?? (job as any).rental_count ?? itemReviewCount;
-
   const availableQuantity = Number((job as any).available_quantity ?? (job as any).availableQuantity ?? (job as any).quantity ?? 1);
   const jobPrice = Number(job.price || 0);
   const isOwnJob = !!user?.id && !!postedBy?.id && user.id === postedBy.id;
-
+  
   const calculatedDays = useMemo(() => {
     const s = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
     const e = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
@@ -151,15 +150,15 @@ export default function JobDetailScreen() {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays > 0 ? diffDays : 1;
   }, [startDate, endDate]);
-
+  
   const formatDateLabel = (date: Date) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
-
+  
   const formatTimeLabel = (date: Date) => {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   };
-
+  
   const formatDate = (date: Date) => {
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
@@ -168,29 +167,30 @@ export default function JobDetailScreen() {
     if (diffInDays === 1) return "Өчигдөр";
     return `${diffInDays} өдрийн өмнө`;
   };
-
+  
   const handleCallPress = async () => {
     const phoneNumber = posterPhone;
     if (!phoneNumber) { Alert.alert("Анхаар", "Утасны дугаар олдсонгүй"); return; }
     let phoneUrl = "";
-    if (Platform.OS === "android" || Platform.OS === "ios") { phoneUrl = `tel:${phoneNumber}`; } 
-    else { Alert.alert("Анхаар", "Утас руу залгах нь зөвхөн гар утсан дээр ажиллана"); return; }
+    if (Platform.OS === "android" || Platform.OS === "ios") { phoneUrl = `tel:${phoneNumber}`;
+    } 
+    else { Alert.alert("Анхаар", "Утас руу залгах нь зөвхөн гар утсан дээр ажиллана"); return;
+    }
 
     try {
       const supported = await Linking.canOpenURL(phoneUrl);
       if (supported) await Linking.openURL(phoneUrl);
       else Alert.alert("Алдаа", "Утас руу залгах боломжгүй байна");
-    } catch (error) { Alert.alert("Алдаа", "Утас руу залгах явцад алдаа гарлаа"); }
+    } catch (error) { Alert.alert("Алдаа", "Утас руу залгах явцад алдаа гарлаа");
+    }
   };
 
   const handleSharePress = async () => {
     try {
       const priceText = jobPrice > 0 ? `${jobPrice.toLocaleString()} ₮/өдөр` : "Үнэ тохиролцоно";
       const titleText = job.title || job.subcategory || job.category || "Зар";
-      
       const deepLink = ExpoLinking.createURL(`/job-detail`, { queryParams: { id: job.id } });
       const shareMessage = `Tureesly дээрх энэ зарыг сонирхоод үзээрэй!\n\n🔹 ${titleText}\n💰 Үнэ: ${priceText}\n\n👇 Яг одоо энд дарж дэлгэрэнгүйг харна уу:\n${deepLink}`;
-      
       await Share.share({ 
         message: shareMessage, 
         title: "Tureesly - Түрээсийн нэгдсэн платформ" 
@@ -199,11 +199,14 @@ export default function JobDetailScreen() {
       console.log("Share error:", error); 
     }
   };
-
+  
   const openRentModal = () => {
-    if (!isAuthenticated) { router.push("/auth"); return; }
-    if (isOwnJob) { Alert.alert("Анхаар", "Өөрийн зарыг түрээслэх боломжгүй"); return; }
-    if (Number.isFinite(availableQuantity) && availableQuantity <= 0) { Alert.alert("Анхаар", "Энэ зар одоогоор боломжгүй байна"); return; }
+    if (!isAuthenticated) { router.push("/auth"); return;
+    }
+    if (isOwnJob) { Alert.alert("Анхаар", "Өөрийн зарыг түрээслэх боломжгүй"); return;
+    }
+    if (Number.isFinite(availableQuantity) && availableQuantity <= 0) { Alert.alert("Анхаар", "Энэ зар одоогоор боломжгүй байна"); return;
+    }
     setRentQuantity(1); 
     setStartDate(new Date());
     setEndDate(new Date(Date.now() + 86400000));
@@ -211,9 +214,10 @@ export default function JobDetailScreen() {
     setAgreeTerms(false); 
     setRentModalVisible(true);
   };
-
+  
   const handleRentSubmit = async () => {
-    if (!agreeTerms) { Alert.alert("Анхаар", "Та хариуцлагын санамжтай танилцаж, хүлээн зөвшөөрөх ёстой."); return; }
+    if (!agreeTerms) { Alert.alert("Анхаар", "Та хариуцлагын санамжтай танилцаж, хүлээн зөвшөөрөх ёстой.");
+    return; }
     if (rentSubmitting) return;
 
     if (endDate <= startDate) {
@@ -225,7 +229,6 @@ export default function JobDetailScreen() {
       setRentSubmitting(true);
       const computedTotalPrice = jobPrice * rentQuantity * calculatedDays;
 
-      // Түрээслүүлэгчид (барааны эзэнд) мэдэгдэл оруулах логик
       const { data: requestData, error: requestError } = await supabase
         .from("rental_requests")
         .insert([
@@ -252,8 +255,6 @@ export default function JobDetailScreen() {
         .single();
 
       if (requestError) throw requestError;
-
-      // 🎯 ЗАСВАР: Зөвхөн Түрээслүүлэгч (Барааны эзэн) рүү мэдэгдэл бүртгэж улаан тоо асаана.
       if (requestData) {
         await supabase.from("notifications").insert([
           {
@@ -270,7 +271,7 @@ export default function JobDetailScreen() {
       setRentModalVisible(false);
       Alert.alert("Амжилттай", "Түрээслэх хүсэлт илгээгдлээ. Зарын эзэн зөвшөөрөх үед танд мэдэгдэл очино.", [{ text: "ОК", onPress: () => router.replace("/(tabs)") }]);
     } catch (e: any) { 
-      Alert.alert("Алдаа", e?.message ?? "Түрээслэх хүсэлт илгээхэд алдаа гарлаа"); 
+      Alert.alert("Алдаа", e?.message ?? "Түрээслэх хүсэлт илгээхэд алдаа гарлаа");
     } finally { 
       setRentSubmitting(false); 
     }
@@ -279,22 +280,21 @@ export default function JobDetailScreen() {
   const activeImage = imageUrls[activeImageIndex] ?? imageUrls[0] ?? null;
   const mainImageHeight = Math.min(Math.max(width * 0.62, 220), 340);
   const totalPrice = jobPrice * rentQuantity * calculatedDays;
-
+  
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
-        <View style={[styles.header, { backgroundColor: colors.headerBackground, borderBottomColor: colors.border }]}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={{ padding: 4 }}><Text style={[styles.backButton, { color: colors.headerText }]}>←</Text></TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: colors.headerText }]}>Зарын дэлгэрэнгүй</Text>
-          </View>
-          <Image source={getLogoSource(currentTheme)} style={[styles.logo, { tintColor: colors.headerText }]} contentFit="contain" />
-        </View>
+      {/* 🎯 ЗАССАН: edges=["bottom"] болгосон */}
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
+        
+        {/* 🎯 ЗАССАН: Хуучин гараар бичсэн толгойг устгаад AppHeader дуудав. (Буцах сум нь автоматаар true байна) */}
+        <AppHeader title="Зарын дэлгэрэнгүй" />
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
-          <TouchableOpacity style={[styles.posterSection, { backgroundColor: colors.background }]} activeOpacity={0.7} onPress={() => { if (!posterId) return; router.push(`/user-profile?userId=${encodeURIComponent(String(posterId))}`); }}>
-            {postedBy?.photoUri ? (
+          <TouchableOpacity style={[styles.posterSection, { backgroundColor: colors.background }]} activeOpacity={0.7} onPress={() => { if (!posterId) return;
+            router.push(`/user-profile?userId=${encodeURIComponent(String(posterId))}`); }}>
+            {postedBy?.photoUri ?
+            (
               <Image source={{ uri: postedBy.photoUri }} style={styles.posterAvatar} contentFit="cover" transition={200} />
             ) : (
               <View style={[styles.posterAvatar, { backgroundColor: colors.primary }]}><Text style={[styles.posterInitial, { color: colors.headerBackground }]}>{initial}</Text></View>
@@ -315,11 +315,13 @@ export default function JobDetailScreen() {
               <Text style={[styles.jobPrice, { color: "#6E0AB0" }]}>{jobPrice > 0 ? `${jobPrice.toLocaleString()} ₮` : "Үнэ тохиролцоно"}{jobPrice > 0 && <Text style={[styles.priceUnit, { color: "#6E0AB0" }]}> / өдөр</Text>}</Text>
             </View>
             <View style={styles.badgesRow}>
-              {job.isSponsored ? (<View style={[styles.sponsoredBadge, { backgroundColor: currentTheme === "navy" ? "#2A2A2A" : "#FFF5CC" }]}><Text style={[styles.sponsoredBadgeText, { color: currentTheme === "navy" ? "#F8E75D" : "#8A6500" }]}>Sponsored</Text></View>) : null}
+              {job.isSponsored ?
+              (<View style={[styles.sponsoredBadge, { backgroundColor: currentTheme === "navy" ? "#2A2A2A" : "#FFF5CC" }]}><Text style={[styles.sponsoredBadgeText, { color: currentTheme === "navy" ? "#F8E75D" : "#8A6500" }]}>Sponsored</Text></View>) : null}
             </View>
           </View>
 
-          {imageUrls.length > 0 ? (
+          {imageUrls.length > 0 ?
+          (
             <View style={[styles.imagesSection, { backgroundColor: colors.background }]}>
               <View style={styles.imageHeaderRow}>
                 <View style={styles.imageHeaderLeft}>
@@ -350,7 +352,8 @@ export default function JobDetailScreen() {
             <View style={styles.metaItem}><CalendarIcon size={16} color={colors.textSecondary} /><Text style={[styles.metaText, { color: colors.textSecondary }]}>{formatDate(safePostedDate)}</Text></View>
             <View style={styles.metaItem}><Briefcase size={16} color={colors.textSecondary} /><Text style={[styles.metaTextBold, { color: colors.textSecondary }]}>{job.category || "Категори"}</Text>{!!job.subcategory && <Text style={[styles.metaText, { color: colors.textSecondary }]}> - {job.subcategory}</Text>}</View>
             <View style={styles.metaItem}><Layers size={16} color={colors.textSecondary} /><Text style={[styles.metaText, { color: colors.textSecondary }]}>Боломжит тоо ширхэг: <Text style={styles.metaTextBold}>{availableQuantity}</Text></Text></View>
-            {job.location ? (<View style={styles.metaItem}><MapPin size={16} color={colors.textSecondary} /><Text style={[styles.metaText, { color: colors.textSecondary, flex: 1 }]}>{job.location?.address || "Байршил сонгосон"}</Text></View>) : null}
+            {job.location ?
+            (<View style={styles.metaItem}><MapPin size={16} color={colors.textSecondary} /><Text style={[styles.metaText, { color: colors.textSecondary, flex: 1 }]}>{job.location?.address || "Байршил сонгосон"}</Text></View>) : null}
           </View>
 
           <View style={[styles.ratingSection, { backgroundColor: colors.background }]}>
@@ -520,7 +523,6 @@ export default function JobDetailScreen() {
                 <Text style={[styles.termsDesc, { color: colors.textSecondary }]}>Tureesly апп нь зөвхөн холбон зуучлах үүрэгтэй бөгөөд барааны бүрэн бүтэн байдал, эвдрэл гэмтэл болон төлбөрийн эрсдэлийг талууд 100% өөрсдөө хариуцна.</Text>
               </TouchableOpacity>
 
-              {/* 🎯 ЗАСВАР: ТЭКСТ БОЛОН ИДЭВХЖИХ ӨНГӨНИЙ ЗОХИЦЛЫГ ТАНЫ ХЭЛСНЭЭР ТӨГС Динамик Болгосон Хэсэг */}
               <View style={styles.modalActions}>
                 <TouchableOpacity style={[styles.modalCancelButton, { borderColor: colors.border }]} onPress={() => setRentModalVisible(false)} disabled={rentSubmitting}>
                   <Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text>
@@ -539,11 +541,7 @@ export default function JobDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1, paddingRight: 12 },
-  logo: { width: 94, height: 34 },
-  backButton: { fontSize: 16, fontWeight: "600" },
-  headerTitle: { fontSize: 20, fontWeight: "700", flexShrink: 1 },
+  // 🎯 ЗАССАН: Хуучин гараар бичсэн толгой хэсгийн (header, headerLeft г.м) стилиудийг устгасан
   content: { flex: 1 },
   contentContainer: { padding: 20 },
   posterSection: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 16, marginBottom: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
