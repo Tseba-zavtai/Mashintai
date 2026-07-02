@@ -44,7 +44,7 @@ import ThemeSelector from "@/components/ThemeSelector";
 import * as ImagePicker from "expo-image-picker";
 import type { Href } from "expo-router";
 import { supabase } from "@/lib/supabase";
-import { getLogoSource } from "@/constants/logo";
+import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН
 
 const APP_VERSION = "1.0.0";
 const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
@@ -64,9 +64,7 @@ export default function ProfileScreen() {
     refetchProfile,
     changePassword,
   } = useAuth() as any;
-
   const { colors, currentTheme } = useTheme();
-  const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
 
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editedName, setEditedName] = useState("");
@@ -86,8 +84,7 @@ export default function ProfileScreen() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [isReviewsModalVisible, setIsReviewsModalVisible] = useState(false);
-
-  // 🎯 ЗАСВАР: Сэдэвт тохируулан текстийн өнгийг динамик болгох логик
+  
   const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
   const creditButtonTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
 
@@ -165,7 +162,6 @@ export default function ProfileScreen() {
         aspect: [1, 1],
         quality: 0.5, 
       });
-
       if (!result.canceled && result.assets[0]) {
         setIsUploadingImage(true);
         const imageUri = result.assets[0].uri;
@@ -180,7 +176,6 @@ export default function ProfileScreen() {
         const { error: uploadError } = await supabase.storage
           .from(STORAGE_BUCKET)
           .upload(filePath, arrayBuffer, { contentType: mimeType, upsert: true });
-
         if (uploadError) throw uploadError;
 
         const { data: publicData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(filePath);
@@ -289,15 +284,14 @@ export default function ProfileScreen() {
   if (!isAuthenticated) return null;
 
   return (
+    // 🎯 ЗАССАН: Хуучин edges=["top"] байсныг устгаад зөвхөн "bottom"-ыг үлдээв
     <View style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}>
-      <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.headerText }]}>Профайл</Text>
-          <Image source={logoSource} style={[styles.logo, { tintColor: colors.headerText }]} resizeMode="contain" />
-        </View>
-      </SafeAreaView>
+      
+      {/* 🎯 ЗАССАН: Хуучин гараар зурсан толгойг устгаад, showBack={false} гээд дуудав */}
+      <AppHeader title="Профайл" showBack={false} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
+        
         <View style={[styles.profileCard, { backgroundColor: colors.background }]}>
           <TouchableOpacity onPress={pickImage} activeOpacity={0.8} disabled={isUploadingImage}>
             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
@@ -317,10 +311,8 @@ export default function ProfileScreen() {
         <View style={{ marginHorizontal: 20, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <View>
             <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary }}>Зар оруулах боломжит эрх</Text>
-            {/* 🎯 ЗАСВАР: Эрх үлдсэн текстийн өнгийг үргэлж хатуу Нил ягаан (#6E0AB0) болгож бэхжүүлэв */}
             <Text style={{ fontSize: 18, fontWeight: "900", marginTop: 2, color: "#6E0AB0" }}>{user?.available_post_credits ?? 0} эрх үлдсэн</Text>
           </View>
-          {/* 🎯 ЗАСВАР: Товчлуурын текстийн өнгийг дүрмийн дагуу динамик оноов */}
           <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.primary }} onPress={() => router.push({ pathname: "/sponsor-payment", params: { targetType: "credit" } })} activeOpacity={0.8}>
             <Text style={{ color: creditButtonTextColor, fontWeight: "800", fontSize: 13 }}>Эрх авах (5,000₮)</Text>
           </TouchableOpacity>
@@ -508,10 +500,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { paddingBottom: 12 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8 },
-  logo: { width: 140, height: 60 },
-  headerTitle: { fontSize: 18, fontWeight: "600" },
+  // 🎯 ЗАССАН: Хуучин хуудасны header стилиудийг устгав
   content: { flex: 1 },
   contentContainer: { paddingTop: 20 },
   profileCard: { marginHorizontal: 20, borderRadius: 16, padding: 20, flexDirection: "row", alignItems: "center", marginBottom: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: "#E5E7EB", gap: 16 },

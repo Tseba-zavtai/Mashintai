@@ -4,44 +4,58 @@ import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getLogoSource } from "@/constants/logo";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type HeaderProps = {
   title?: string;
-  showLogo?: boolean;
+  showBack?: boolean; // 🎯 НЭМСЭН: Буцах сумыг харуулах эсэхийг шийднэ
 };
 
-export default function AppHeader({ title, showLogo = false }: HeaderProps) {
+// 🎯 ЗАССАН: showBack нь анхныхаараа true байна
+export default function AppHeader({ title, showBack = true }: HeaderProps) {
   const router = useRouter();
   const { colors, currentTheme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.header, { backgroundColor: colors.headerBackground, borderBottomColor: colors.headerBackground }]}>
-      {/* Буцах товчлуур */}
-      <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backButton}>
-        <ChevronLeft size={24} color={colors.headerText} />
-        <Text style={[styles.backText, { color: colors.headerText }]}>Буцах</Text>
-      </TouchableOpacity>
+    <View style={[styles.headerContainer, { backgroundColor: colors.headerBackground }]}>
+      <View style={{ height: insets.top }} />
+      <View style={[styles.header, { borderBottomColor: colors.headerBackground }]}>
+        
+        <View style={styles.leftSection}>
+          {/* 🎯 ЗАССАН: showBack true үед л буцах сум гарна */}
+          {showBack && (
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backButton}>
+              <ChevronLeft size={28} color={colors.headerText} />
+            </TouchableOpacity>
+          )}
+          
+          {title ? (
+            <Text 
+              style={[
+                styles.title, 
+                { color: colors.headerText },
+                !showBack && { marginLeft: 16 } // Сум байхгүй бол гарчиг арай зүүн тийшээ болно
+              ]} 
+              numberOfLines={1}
+            >
+              {title}
+            </Text>
+          ) : null}
+        </View>
 
-      {/* Гол хэсэг: Лого эсвэл Текст */}
-      {showLogo ? (
         <Image 
           source={getLogoSource(currentTheme)} 
           style={[styles.logo, { tintColor: colors.headerText }]} 
           resizeMode="contain" 
         />
-      ) : (
-        <Text style={[styles.title, { color: colors.headerText }]} numberOfLines={1}>
-          {title}
-        </Text>
-      )}
-
-      {/* Баруун талыг тэнцвэржүүлэх хоосон зай */}
-      <View style={{ width: 80 }} />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  headerContainer: { width: "100%" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -50,25 +64,8 @@ const styles = StyleSheet.create({
     height: 56,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  backButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: 80,
-  },
-  backText: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginLeft: 4,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "800",
-    textAlign: "center",
-    flex: 1,
-  },
-  logo: {
-    width: 90,
-    height: 32,
-    alignSelf: "center",
-  }
+  leftSection: { flexDirection: "row", alignItems: "center", flex: 1 },
+  backButton: { paddingRight: 8, paddingVertical: 4 },
+  title: { fontSize: 16, fontWeight: "800" },
+  logo: { width: 80, height: 28 }
 });

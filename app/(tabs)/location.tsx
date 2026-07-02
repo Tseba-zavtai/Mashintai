@@ -1,4 +1,4 @@
-// app/(tab)/location.tsx
+// app/(tabs)/location.tsx
 import {
   StyleSheet,
   Text,
@@ -21,7 +21,7 @@ import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from "expo-router";
 import { JOB_CATEGORIES } from "@/mocks/jobs";
-import { getLogoSource } from "@/constants/logo";
+import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -70,7 +70,7 @@ const normalizeCategory = (v: any) => String(v ?? "").trim();
 export default function LocationScreen() {
   const router = useRouter();
   const { jobs } = useJobs();
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
 
   const mapRef = useRef<any>(null);
 
@@ -85,7 +85,6 @@ export default function LocationScreen() {
     longitudeDelta: 0.0421,
   });
 
-  // ✅ Category dropdown (official list)
   const [selectedCategory, setSelectedCategory] = useState<string>("Бүгд");
   const [catOpen, setCatOpen] = useState(false);
   const [catSearch, setCatSearch] = useState("");
@@ -129,10 +128,7 @@ export default function LocationScreen() {
       const titleOk = job?.title?.toLowerCase?.().includes(normalizedQuery);
       const jobCat = normalizeCategory(job?.category);
       const selectedCat = normalizeCategory(selectedCategory);
-
-      const catOk =
-        selectedCategory === "Бүгд" ? true : jobCat.length > 0 && jobCat === selectedCat;
-
+      const catOk = selectedCategory === "Бүгд" ? true : jobCat.length > 0 && jobCat === selectedCat;
       return Boolean(titleOk) && catOk;
     });
   }, [jobs, normalizedQuery, selectedCategory]);
@@ -163,7 +159,6 @@ export default function LocationScreen() {
 
   const recenterToUser = (zoomToRadius = false) => {
     if (!userCoords) return;
-
     const next = zoomToRadius
       ? regionForRadiusKm(userCoords.latitude, userCoords.longitude, RADIUS_KM)
       : {
@@ -172,7 +167,6 @@ export default function LocationScreen() {
           latitudeDelta: region.latitudeDelta,
           longitudeDelta: region.longitudeDelta,
         };
-
     setRegion(next);
     if (mapRef.current?.animateToRegion) mapRef.current.animateToRegion(next, 350);
   };
@@ -186,21 +180,16 @@ export default function LocationScreen() {
 
   useEffect(() => {
     if (selectedFilter === "near") recenterToUser(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFilter]);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.headerText }]}>Байршил</Text>
-          <Image
-            source={getLogoSource(currentTheme)}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
+    // 🎯 ЗАССАН: edges=["bottom"] болгож, "top"-ыг AppHeader дотор тооцоолдог болгов
+    <SafeAreaView edges={["bottom"]} style={[styles.container, { backgroundColor: colors.background }]}>
+      
+      {/* 🎯 ЗАССАН: Хуучин гараар зурсан толгойг устгаад, showBack={false} гээд дуудав */}
+      <AppHeader title="Байршил" showBack={false} />
 
+      <View style={[styles.topControls, { backgroundColor: colors.headerBackground }]}>
         <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Search size={20} color={colors.textSecondary} />
           <TextInput
@@ -277,7 +266,7 @@ export default function LocationScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
 
       {showMap ? (
         <View style={styles.mapContainer}>
@@ -461,24 +450,14 @@ export default function LocationScreen() {
           </TouchableOpacity>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { paddingBottom: 16 },
-
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  logo: { width: 140, height: 60 },
-  headerTitle: { fontSize: 18, fontWeight: "600" as const },
+  // 🎯 ЗАССАН: Хуучин header-ийн стилиудийг устгаад, хайлт товчнуудын арын дэвсгэрийг бэлдлээ
+  topControls: { paddingBottom: 16, paddingTop: 8 },
 
   searchContainer: {
     flexDirection: "row",

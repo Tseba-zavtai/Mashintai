@@ -10,7 +10,6 @@ import {
   Alert,
   useWindowDimensions,
   Modal,
-  TextInput,
   ActivityIndicator,
   Share,
 } from "react-native";
@@ -23,7 +22,7 @@ import * as ExpoLinking from "expo-linking";
 import {
   Phone,
   MapPin,
-  Calendar,
+  Calendar as CalendarIcon,
   Briefcase,
   Images,
   Star,
@@ -34,12 +33,13 @@ import {
   Clock,
   CheckSquare,
   Square,
-  X,
   Share2,
 } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getLogoSource } from "@/constants/logo";
+import { supabase } from "@/lib/supabase";
+import DateTimePicker from "@react-native-community/datetimepicker";
 
 function toSafeDate(value: any): Date {
   if (!value) return new Date();
@@ -86,7 +86,7 @@ function normalizeImageUrls(job: any): string[] {
 
 export default function JobDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { jobs, submitRentalReview, createRentalRequest } = useJobs() as any;
+  const { jobs } = useJobs() as any;
   const { user, isAuthenticated } = useAuth() as any;
   const router = useRouter();
   const { colors, currentTheme } = useTheme();
@@ -94,19 +94,22 @@ export default function JobDetailScreen() {
   const job = useMemo(() => jobs.find((j: any) => j.id === id), [jobs, id]);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
-  const [reviewModalVisible, setReviewModalVisible] = useState(false);
-  const [itemRating, setItemRating] = useState(5);
-  const [userRating, setUserRating] = useState<number | null>(null);
-  const [reviewComment, setReviewComment] = useState("");
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
-
   const [rentModalVisible, setRentModalVisible] = useState(false);
   const [rentQuantity, setRentQuantity] = useState(1);
-  const [rentDays, setRentDays] = useState(1);
   const [rentSubmitting, setRentSubmitting] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false); 
 
-  // 🎯 ЗАСВАР: Текстүүдийн өнгөний зохицлыг theme тус бүрээр динамик оноож байна
+  const [startDate, setStartDate] = useState(new Date());
+  const [endDate, setEndDate] = useState(new Date(Date.now() + 86400000));
+  const [hasTime, setHasTime] = useState(false);
+  const [startTime, setStartTime] = useState(new Date());
+  const [endTime, setEndTime] = useState(new Date());
+
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+
   const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
   const buttonTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
 
@@ -139,8 +142,24 @@ export default function JobDetailScreen() {
 
   const availableQuantity = Number((job as any).available_quantity ?? (job as any).availableQuantity ?? (job as any).quantity ?? 1);
   const jobPrice = Number(job.price || 0);
-
   const isOwnJob = !!user?.id && !!postedBy?.id && user.id === postedBy.id;
+
+  const calculatedDays = useMemo(() => {
+    const s = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const e = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    const diffTime = e.getTime() - s.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays > 0 ? diffDays : 1;
+  }, [startDate, endDate]);
+
+  const formatDateLabel = (date: Date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
+  const formatTimeLabel = (date: Date) => {
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  };
+
   const formatDate = (date: Date) => {
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
@@ -185,24 +204,81 @@ export default function JobDetailScreen() {
     if (!isAuthenticated) { router.push("/auth"); return; }
     if (isOwnJob) { Alert.alert("Анхаар", "Өөрийн зарыг түрээслэх боломжгүй"); return; }
     if (Number.isFinite(availableQuantity) && availableQuantity <= 0) { Alert.alert("Анхаар", "Энэ зар одоогоор боломжгүй байна"); return; }
-    setRentQuantity(1); setRentDays(1); setAgreeTerms(false); setRentModalVisible(true);
+    setRentQuantity(1); 
+    setStartDate(new Date());
+    setEndDate(new Date(Date.now() + 86400000));
+    setHasTime(false);
+    setAgreeTerms(false); 
+    setRentModalVisible(true);
   };
 
   const handleRentSubmit = async () => {
     if (!agreeTerms) { Alert.alert("Анхаар", "Та хариуцлагын санамжтай танилцаж, хүлээн зөвшөөрөх ёстой."); return; }
     if (rentSubmitting) return;
+
+    if (endDate <= startDate) {
+      Alert.alert("Анхаар", "Дуусах огноо эхлэх огнооноос хойш байх ёстой.");
+      return;
+    }
+
     try {
       setRentSubmitting(true);
-      await createRentalRequest?.(job.id, rentQuantity, rentDays, "Түрээслэх хүсэлт илгээлээ");
+      const computedTotalPrice = jobPrice * rentQuantity * calculatedDays;
+
+      // Түрээслүүлэгчид (барааны эзэнд) мэдэгдэл оруулах логик
+      const { data: requestData, error: requestError } = await supabase
+        .from("rental_requests")
+        .insert([
+          {
+            job_id: job.id,
+            requester_id: user?.id,
+            owner_id: postedBy?.id,
+            quantity: rentQuantity,
+            rent_days: calculatedDays,
+            total_price: computedTotalPrice,
+            status: "pending",
+            message: "Түрээслэх хүсэлт илгээлээ",
+            start_date: formatDateLabel(startDate),
+            end_date: formatDateLabel(endDate),
+            has_time: hasTime,
+            start_time: hasTime ? formatTimeLabel(startTime) : null,
+            end_time: hasTime ? formatTimeLabel(endTime) : null,
+            requester_name: user?.name,
+            requester_phone: user?.phone,
+            requester_photo: user?.photoUri
+          }
+        ])
+        .select()
+        .single();
+
+      if (requestError) throw requestError;
+
+      // 🎯 ЗАСВАР: Зөвхөн Түрээслүүлэгч (Барааны эзэн) рүү мэдэгдэл бүртгэж улаан тоо асаана.
+      if (requestData) {
+        await supabase.from("notifications").insert([
+          {
+            user_id: postedBy?.id, 
+            title: "Шинэ түрээсийн хүсэлт",
+            content: `${user?.name || "Хэрэглэгч"} таны ${job.title || "бараа"}-г түрээслэх хүсэлт илгээлээ.`,
+            is_read: false,
+            type: "rental_request",
+            reference_id: requestData.id
+          }
+        ]);
+      }
+
       setRentModalVisible(false);
       Alert.alert("Амжилттай", "Түрээслэх хүсэлт илгээгдлээ. Зарын эзэн зөвшөөрөх үед танд мэдэгдэл очино.", [{ text: "ОК", onPress: () => router.replace("/(tabs)") }]);
-    } catch (e: any) { Alert.alert("Алдаа", e?.message ?? "Түрээслэх хүсэлт илгээхэд алдаа гарлаа"); } 
-    finally { setRentSubmitting(false); }
+    } catch (e: any) { 
+      Alert.alert("Алдаа", e?.message ?? "Түрээслэх хүсэлт илгээхэд алдаа гарлаа"); 
+    } finally { 
+      setRentSubmitting(false); 
+    }
   };
 
   const activeImage = imageUrls[activeImageIndex] ?? imageUrls[0] ?? null;
   const mainImageHeight = Math.min(Math.max(width * 0.62, 220), 340);
-  const totalPrice = jobPrice * rentQuantity * rentDays;
+  const totalPrice = jobPrice * rentQuantity * calculatedDays;
 
   return (
     <>
@@ -210,7 +286,7 @@ export default function JobDetailScreen() {
       <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
         <View style={[styles.header, { backgroundColor: colors.headerBackground, borderBottomColor: colors.border }]}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}><Text style={[styles.backButton, { color: colors.headerText }]}>←</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={{ padding: 4 }}><Text style={[styles.backButton, { color: colors.headerText }]}>←</Text></TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors.headerText }]}>Зарын дэлгэрэнгүй</Text>
           </View>
           <Image source={getLogoSource(currentTheme)} style={[styles.logo, { tintColor: colors.headerText }]} contentFit="contain" />
@@ -235,9 +311,7 @@ export default function JobDetailScreen() {
               <TouchableOpacity onPress={handleSharePress} style={[styles.shareIconWrap, { backgroundColor: colors.backgroundSecondary }]} activeOpacity={0.7}><Share2 size={22} color={colors.text} /></TouchableOpacity>
             </View>
             <View style={styles.priceContainer}>
-              {/* 🎯 ЗАСВАР: Түүнчлэн иконы өнгийг үргэлж брэнд Нил ягаан болгож байна */}
               <Tag size={20} color="#6E0AB0" />
-              {/* 🎯 ЗАСВАР: Үнийн текстийг ямар ч theme байсан үргэлж хатуу Нил ягаан (#6E0AB0) болгов */}
               <Text style={[styles.jobPrice, { color: "#6E0AB0" }]}>{jobPrice > 0 ? `${jobPrice.toLocaleString()} ₮` : "Үнэ тохиролцоно"}{jobPrice > 0 && <Text style={[styles.priceUnit, { color: "#6E0AB0" }]}> / өдөр</Text>}</Text>
             </View>
             <View style={styles.badgesRow}>
@@ -273,7 +347,7 @@ export default function JobDetailScreen() {
           ) : null}
 
           <View style={[styles.metaSection, { backgroundColor: colors.background }]}>
-            <View style={styles.metaItem}><Calendar size={16} color={colors.textSecondary} /><Text style={[styles.metaText, { color: colors.textSecondary }]}>{formatDate(safePostedDate)}</Text></View>
+            <View style={styles.metaItem}><CalendarIcon size={16} color={colors.textSecondary} /><Text style={[styles.metaText, { color: colors.textSecondary }]}>{formatDate(safePostedDate)}</Text></View>
             <View style={styles.metaItem}><Briefcase size={16} color={colors.textSecondary} /><Text style={[styles.metaTextBold, { color: colors.textSecondary }]}>{job.category || "Категори"}</Text>{!!job.subcategory && <Text style={[styles.metaText, { color: colors.textSecondary }]}> - {job.subcategory}</Text>}</View>
             <View style={styles.metaItem}><Layers size={16} color={colors.textSecondary} /><Text style={[styles.metaText, { color: colors.textSecondary }]}>Боломжит тоо ширхэг: <Text style={styles.metaTextBold}>{availableQuantity}</Text></Text></View>
             {job.location ? (<View style={styles.metaItem}><MapPin size={16} color={colors.textSecondary} /><Text style={[styles.metaText, { color: colors.textSecondary, flex: 1 }]}>{job.location?.address || "Байршил сонгосон"}</Text></View>) : null}
@@ -300,13 +374,11 @@ export default function JobDetailScreen() {
             <Text style={[styles.description, { color: colors.textSecondary }]}>{job.description || "-"}</Text>
           </View>
 
-          {/* 🎯 ЗАСВАР: Залгах товчны текст дээрх оноолт */}
           <TouchableOpacity style={[styles.callButton, { backgroundColor: colors.primary }]} onPress={handleCallPress} activeOpacity={0.8}>
             <Phone size={20} color={buttonTextColor} />
             <Text style={[styles.callButtonText, { color: buttonTextColor }]}>{posterPhone ? `Залгах: ${posterPhone}` : "Утасны дугаар алга"}</Text>
           </TouchableOpacity>
 
-          {/* 🎯 ЗАСВАР: Түрээслэх товчны текст дээрх оноолт */}
           <TouchableOpacity style={[styles.reviewButton, { backgroundColor: colors.primary, borderColor: colors.primary, opacity: isOwnJob ? 0.55 : 1 }]} onPress={openRentModal} activeOpacity={0.8} disabled={isOwnJob}>
             <Text style={[styles.reviewButtonText, { color: buttonTextColor }]}>Түрээслэх</Text>
             <Text style={[styles.reviewButtonSubText, { color: buttonTextColor, opacity: 0.8 }]}>Түрээслэх хугацаа болон тоог сонгох</Text>
@@ -330,19 +402,117 @@ export default function JobDetailScreen() {
                 </View>
               </View>
 
-              <View style={[styles.counterRow, { borderBottomWidth: 0 }]}>
-                <View style={styles.counterLabelWrap}><Clock size={18} color={colors.text} /><Text style={[styles.counterLabel, { color: colors.text }]}>Хугацаа (хоногоор)</Text></View>
-                <View style={styles.counterControls}>
-                  <TouchableOpacity style={[styles.counterBtn, { backgroundColor: colors.backgroundSecondary }]} onPress={() => setRentDays(Math.max(1, rentDays - 1))}><Minus size={18} color={colors.text} /></TouchableOpacity>
-                  <Text style={[styles.counterValue, { color: colors.text }]}>{rentDays}</Text>
-                  <TouchableOpacity style={[styles.counterBtn, { backgroundColor: colors.backgroundSecondary }]} onPress={() => setRentDays(rentDays + 1)}><Plus size={18} color={colors.text} /></TouchableOpacity>
+              <View style={styles.dateInputSection}>
+                <View style={styles.dateField}>
+                  <Text style={[styles.dateFieldLabel, { color: colors.textSecondary }]}>Эхлэх өдөр</Text>
+                  <TouchableOpacity 
+                    style={[styles.datePickerSelector, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}
+                    onPress={() => setShowStartPicker(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ color: colors.text, fontSize: 14 }}>{formatDateLabel(startDate)}</Text>
+                  </TouchableOpacity>
+                  {showStartPicker && (
+                    <DateTimePicker
+                      value={startDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      minimumDate={new Date()}
+                      onChange={(event, selectedDate) => {
+                        setShowStartPicker(Platform.OS === 'ios');
+                        if (selectedDate) setStartDate(selectedDate);
+                      }}
+                    />
+                  )}
+                </View>
+
+                <View style={styles.dateField}>
+                  <Text style={[styles.dateFieldLabel, { color: colors.textSecondary }]}>Дуусах өдөр</Text>
+                  <TouchableOpacity 
+                    style={[styles.datePickerSelector, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}
+                    onPress={() => setShowEndPicker(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ color: colors.text, fontSize: 14 }}>{formatDateLabel(endDate)}</Text>
+                  </TouchableOpacity>
+                  {showEndPicker && (
+                    <DateTimePicker
+                      value={endDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      minimumDate={startDate}
+                      onChange={(event, selectedDate) => {
+                        setShowEndPicker(Platform.OS === 'ios');
+                        if (selectedDate) setEndDate(selectedDate);
+                      }}
+                    />
+                  )}
                 </View>
               </View>
+
+              <TouchableOpacity 
+                style={styles.timeCheckRow}
+                activeOpacity={0.8}
+                onPress={() => setHasTime(!hasTime)}
+              >
+                {hasTime ? <CheckSquare size={20} color={colors.primary} /> : <Square size={20} color={colors.textSecondary} />}
+                <Text style={[styles.timeCheckText, { color: colors.text }]}>Тодорхой цаг сонгох</Text>
+              </TouchableOpacity>
+
+              {hasTime && (
+                <View style={styles.timeInputSection}>
+                  <View style={styles.dateField}>
+                    <Text style={[styles.dateFieldLabel, { color: colors.textSecondary }]}>Авах цаг</Text>
+                    <TouchableOpacity 
+                      style={[styles.datePickerSelector, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}
+                      onPress={() => setShowStartTimePicker(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{ color: colors.text, fontSize: 14 }}>{formatTimeLabel(startTime)}</Text>
+                    </TouchableOpacity>
+                    {showStartTimePicker && (
+                      <DateTimePicker
+                        value={startTime}
+                        mode="time"
+                        is24Hour={true}
+                        display="spinner"
+                        onChange={(event, selectedTime) => {
+                          setShowStartTimePicker(Platform.OS === 'ios');
+                          if (selectedTime) setStartTime(selectedTime);
+                        }}
+                      />
+                    )}
+                  </View>
+
+                  <View style={styles.dateField}>
+                    <Text style={[styles.dateFieldLabel, { color: colors.textSecondary }]}>Тушаах цаг</Text>
+                    <TouchableOpacity 
+                      style={[styles.datePickerSelector, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}
+                      onPress={() => setShowEndTimePicker(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{ color: colors.text, fontSize: 14 }}>{formatTimeLabel(endTime)}</Text>
+                    </TouchableOpacity>
+                    {showEndTimePicker && (
+                      <DateTimePicker
+                        value={endTime}
+                        mode="time"
+                        is24Hour={true}
+                        display="spinner"
+                        onChange={(event, selectedTime) => {
+                          setShowEndTimePicker(Platform.OS === 'ios');
+                          if (selectedTime) setEndTime(selectedTime);
+                        }}
+                      />
+                    )}
+                  </View>
+                </View>
+              )}
 
               <View style={[styles.totalPriceWrap, { backgroundColor: colors.backgroundSecondary }]}>
                 <Text style={[styles.totalPriceLabel, { color: colors.textSecondary }]}>Нийт төлөх дүн:</Text>
                 <Text style={[styles.totalPriceValue, { color: colors.primary }]}>{totalPrice.toLocaleString()} ₮</Text>
-                <Text style={[styles.calculationHint, { color: colors.textSecondary }]}>({jobPrice.toLocaleString()} ₮ × {rentQuantity} ш × {rentDays} хоног)</Text>
+                <Text style={[styles.calculationHint, { color: colors.textSecondary }]}>({jobPrice.toLocaleString()} ₮ × {rentQuantity} ш × {calculatedDays} хоног)</Text>
               </View>
 
               <TouchableOpacity style={[styles.termsWrap, { backgroundColor: agreeTerms ? 'rgba(0,180,90,0.08)' : colors.backgroundSecondary, borderColor: agreeTerms ? '#00B45A' : colors.border }]} activeOpacity={0.8} onPress={() => setAgreeTerms(!agreeTerms)}>
@@ -350,12 +520,13 @@ export default function JobDetailScreen() {
                 <Text style={[styles.termsDesc, { color: colors.textSecondary }]}>Tureesly апп нь зөвхөн холбон зуучлах үүрэгтэй бөгөөд барааны бүрэн бүтэн байдал, эвдрэл гэмтэл болон төлбөрийн эрсдэлийг талууд 100% өөрсдөө хариуцна.</Text>
               </TouchableOpacity>
 
+              {/* 🎯 ЗАСВАР: ТЭКСТ БОЛОН ИДЭВХЖИХ ӨНГӨНИЙ ЗОХИЦЛЫГ ТАНЫ ХЭЛСНЭЭР ТӨГС Динамик Болгосон Хэсэг */}
               <View style={styles.modalActions}>
                 <TouchableOpacity style={[styles.modalCancelButton, { borderColor: colors.border }]} onPress={() => setRentModalVisible(false)} disabled={rentSubmitting}>
                   <Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.modalSubmitButton, { backgroundColor: agreeTerms ? colors.primary : colors.border }]} onPress={handleRentSubmit} disabled={rentSubmitting || !agreeTerms}>
-                  {rentSubmitting ? <ActivityIndicator color={colors.headerBackground} /> : <Text style={[styles.modalSubmitText, { color: agreeTerms ? colors.headerBackground : colors.textSecondary }]}>Хүсэлт илгээх</Text>}
+                  {rentSubmitting ? <ActivityIndicator color={agreeTerms ? buttonTextColor : colors.textSecondary} /> : <Text style={[styles.modalSubmitText, { color: agreeTerms ? buttonTextColor : colors.textSecondary }]}>Хүсэлт илгээх</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -433,7 +604,14 @@ const styles = StyleSheet.create({
   counterControls: { flexDirection: "row", alignItems: "center", gap: 16 },
   counterBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   counterValue: { fontSize: 18, fontWeight: "700", minWidth: 24, textAlign: "center" },
-  totalPriceWrap: { marginTop: 20, padding: 16, borderRadius: 12, alignItems: "center", marginBottom: 10 },
+  dateInputSection: { flexDirection: "row", gap: 12, marginTop: 14, paddingVertical: 10 },
+  dateField: { flex: 1 },
+  dateFieldLabel: { fontSize: 13, fontWeight: "600", marginBottom: 6 },
+  datePickerSelector: { borderWidth: 1, borderRadius: 12, padding: 12, alignItems: "center", justifyContent: "center", minHeight: 46 },
+  timeCheckRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, paddingVertical: 6 },
+  timeCheckText: { fontSize: 15, fontWeight: "600" },
+  timeInputSection: { flexDirection: "row", gap: 12, marginTop: 8 },
+  totalPriceWrap: { marginTop: 16, padding: 16, borderRadius: 12, alignItems: "center", marginBottom: 10 },
   totalPriceLabel: { fontSize: 14, marginBottom: 4 },
   totalPriceValue: { fontSize: 24, fontWeight: "800", marginBottom: 4 },
   calculationHint: { fontSize: 12 },

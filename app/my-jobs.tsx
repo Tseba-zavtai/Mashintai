@@ -8,6 +8,7 @@ import { Stack, useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Бидний нэгдсэн толгой
 
 function formatTimeLeft(date: Date | null) {
   if (!date) return null;
@@ -104,13 +105,11 @@ export default function MyJobsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
-      {/* 🎯 АЛДААГ ЗАССАН ХЭСЭГ: headerBackTitleVisible устгасан тул гацахгүй */}
-      <Stack.Screen 
-        options={{ 
-          title: "Миний зарууд",
-          headerShown: true
-        }} 
-      />
+      {/* 🎯 ЗАССАН: Expo-ийн үндсэн толгойг унтраасан */}
+      <Stack.Screen options={{ headerShown: false }} />
+      
+      {/* 🎯 ЗАССАН: Бидний шинээр хийсэн стандартын толгойг дуудсан */}
+      <AppHeader title="Миний зарууд" />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         

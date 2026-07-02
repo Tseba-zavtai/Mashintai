@@ -7,8 +7,10 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { User, Star, Briefcase, MessageSquare, ChevronLeft } from "lucide-react-native";
+// 🎯 ЗАССАН: ChevronLeft-ийг хасаж, AppHeader-ийг дуудсан
+import { User, Star, Briefcase, MessageSquare } from "lucide-react-native"; 
 import { supabase } from "@/lib/supabase";
+import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН
 
 export default function UserProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
@@ -25,7 +27,6 @@ export default function UserProfileScreen() {
   const [comment, setComment] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
-  // 🎯 ЗАСВАР: Текстийн өнгийг дүрмийн дагуу тохируулах
   const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
   const userBtnTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
 
@@ -120,19 +121,12 @@ export default function UserProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top", "bottom"]}>
+    // 🎯 ЗАССАН: edges=["bottom"] болгож, "top"-ийг хассанаар дээд талын цагаан зай алга болно
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
-        <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }} activeOpacity={0.7}>
-          <ChevronLeft size={28} color={colors.headerText} />
-        </TouchableOpacity>
-        
-        <Text style={[styles.headerTitle, { color: colors.headerText }]} numberOfLines={1}>
-          Хэрэглэгчийн профайл
-        </Text>
-        <View style={{ width: 36 }} />
-      </View>
+      {/* 🎯 ЗАССАН: Хуучин гараар зурсан толгойг устгаад AppHeader-ийг оруулж ирэв */}
+      <AppHeader title="Хэрэглэгчийн профайл" />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         {loadingUser ? (
@@ -226,7 +220,6 @@ export default function UserProfileScreen() {
                       )}
                       <View style={styles.jobInfo}>
                         <Text style={[styles.jobTitle, { color: colors.text }]} numberOfLines={2}>{job.title || job.category}</Text>
-                        {/* 🎯 ЗАСВАР: Зарын үнийг ямар ч сэдэв дээр үргэлж хатуу Нил ягаан (#6E0AB0) болгов */}
                         <Text style={[styles.jobPrice, { color: "#6E0AB0" }]}>{Number(job.price).toLocaleString()} ₮</Text>
                       </View>
                     </TouchableOpacity>
@@ -243,8 +236,7 @@ export default function UserProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
-  headerTitle: { fontSize: 18, fontWeight: '700', flex: 1, textAlign: 'center' },
+  // 🎯 ЗАССАН: header, headerTitle гэсэн хуучин стилиудийг устгасан.
   content: { flex: 1 },
   contentContainer: { padding: 20, paddingBottom: 40 },
   profileCard: { borderRadius: 16, padding: 20, flexDirection: "row", alignItems: "center", marginBottom: 24, borderWidth: 1, gap: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },

@@ -14,18 +14,23 @@ export default function TabLayout() {
   const { isAuthenticated, isLoading, user, isAdminUnlocked } = useAuth();
   const { rentalRequests } = useJobs();
 
-  // Хүлээгдэж байгаа (pending) түрээсийн хүсэлтүүдийн тоог олох
-  const pendingCount = rentalRequests?.filter((req: any) => req.status === "pending").length || 0;
+  // 🎯 ЗАСВАР: Зөвхөн тухайн хэрэглэгч өөрөө барааны эзэн (owner_id) бөгөөд 
+  // хүлээгдэж байгаа (pending) хүсэлтүүдийг л улаан тоонд тоолно. 
+  // Илгээгч хэрэглэгчид улаан тоо асаж гацахгүй.
+  const pendingCount = rentalRequests?.filter((req: any) => 
+    req.status === "pending" && req.owner_id === user?.id
+  ).length || 0;
+
   const goToAuth = () => router.replace("/auth");
 
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // Доод таб доторх хуудаснуудын Expo толгойг мөн давхар хаана
+        headerShown: false, 
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: colors.background, // 🎯 ЗАСВАР: colors.card байсныг нэгдсэн colors.background болгов
+          backgroundColor: colors.background, 
           borderTopColor: colors.border,
           height: 60 + insets.bottom,
           paddingBottom: Math.max(insets.bottom, 10),

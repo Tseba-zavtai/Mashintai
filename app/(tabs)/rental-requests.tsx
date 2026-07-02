@@ -3,12 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useRouter } from "expo-router";
-import { Check, X, ChevronLeft, ClipboardList, RefreshCw, PhoneCall, CheckSquare, Square } from "lucide-react-native";
+import { Check, X, ClipboardList, RefreshCw, PhoneCall, CheckSquare, Square } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { getLogoSource } from "@/constants/logo";
 import { supabase } from "@/lib/supabase";
+import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Нэгдсэн стандартын толгой
 
 type RentalRequest = {
   id: string;
@@ -43,7 +43,7 @@ function statusLabel(status: RentalRequest["status"]) {
   if (status === "pending") return "Хүлээгдэж байна";
   if (status === "approved") return "Зөвшөөрсөн";
   if (status === "rejected") return "Татгалзсан";
-  if (status === "paid") return "Бараа хүлээж байгаа"; 
+  if (status === "paid") return "Бараа хүлээж байгаа";
   if (status === "handover_requested") return "Хүлээлгэж өгөх хүсэлт";
   if (status === "in_rent") return "Түрээсэлж байгаа";
   if (status === "completed") return "Дууссан";
@@ -52,7 +52,7 @@ function statusLabel(status: RentalRequest["status"]) {
 
 export default function RentalRequestsScreen() {
   const router = useRouter();
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
   const { user } = useAuth();
   const { rentalRequests, loadRentalRequests, approveRentalRequest, rejectRentalRequest } = useJobs() as any;
   
@@ -88,7 +88,38 @@ export default function RentalRequestsScreen() {
     }
   }, [loadRentalRequests]);
 
+  useEffect(() => {
+    const clearAllBadges = async () => {
+      if (!user?.id) return;
+      try {
+        await supabase
+          .from("notifications")
+          .update({ is_read: true })
+          .eq("user_id", user.id)
+          .eq("is_read", false);
+      } catch (err) {
+        console.log("Badge clear error:", err);
+      }
+    };
+
+    clearAllBadges();
+  }, [user]);
+
+  const handleMarkAsRead = async (requestId: string) => {
+    if (!user?.id) return;
+    try {
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("reference_id", requestId)
+        .eq("user_id", user.id);
+    } catch (err) {
+      console.log("Notification update error:", err);
+    }
+  };
+
   const openApproveModal = (id: string) => {
+    handleMarkAsRead(id);
     setSelectedRequestId(id);
     setAgreeTerms(false);
     setTermsModalVisible(true);
@@ -111,6 +142,7 @@ export default function RentalRequestsScreen() {
 
   const handleReject = async (id: string) => {
     if (busyId) return;
+    handleMarkAsRead(id);
     Alert.alert("Татгалзах уу?", "Энэ хүсэлт татгалзсан төлөвтэй болно.", [
       { text: "Болих", style: "cancel" },
       {
@@ -131,6 +163,7 @@ export default function RentalRequestsScreen() {
   };
 
   const handleReceiveItem = async (requestId: string) => {
+    handleMarkAsRead(requestId);
     try {
       setBusyId(requestId);
       const { error } = await supabase.from("rental_requests").update({ status: "handover_requested" }).eq("id", requestId);
@@ -145,6 +178,7 @@ export default function RentalRequestsScreen() {
   };
 
   const handleConfirmHandover = async (requestId: string) => {
+    handleMarkAsRead(requestId);
     try {
       setBusyId(requestId);
       const { error } = await supabase.from("rental_requests").update({ status: "in_rent" }).eq("id", requestId);
@@ -159,6 +193,7 @@ export default function RentalRequestsScreen() {
   };
 
   const handleRejectHandover = async (requestId: string) => {
+    handleMarkAsRead(requestId);
     try {
       setBusyId(requestId);
       const { error } = await supabase.from("rental_requests").update({ status: "approved" }).eq("id", requestId);
@@ -173,6 +208,7 @@ export default function RentalRequestsScreen() {
   };
 
   const handleEarlyReturnRequest = async (requestId: string, jobId: string, ownerId: string) => {
+    handleMarkAsRead(requestId);
     Alert.alert("Барааг буцааж тушаах уу?", "Бараагаа эзэнд нь буцааж өгсөн бол энэ товчийг дарна уу.", [
       { text: "Болих", style: "cancel" },
       {
@@ -195,6 +231,7 @@ export default function RentalRequestsScreen() {
   };
 
   const handleCompleteRental = async (requestId: string) => {
+    handleMarkAsRead(requestId);
     Alert.alert("Түрээс дуусгах уу?", "Бараагаа бүрэн бүтэн хүлээж авсан бол гэрээг хааж, түрээслэгчийг үнэлнэ үү.", [
       { text: "Болих", style: "cancel" },
       {
@@ -215,7 +252,6 @@ export default function RentalRequestsScreen() {
               const currentQty = jobData?.quantity ? Number(jobData.quantity) : 0;
               const returnQty = requestData?.quantity ? Number(requestData.quantity) : 1;
               await supabase.from("jobs").update({ quantity: currentQty + returnQty }).eq("id", requestData.job_id);
-              
               router.push({
                 pathname: "/review" as any,
                 params: { jobId: requestData.job_id, ownerId: requestData.requester_id, isOwnerView: "true" }
@@ -238,16 +274,11 @@ export default function RentalRequestsScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
-        <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75}>
-              <ChevronLeft size={28} color={colors.headerText} />
-            </TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: colors.headerText }]}>Мэдэгдэл</Text>
-          </View>
-          <Image source={getLogoSource(currentTheme)} style={[styles.logo, { tintColor: colors.headerText }]} resizeMode="contain" />
-        </View>
+      {/* 🎯 ЗАССАН: edges=["bottom"] болгож цагаан зай гаргадаг алдааг засав */}
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
+        
+        {/* 🎯 ЗАССАН: Хуучин гараар зурсан толгойг устгаад, нэгдсэн AppHeader-ийг дуудав */}
+        <AppHeader title="Мэдэгдэл" />
 
         <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -276,7 +307,12 @@ export default function RentalRequestsScreen() {
               const isApprovedOrActive = item.status !== "pending" && item.status !== "rejected" && item.status !== "cancelled";
 
               return (
-                <View key={item.id} style={[styles.card, { backgroundColor: colors.card }]}>
+                <TouchableOpacity 
+                  key={item.id} 
+                  style={[styles.card, { backgroundColor: colors.card }]}
+                  activeOpacity={0.9}
+                  onPress={() => handleMarkAsRead(item.id)}
+                >
                   <View style={styles.cardTop}>
                     {imageUrl ? (
                       <Image source={{ uri: imageUrl }} style={styles.thumb} />
@@ -314,7 +350,6 @@ export default function RentalRequestsScreen() {
                       Төлөв: <Text style={{ color: '#34C759' }}>{statusLabel(item.status)}</Text>
                     </Text>
                     {item.total_price ? (
-                      /* 🎯 ЗАСВАР: Түрээсийн нийт үнийн дүнгийн өнгийг ямар ч сэдэв дээр үргэлж хатуу Нил ягаан (#6E0AB0) болгов */
                       <Text style={[styles.priceText, { color: "#6E0AB0" }]}>
                         {Number(item.total_price).toLocaleString()} ₮
                       </Text>
@@ -359,7 +394,7 @@ export default function RentalRequestsScreen() {
                     </View>
                   )}
 
-                  {/* 🎯 ЗАСВАР: ТҮРЭЭСЛЭГЧИЙН ҮЙЛДЛҮҮД-ийг list.map хаалтан дотор зөв байрлалд оруулж алдааг засав */}
+                  {/* ТҮРЭЭСЛЭГЧИЙН ҮЙЛДЛҮҮД */}
                   {isRequester && (
                     <View style={styles.actionsRow}>
                       {item.status === "approved" && (
@@ -383,7 +418,7 @@ export default function RentalRequestsScreen() {
                          </TouchableOpacity>
                       )}
 
-                       {item.status === "paid" && (
+                      {item.status === "paid" && (
                         <View style={[styles.actionButton, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border, borderWidth: 1 }]}>
                           <ActivityIndicator size="small" color={colors.primary} />
                           <Text style={{ color: colors.textSecondary, marginLeft: 8, fontWeight: '600' }}>Эзнийг хүлээж байна...</Text>
@@ -391,8 +426,7 @@ export default function RentalRequestsScreen() {
                       )}
                     </View>
                   )}
-
-                </View>
+                </TouchableOpacity>
               );
             })
           )}
@@ -460,10 +494,7 @@ export default function RentalRequestsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
-  headerTitle: { fontSize: 20, fontWeight: "800" },
-  logo: { width: 86, height: 38 },
+  // 🎯 ЗАССАН: Хуучин гараар бичсэн header стилиудийг устгав
   content: { flex: 1 },
   contentContainer: { padding: 20, paddingBottom: 36 },
   sectionTitle: { fontSize: 18, fontWeight: "800", marginBottom: 14 },

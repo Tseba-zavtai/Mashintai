@@ -82,7 +82,8 @@
           "photosPermission": "Зураг сонгож зартаа оруулахын тулд зурагт хандах эрх хэрэгтэй."
         }
       ],
-      "./plugins/with-bank-queries"
+      "./plugins/with-bank-queries",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

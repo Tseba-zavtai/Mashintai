@@ -70,8 +70,9 @@ function RootLayoutNav() {
         const token = await registerForPushNotificationsAsync();
         
         if (token) {
+          // 🎯 ЗАСВАР: Хэрэглэгчийн токен хадгалах хүснэгтийг 'users' болгож засав (Баазын бүтэцтэй уялдуулав)
           const { error } = await supabase
-            .from('profiles') 
+            .from('users') 
             .update({ expo_push_token: token })
             .eq('id', user.id);
             
@@ -92,7 +93,7 @@ function RootLayoutNav() {
   return (
     <Stack 
       screenOptions={{ 
-        headerShown: false, // Үндсэн бүх хуудасны системийн толгойг хаана
+        headerShown: false, 
         animation: "slide_from_right" 
       }}
     >
@@ -102,10 +103,7 @@ function RootLayoutNav() {
       <Stack.Screen name="review" options={{ headerShown: false }} />
       <Stack.Screen name="browse" options={{ headerShown: false }} />
       <Stack.Screen name="my-jobs" options={{ headerShown: false }} />
-      
-      {/* 🎯 ЗАСВАР: help хавтсыг бүртгэхдээ headerShown: false болгож системийн толгойг давхарлаж гаргахгүй хаана */}
       <Stack.Screen name="help" options={{ headerShown: false }} />
-      
       <Stack.Screen name="location-picker" options={{ headerShown: false, animation: "slide_from_bottom" }} />
     </Stack>
   );
