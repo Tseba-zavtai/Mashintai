@@ -189,7 +189,7 @@ export default function LocationScreen() {
       {/* 🎯 ЗАССАН: Хуучин гараар зурсан толгойг устгаад, showBack={false} гээд дуудав */}
       <AppHeader title="Байршил" showBack={false} />
 
-      <View style={[styles.topControls, { backgroundColor: colors.headerBackground }]}>
+      <View style={[styles.topControls, { backgroundColor: colors.background }]}>
         <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Search size={20} color={colors.textSecondary} />
           <TextInput

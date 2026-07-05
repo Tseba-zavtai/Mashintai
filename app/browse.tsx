@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -16,43 +16,14 @@ import {
   ArrowLeft,
   X,
   Tag,
-  Car,
-  Wrench,
-  Ticket,
-  Home,
-  Plane,
-  Camera,
-  Gamepad2,
-  Briefcase,
-  Truck,
-  Shirt,
-  Dumbbell,
-  Leaf,
-  Monitor,
-  Smartphone,
-  Package,
-  Bike,
-  Music,
-  Baby,
-  MapPin,
-  Users,
-  ClipboardList,
-  Shield,
-  PhoneCall,
-  Settings,
-  Building2,
-  Utensils,
-  Gift,
-  BadgeHelp,
-  Check,
-  Sofa,
-  Hammer,
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { supabase } from "@/lib/supabase";
 
-type LucideIcon = React.ComponentType<{ size?: number; color?: string }>;
+type LocalSubcategory = { id: string; name: string; icon?: string | null; };
+type LocalCategory = { id: string; name: string; icon?: string | null; subcategories: LocalSubcategory[]; };
 
 type BrowseJob = {
   id: string;
@@ -81,146 +52,6 @@ type SearchResultItem = {
   subtitle?: string;
   data?: BrowseJob | string;
 };
-
-const RENTAL_CATEGORY_MAP: Record<string, string[]> = {
-  "Тээврийн хэрэгсэл": [
-    "Суудлын машин",
-    "SUV",
-    "Pickup",
-    "Ачааны машин",
-    "Микро",
-    "Мотоцикл",
-    "Скүүтер",
-    "Унадаг дугуй",
-    "Цахилгаан дугуй",
-    "Caravan / trailer",
-  ],
-  "Барилга, засварын тоног төхөөрөмж": [
-    "Өрөм",
-    "Дрилл",
-    "Бетон зүсэгч",
-    "Цахилгаан хөрөө",
-    "Гагнуурын аппарат",
-    "Шат",
-    "Лазер тэгш ус",
-    "Компрессор",
-    "Генератор",
-    "Усны насос",
-  ],
-  "Арга хэмжээ, event-ийн хэрэгсэл": [
-    "Майхан",
-    "Ширээ сандал",
-    "Тайзны тоноглол",
-    "Speaker",
-    "Microphone",
-    "Karaoke set",
-    "Projector",
-    "LED screen",
-    "Photo booth",
-    "Гэрэлтүүлэг",
-  ],
-  "Ахуйн болон өдөр тутмын хэрэглээ": [
-    "Хүүхдийн тэрэг",
-    "Хүүхдийн машины суудал",
-    "Нялх хүүхдийн ор",
-    "Wheelchair",
-    "Өвчтөний ор",
-    "Зөөврийн халаагуур",
-    "Air purifier",
-    "Vacuum cleaner",
-    "Carpet cleaner",
-  ],
-  "Аялал, outdoor хэрэгсэл": [
-    "Кемпийн майхан",
-    "Унтлагын уут",
-    "Кемпийн ширээ сандал",
-    "Хийн плитка",
-    "Cool box",
-    "Загасчлалын хэрэгсэл",
-    "Уулын дугуй",
-    "GPS төхөөрөмж",
-    "Walkie talkie/станц",
-    "Portable battery/power bank",
-  ],
-  "Фото, видео, контентын тоног төхөөрөмж": [
-    "Camera",
-    "Lens",
-    "Gimbal",
-    "Tripod",
-    "Drone",
-    "Action camera",
-    "Lighting kit",
-    "Microphone",
-    "Teleprompter",
-    "Backdrop stand",
-  ],
-  "Тоглоом, entertainment": [
-    "Projector + screen set",
-    "Karaoke set",
-    "VR headset",
-    "Board games багц",
-    "Air hockey / party game set",
-    "Sim racing setup",
-    "PS, Nintendo, Sega, etc",
-  ],
-  "Оффис, бизнесийн хэрэглээ": [
-    "Зөөврийн компьютер",
-    "Printer",
-    "Scanner",
-    "POS төхөөрөмж",
-    "Barcode scanner",
-    "Label printer",
-    "Meeting speakerphone",
-    "Tablet",
-    "Wi-Fi router",
-    "Зөөврийн дэлгэц",
-  ],
-  "Хүнд машин механизм, тусгай хэрэгсэл": [
-    "Сэрээт ачигч",
-    "Кран",
-    "Ковш",
-    "Индүү",
-    "Excavator төрлийн техник",
-    "Pallet jack",
-    "Hand stacker",
-  ],
-  "Хувцас, тусгай хэрэглээ": [
-    "Гоёлын даашинз",
-    "Үндэсний хувцас",
-    "Костюм",
-    "Тайзны хувцас",
-    "Mascot хувцас",
-    "Хамгаалалтын хувцас",
-  ],
-  "Спорт, хобби": [
-    "Цанын хэрэгсэл",
-    "Snowboard",
-    "Тэшүүр",
-    "Фитнес тоног төхөөрөмж",
-    "Paddle board",
-    "Kayak",
-    "Tennis racket",
-    "Boxing gear",
-  ],
-  "Мал аж ахуй, хөдөө аж ахуйн хэрэгсэл": [
-    "Өвс хадах машин",
-    "Газар сэндийлэгч",
-    "Мотоблок",
-    "Шүршигч аппарат",
-    "Усалгааны насос",
-    "Цахилгаан хашааны төхөөрөмж",
-  ],
-};
-
-const SUBCATEGORY_TO_CATEGORY = Object.entries(RENTAL_CATEGORY_MAP).reduce(
-  (acc, [category, subcategories]) => {
-    subcategories.forEach((subcategory) => {
-      acc[subcategory] = category;
-    });
-    return acc;
-  },
-  {} as Record<string, string>
-);
 
 function toSafeDate(value: any): Date {
   if (!value) return new Date();
@@ -251,41 +82,11 @@ function cyrillicToLatin(input: string) {
   const text = (input ?? "").toLowerCase();
 
   const map: Record<string, string> = {
-    а: "a",
-    б: "b",
-    в: "v",
-    г: "g",
-    д: "d",
-    е: "e",
-    ё: "yo",
-    ж: "j",
-    з: "z",
-    и: "i",
-    й: "i",
-    к: "k",
-    л: "l",
-    м: "m",
-    н: "n",
-    о: "o",
-    ө: "o",
-    п: "p",
-    р: "r",
-    с: "s",
-    т: "t",
-    у: "u",
-    ү: "u",
-    ф: "f",
-    х: "kh",
-    ц: "ts",
-    ч: "ch",
-    ш: "sh",
-    щ: "sh",
-    ъ: "",
-    ы: "ii",
-    ь: "",
-    э: "e",
-    ю: "yu",
-    я: "ya",
+    а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "j",
+    з: "z", и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o",
+    ө: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ү: "u", ф: "f",
+    х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "sh", ъ: "", ы: "ii",
+    ь: "", э: "e", ю: "yu", я: "ya",
   };
 
   let out = "";
@@ -297,46 +98,18 @@ function latinToCyrillic(input: string) {
   let s = (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 
   const rules: Array<[RegExp, string]> = [
-    [/sch/g, "щ"],
-    [/sh/g, "ш"],
-    [/ch/g, "ч"],
-    [/ts/g, "ц"],
-    [/ya/g, "я"],
-    [/yo/g, "ё"],
-    [/yu/g, "ю"],
-    [/ye/g, "е"],
+    [/sch/g, "щ"], [/sh/g, "ш"], [/ch/g, "ч"], [/ts/g, "ц"],
+    [/ya/g, "я"], [/yo/g, "ё"], [/yu/g, "ю"], [/ye/g, "е"],
     [/kh/g, "х"],
   ];
 
   for (const [re, rep] of rules) s = s.replace(re, rep);
 
   const map: Record<string, string> = {
-    a: "а",
-    b: "б",
-    v: "в",
-    g: "г",
-    d: "д",
-    e: "е",
-    z: "з",
-    i: "и",
-    j: "ж",
-    k: "к",
-    l: "л",
-    m: "м",
-    n: "н",
-    o: "о",
-    p: "п",
-    r: "р",
-    s: "с",
-    t: "т",
-    u: "у",
-    f: "ф",
-    h: "х",
-    y: "й",
-    q: "к",
-    w: "в",
-    x: "кс",
-    c: "к",
+    a: "а", b: "б", v: "в", g: "г", d: "д", e: "е", z: "з", i: "и",
+    j: "ж", k: "к", l: "л", m: "м", n: "н", o: "о", p: "п", r: "р",
+    s: "с", t: "t", u: "у", f: "ф", h: "х", y: "й", q: "к", w: "в",
+    x: "кс", c: "к",
   };
 
   let out = "";
@@ -412,242 +185,6 @@ function normalizeJob(raw: any): BrowseJob {
   };
 }
 
-const CATEGORY_ICON_OVERRIDE: Record<string, LucideIcon> = {
-  "Тээврийн хэрэгсэл": Car,
-  "Барилга, засварын тоног төхөөрөмж": Wrench,
-  "Арга хэмжээ, event-ийн хэрэгсэл": Ticket,
-  "Ахуйн болон өдөр тутмын хэрэглээ": Home,
-  "Аялал, outdoor хэрэгсэл": Plane,
-  "Фото, видео, контентын тоног төхөөрөмж": Camera,
-  "Тоглоом, entertainment": Gamepad2,
-  "Оффис, бизнесийн хэрэглээ": Briefcase,
-  "Хүнд машин механизм, тусгай хэрэгсэл": Truck,
-  "Хувцас, тусгай хэрэглээ": Shirt,
-  "Спорт, хобби": Dumbbell,
-  "Мал аж ахуй, хөдөө аж ахуйн хэрэгсэл": Leaf,
-};
-
-function iconByKeyword(name: string): LucideIcon {
-  const t = (name ?? "").toLowerCase().trim();
-
-  if (
-    t.includes("тээвэр") ||
-    t.includes("машин") ||
-    t.includes("suv") ||
-    t.includes("pickup") ||
-    t.includes("мото") ||
-    t.includes("дугуй")
-  ) {
-    return Car;
-  }
-
-  if (
-    t.includes("барилга") ||
-    t.includes("засвар") ||
-    t.includes("өрөм") ||
-    t.includes("дрилл") ||
-    t.includes("генератор") ||
-    t.includes("компрессор")
-  ) {
-    return Wrench;
-  }
-
-  if (
-    t.includes("арга хэмжээ") ||
-    t.includes("event") ||
-    t.includes("projector") ||
-    t.includes("karaoke") ||
-    t.includes("speaker") ||
-    t.includes("microphone") ||
-    t.includes("гэрэлтүүлэг")
-  ) {
-    return Ticket;
-  }
-
-  if (
-    t.includes("ахуйн") ||
-    t.includes("өдөр тутмын") ||
-    t.includes("heater") ||
-    t.includes("vacuum") ||
-    t.includes("wheelchair") ||
-    t.includes("хүүхдийн")
-  ) {
-    return Home;
-  }
-
-  if (
-    t.includes("аялал") ||
-    t.includes("outdoor") ||
-    t.includes("кемп") ||
-    t.includes("унтлагын") ||
-    t.includes("загас") ||
-    t.includes("gps")
-  ) {
-    return Plane;
-  }
-
-  if (
-    t.includes("фото") ||
-    t.includes("видео") ||
-    t.includes("camera") ||
-    t.includes("lens") ||
-    t.includes("drone") ||
-    t.includes("tripod") ||
-    t.includes("gimbal")
-  ) {
-    return Camera;
-  }
-
-  if (
-    t.includes("тоглоом") ||
-    t.includes("entertainment") ||
-    t.includes("vr") ||
-    t.includes("ps") ||
-    t.includes("nintendo") ||
-    t.includes("sega") ||
-    t.includes("sim racing")
-  ) {
-    return Gamepad2;
-  }
-
-  if (
-    t.includes("оффис") ||
-    t.includes("бизнес") ||
-    t.includes("printer") ||
-    t.includes("scanner") ||
-    t.includes("tablet") ||
-    t.includes("router") ||
-    t.includes("computer")
-  ) {
-    return Briefcase;
-  }
-
-  if (
-    t.includes("хүнд машин") ||
-    t.includes("кран") ||
-    t.includes("ковш") ||
-    t.includes("excavator") ||
-    t.includes("pallet") ||
-    t.includes("ачигч")
-  ) {
-    return Truck;
-  }
-
-  if (
-    t.includes("хувцас") ||
-    t.includes("даашинз") ||
-    t.includes("костюм") ||
-    t.includes("үндэсний") ||
-    t.includes("mascot") ||
-    t.includes("хамгаалалт")
-  ) {
-    return Shirt;
-  }
-
-  if (
-    t.includes("спорт") ||
-    t.includes("хобби") ||
-    t.includes("snowboard") ||
-    t.includes("тэшүүр") ||
-    t.includes("fitness") ||
-    t.includes("kayak") ||
-    t.includes("boxing")
-  ) {
-    return Dumbbell;
-  }
-
-  if (
-    t.includes("мал") ||
-    t.includes("хөдөө") ||
-    t.includes("мотоблок") ||
-    t.includes("усалгаа") ||
-    t.includes("шүршигч") ||
-    t.includes("хадах")
-  ) {
-    return Leaf;
-  }
-
-  if (t.includes("computer") || t.includes("дэлгэц") || t.includes("monitor")) return Monitor;
-  if (t.includes("tablet") || t.includes("pos") || t.includes("router")) return Smartphone;
-  if (t.includes("projector") || t.includes("led")) return Monitor;
-  if (t.includes("майхан") || t.includes("ширээ") || t.includes("stand")) return Package;
-  if (t.includes("bike") || t.includes("дугуй")) return Bike;
-  if (t.includes("speaker") || t.includes("music")) return Music;
-  if (t.includes("baby") || t.includes("нялх") || t.includes("хүүхдийн")) return Baby;
-  if (t.includes("drone") || t.includes("camera")) return Camera;
-  if (t.includes("office") || t.includes("business")) return Building2;
-  if (t.includes("generator") || t.includes("apparat")) return Hammer;
-
-  return Tag;
-}
-
-function buildUniqueIconMap(categoryNames: string[]) {
-  const pool: LucideIcon[] = [
-    Briefcase,
-    Wrench,
-    Leaf,
-    MapPin,
-    Users,
-    ClipboardList,
-    Shield,
-    Home,
-    PhoneCall,
-    Settings,
-    Building2,
-    Utensils,
-    Car,
-    Truck,
-    Monitor,
-    Smartphone,
-    Gift,
-    BadgeHelp,
-    Sofa,
-    Package,
-    Bike,
-    Shirt,
-    Music,
-    Gamepad2,
-    Baby,
-    Camera,
-    Dumbbell,
-    Plane,
-    Ticket,
-    Hammer,
-    Check,
-  ];
-
-  const used = new Set<LucideIcon>();
-  const map: Record<string, LucideIcon> = {};
-
-  for (const name of categoryNames) {
-    const override = CATEGORY_ICON_OVERRIDE[name];
-    if (override) {
-      map[name] = override;
-      used.add(override);
-    }
-  }
-
-  for (const name of categoryNames) {
-    if (map[name]) continue;
-    const keywordIcon = iconByKeyword(name);
-    if (keywordIcon !== Tag) {
-      map[name] = keywordIcon;
-      used.add(keywordIcon);
-    }
-  }
-
-  let i = 0;
-  for (const name of categoryNames) {
-    if (map[name]) continue;
-    while (i < pool.length && used.has(pool[i])) i++;
-    map[name] = i < pool.length ? pool[i] : Tag;
-    used.add(map[name]);
-    i++;
-  }
-
-  return map;
-}
-
 function getLogoUri(currentTheme: string) {
   return currentTheme === "navy"
     ? "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns"
@@ -659,13 +196,13 @@ function JobCard({
   getCategoryIcon,
 }: {
   job: BrowseJob;
-  getCategoryIcon: (name: string) => LucideIcon;
+  getCategoryIcon: (name: string) => string;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
 
   const initial = (job.postedBy?.name?.charAt(0) || "?").toUpperCase();
-  const IconComponent = getCategoryIcon(job.category ?? "");
+  const iconEmoji = getCategoryIcon(job.category ?? "");
 
   const handleAvatarPress = () => {
     const userId = job.postedBy?.phone || job.postedBy?.id || "";
@@ -696,7 +233,7 @@ function JobCard({
 
         <View style={styles.jobHeaderContent}>
           <View style={styles.titleRow}>
-            <IconComponent size={18} color={colors.text} />
+            <Text style={{ fontSize: 16 }}>{iconEmoji}</Text>
             <Text style={[styles.jobTitle, { color: colors.text }]} numberOfLines={1}>
               {job.category ?? job.title}
             </Text>
@@ -750,20 +287,67 @@ export default function BrowseScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  const allCategories = useMemo(() => {
-    return Object.keys(RENTAL_CATEGORY_MAP);
+  const [dbCategories, setDbCategories] = useState<LocalCategory[]>([]);
+  
+  const fetchCategoriesFromDB = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select(`
+          id, name, icon,
+          subcategories ( id, name, icon )
+        `);
+      if (error) throw error;
+      
+      if (data) {
+        const formattedCats: LocalCategory[] = data.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          icon: c.icon,
+          subcategories: Array.isArray(c.subcategories) ? c.subcategories.map((sub: any) => ({
+            id: sub.id,
+            name: sub.name,
+            icon: sub.icon
+          })) : []
+        }));
+        setDbCategories(formattedCats);
+      }
+    } catch (err) {
+      console.log("Error fetching categories:", err);
+    }
   }, []);
 
-  const categoryIconMap = useMemo(
-    () => buildUniqueIconMap(allCategories),
-    [allCategories]
-  );
+  useEffect(() => {
+    fetchCategoriesFromDB();
+  }, [fetchCategoriesFromDB]);
 
-  const getCategoryIcon = (name: string) => categoryIconMap[name] ?? iconByKeyword(name);
-
+  const allCategories = useMemo(() => dbCategories.map(c => c.name), [dbCategories]);
+  
   const allSubcategories = useMemo(() => {
-    return Array.from(new Set(Object.values(RENTAL_CATEGORY_MAP).flat()));
-  }, []);
+    return dbCategories.flatMap(c => c.subcategories.map(s => s.name));
+  }, [dbCategories]);
+
+  const subcategoryToCategoryMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    dbCategories.forEach((cat) => {
+      cat.subcategories.forEach((sub) => {
+        map[sub.name] = cat.name;
+      });
+    });
+    return map;
+  }, [dbCategories]);
+
+  const getCategoryIcon = useCallback((name: string): string => {
+    if (!name) return "🏷️";
+    const cat = dbCategories.find(c => c.name === name);
+    if (cat?.icon) return cat.icon;
+    for (const c of dbCategories) {
+      const sub = c.subcategories.find(s => s.name === name);
+      if (sub?.icon) return sub.icon;
+      if (sub && c.icon) return c.icon;
+    }
+    return "🏷️";
+  }, [dbCategories]);
 
   const searchResults = useMemo<SearchResultItem[]>(() => {
     if (!searchQuery.trim()) return [];
@@ -788,7 +372,7 @@ export default function BrowseScreen() {
           id: `subcategory-${subcategory}`,
           type: "subcategory",
           title: subcategory,
-          subtitle: SUBCATEGORY_TO_CATEGORY[subcategory] ?? "Дэд категори",
+          subtitle: subcategoryToCategoryMap[subcategory] ?? "Дэд категори",
           data: subcategory,
         });
       }
@@ -823,7 +407,7 @@ export default function BrowseScreen() {
     });
 
     return results.slice(0, 50);
-  }, [searchQuery, normalizedJobs, allCategories, allSubcategories]);
+  }, [searchQuery, normalizedJobs, allCategories, allSubcategories, subcategoryToCategoryMap]);
 
   const searchSuggestions = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -893,7 +477,7 @@ export default function BrowseScreen() {
 
     if (result.type === "subcategory") {
       const pickedSubcategory = result.data as string;
-      const parentCategory = SUBCATEGORY_TO_CATEGORY[pickedSubcategory] ?? null;
+      const parentCategory = subcategoryToCategoryMap[pickedSubcategory] ?? null;
 
       setSelectedCategory(parentCategory);
       setSearchQuery(pickedSubcategory);
@@ -911,7 +495,7 @@ export default function BrowseScreen() {
   };
 
   const handleSuggestionPress = (suggestion: string) => {
-    const parentCategory = SUBCATEGORY_TO_CATEGORY[suggestion];
+    const parentCategory = subcategoryToCategoryMap[suggestion];
     if (parentCategory) {
       setSelectedCategory(parentCategory);
     }
@@ -1016,8 +600,7 @@ export default function BrowseScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {searchResults.map((result) => {
-            const CategoryIcon =
-              result.type === "category" ? getCategoryIcon(result.title) : null;
+            const categoryIcon = result.type === "category" ? getCategoryIcon(result.title) : null;
 
             return (
               <TouchableOpacity
@@ -1031,13 +614,13 @@ export default function BrowseScreen() {
                     { backgroundColor: colors.backgroundSecondary },
                   ]}
                 >
-                  {result.type === "category" && CategoryIcon ? (
+                  {result.type === "category" && categoryIcon ? (
                     <View style={styles.iconWrap}>
-                      <CategoryIcon size={18} color={colors.text} />
+                      <Text style={{fontSize: 18}}>{categoryIcon}</Text>
                     </View>
                   ) : result.type === "subcategory" ? (
                     <View style={styles.iconWrap}>
-                      <Tag size={18} color={colors.text} />
+                      <Text style={{fontSize: 18}}>{getCategoryIcon(result.title)}</Text>
                     </View>
                   ) : result.type === "person" ? (
                     <View style={[styles.personAvatar, { backgroundColor: colors.primary }]}>
@@ -1195,24 +778,24 @@ export default function BrowseScreen() {
                 <Text style={[styles.filterChipText, { color: colors.text }]}>Бүгд</Text>
               </TouchableOpacity>
 
-              {allCategories.map((category) => (
+              {dbCategories.map((category) => (
                 <TouchableOpacity
-                  key={category}
+                  key={category.id}
                   style={[
                     styles.filterChip,
                     {
                       backgroundColor: colors.backgroundSecondary,
                       borderColor: colors.border,
                     },
-                    selectedCategory === category && {
+                    selectedCategory === category.name && {
                       backgroundColor: colors.primary,
                       borderColor: colors.primary,
                     },
                   ]}
-                  onPress={() => setSelectedCategory(category)}
+                  onPress={() => setSelectedCategory(category.name)}
                 >
                   <Text style={[styles.filterChipText, { color: colors.text }]}>
-                    {category}
+                    {category.icon ? `${category.icon} ` : ''}{category.name}
                   </Text>
                 </TouchableOpacity>
               ))}

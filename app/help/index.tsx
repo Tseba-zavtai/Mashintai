@@ -1,10 +1,11 @@
 // app/help/index.tsx
-import React, { useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import React, { useState, useEffect, useCallback } from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useRouter } from "expo-router";
 import type { Href } from "expo-router";
 import { ChevronRight, ChevronDown, Phone, FileText, Award, Shield, HelpCircle } from "lucide-react-native";
+import { supabase } from "@/lib/supabase"; // 🎯 НЭМСЭН: Supabase холболт
 
 type HelpItem = {
   title: string;
@@ -13,40 +14,44 @@ type HelpItem = {
   onPress: () => void;
 };
 
-const FAQS = [
-  {
-    q: "Tureesly апп гэж юу вэ?",
-    a: "Tureesly нь хэрэгцээт эд зүйлс, тоног төхөөрөмжөө бусдад түрээслүүлэх болон бусдаас түрээслэх боломжийг олгодог нэгдсэн платформ юм. Бид зөвхөн хэрэглэгчдийг хооронд нь холбох гүүр болж ажиллана."
-  },
-  {
-    q: "Апп ашиглахад үнэтэй юу?",
-    a: "Апп татах болон ашиглахад бүрэн үнэ төлбөргүй. Харин та зарынхаа хандалтыг нэмэгдүүлж 'Sponsored' болгох үедээ л төлбөр төлнө."
-  },
-  {
-    q: "Түрээслэх хүсэлт хэрхэн илгээх вэ?",
-    a: "Таалагдсан зарынхаа дэлгэрэнгүй рүү ороод 'Түрээслэх' товчийг дарж, тоо ширхэг болон хоногоо сонгон хүсэлт илгээнэ. Зарын эзэн зөвшөөрснөөр та хоёрын утасны дугаар ил болж холбогдох боломжтой болно."
-  },
-  {
-    q: "Бараагаа яаж хүлээж авах вэ? Хүргэлт байгаа юу?",
-    a: "Tureesly апп нь хүргэлт хийдэггүй. Түрээслэгч болон түрээслүүлэгч талууд утсаар холбогдож, бараа хүлээлцэх газар болон цагаа өөрсдөө тохиролцоно."
-  },
-  {
-    q: "Зар хэрхэн оруулах вэ?",
-    a: "Гол цэсний '+' товч (Зар нэмэх) дээр дарж барааны зураг, үнэ, тоо ширхэг, тайлбараа оруулан нийтлэх боломжтой."
-  },
-  {
-    q: "Төлбөр тооцоог хэрхэн хийх вэ?",
-    a: "Түрээсийн төлбөрийг талууд хоорондоо тохиролцон (дансаар эсвэл бэлнээр) шилжүүлнэ. Апп дотор төлбөр дамжихгүй."
-  },
-  {
-    q: "Бараа эвдэрсэн эсвэл алдагдсан тохиолдолд яах вэ?",
-    a: "Tureesly платформ нь эвдрэл гэмтэл, төлбөр тооцооны эрсдэлийг хариуцахгүй. Тиймээс түрээслүүлэгч тал бараагаа өгөхдөө бичиг баримт барьцаалах эсвэл гэрээ байгуулах зэргээр өөрийн эрсдэлээс хамгаалахыг зөвлөж байна."
-  }
-];
+// 🎯 ШИНЭ: Supabase-аас ирэх FAQ төрөл
+type DbFaq = {
+  id: string;
+  question: string;
+  answer: string;
+  sort_order: number;
+};
 
 export default function HelpScreen() {
   const router = useRouter();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  
+  // 🎯 ШИНЭ: FAQ татах state
+  const [faqs, setFaqs] = useState<DbFaq[]>([]);
+  const [loadingFaqs, setLoadingFaqs] = useState(true);
+
+  // 🎯 ШИНЭ: FAQ датабэйсээс татах функц
+  const fetchFaqs = useCallback(async () => {
+    try {
+      setLoadingFaqs(true);
+      const { data, error } = await supabase
+        .from('faqs')
+        .select('*')
+        .order('sort_order', { ascending: true });
+        
+      if (error) throw error;
+      if (data) setFaqs(data as DbFaq[]);
+    } catch (err) {
+      console.log("Error fetching FAQs:", err);
+    } finally {
+      setLoadingFaqs(false);
+    }
+  }, []);
+
+  // 🎯 ШИНЭ: Дэлгэц нээгдэх үед FAQ татна
+  useEffect(() => {
+    fetchFaqs();
+  }, [fetchFaqs]);
 
   const items: HelpItem[] = [
     {
@@ -116,30 +121,41 @@ export default function HelpScreen() {
         </View>
 
         <View style={styles.card}>
-          {FAQS.map((faq, index) => {
-            const isExpanded = expandedIndex === index;
-            return (
-              <View key={index} style={[styles.faqItem, index !== FAQS.length - 1 && styles.rowBorder]}>
-                <Pressable 
-                  onPress={() => setExpandedIndex(isExpanded ? null : index)} 
-                  style={styles.faqQuestionRow}
-                >
-                  <Text style={styles.faqQuestionText}>{faq.q}</Text>
-                  {isExpanded ? (
-                    <ChevronDown size={18} color="#777" />
-                  ) : (
-                    <ChevronRight size={18} color="#777" />
+          {loadingFaqs ? (
+            <View style={{ padding: 20, alignItems: "center" }}>
+              <ActivityIndicator color="#111" />
+              <Text style={{ marginTop: 10, color: "#666", fontSize: 13 }}>Ачааллаж байна...</Text>
+            </View>
+          ) : faqs.length === 0 ? (
+            <View style={{ padding: 20, alignItems: "center" }}>
+              <Text style={{ color: "#666", fontSize: 13 }}>Мэдээлэл олдсонгүй</Text>
+            </View>
+          ) : (
+            faqs.map((faq, index) => {
+              const isExpanded = expandedIndex === index;
+              return (
+                <View key={faq.id} style={[styles.faqItem, index !== faqs.length - 1 && styles.rowBorder]}>
+                  <Pressable 
+                    onPress={() => setExpandedIndex(isExpanded ? null : index)} 
+                    style={styles.faqQuestionRow}
+                  >
+                    <Text style={styles.faqQuestionText}>{faq.question}</Text>
+                    {isExpanded ? (
+                      <ChevronDown size={18} color="#777" />
+                    ) : (
+                      <ChevronRight size={18} color="#777" />
+                    )}
+                  </Pressable>
+                  
+                  {isExpanded && (
+                    <View style={styles.faqAnswerRow}>
+                      <Text style={styles.faqAnswerText}>{faq.answer}</Text>
+                    </View>
                   )}
-                </Pressable>
-                
-                {isExpanded && (
-                  <View style={styles.faqAnswerRow}>
-                    <Text style={styles.faqAnswerText}>{faq.a}</Text>
-                  </View>
-                )}
-              </View>
-            );
-          })}
+                </View>
+              );
+            })
+          )}
         </View>
 
         <Text style={styles.footer}>© Tureesly</Text>

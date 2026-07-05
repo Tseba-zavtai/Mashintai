@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+// app/auth.tsx
+import { useRef, useState, useEffect, useCallback } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -13,14 +14,15 @@ import {
   View,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ArrowLeft, Eye, EyeOff, LogIn, UserPlus, KeyRound } from "lucide-react-native";
+import { supabase } from "@/lib/supabase"; // 🎯 НЭМСЭН: Supabase холболт
 
-import { TERMS_TEXT } from "@/constants/terms";
 import { sendOtpSms } from "../Services/easycallSms";
 import { generateOtpCode } from "../Services/utils/otp";
 
@@ -57,9 +59,40 @@ export default function AuthScreen() {
   const [showTerms, setShowTerms] = useState(false);
   const [termsScrolledToEnd, setTermsScrolledToEnd] = useState(false);
 
+  // 🎯 ШИНЭ: Үйлчилгээний нөхцөл унших state-үүд
+  const [termsText, setTermsText] = useState<string>("");
+  const [loadingTerms, setLoadingTerms] = useState<boolean>(false);
+
   const termsScrollRef = useRef<ScrollView | null>(null);
 
   const EASYCALL_API_KEY = "iFi4UFCDNUqhMd6i10DsiLuV0LY9DIHS";
+
+  // 🎯 ШИНЭ: Үйлчилгээний нөхцөлийг Supabase-ээс татах функц
+  const fetchTermsFromDB = useCallback(async () => {
+    try {
+      setLoadingTerms(true);
+      const { data, error } = await supabase
+        .from('legal_docs')
+        .select('content')
+        .eq('doc_type', 'terms')
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        setTermsText(data.content);
+      }
+    } catch (err) {
+      console.log("Error fetching terms in auth screen:", err);
+      setTermsText("Үйлчилгээний нөхцөл уншихад алдаа гарлаа. Та интернэт холболтоо шалгана уу.");
+    } finally {
+      setLoadingTerms(false);
+    }
+  }, []);
+
+  // 🎯 ШИНЭ: Дэлгэц асах үед баазаас Үйлчилгээний нөхцөлийг урьдчилж татаж бэлдэнэ
+  useEffect(() => {
+    fetchTermsFromDB();
+  }, [fetchTermsFromDB]);
 
   const normalizePhone8 = (raw: string) => raw.replace(/\D/g, "").slice(0, 8);
 
@@ -149,7 +182,7 @@ export default function AuthScreen() {
       setOtpStage("sent");
       Alert.alert("Амжилттай", "Баталгаажуулах код илгээлээ");
     } catch (error: any) {
-      Alert.alert("Алдаа", error?.message || "OTP илгээхэд алдаа гарлаа");
+      Alert.alert("Алдаа", error?.message || "OTP илгээхөхд алдаа гарлаа");
     } finally {
       setIsLoading(false);
     }
@@ -169,7 +202,7 @@ export default function AuthScreen() {
 
     if (otpInput.trim() === sentOtp) {
       setOtpStage("verified");
-      Alert.alert("Амжилттай", "OTP баталгаажлаа ✅");
+      Alert.alert("Amjilttai", "OTP баталгаажлаа ✅");
     } else {
       Alert.alert("Алдаа", "OTP буруу байна");
     }
@@ -644,23 +677,29 @@ export default function AuthScreen() {
             scrollEventThrottle={16}
             showsVerticalScrollIndicator
           >
-            <Text style={[styles.termsParagraph, { color: colors.textSecondary }]}>
-              {TERMS_TEXT}
-            </Text>
+            {loadingTerms ? (
+              <View style={{ padding: 40, alignItems: "center" }}>
+                <ActivityIndicator color={colors.text} />
+              </View>
+            ) : (
+              <Text style={[styles.termsParagraph, { color: colors.textSecondary }]}>
+                {termsText || "Үйлчилгээний нөхцөл олдсонгүй."}
+              </Text>
+            )}
           </ScrollView>
 
           <TouchableOpacity
             style={[
               styles.termsAcceptBtn,
               { backgroundColor: colors.primary },
-              !termsScrolledToEnd && styles.termsAcceptDisabled,
+              (!termsScrolledToEnd || loadingTerms) && styles.termsAcceptDisabled,
             ]}
             onPress={() => {
-              if (!termsScrolledToEnd) return;
+              if (!termsScrolledToEnd || loadingTerms) return;
               setTermsAccepted(true);
               setShowTerms(false);
             }}
-            disabled={!termsScrolledToEnd}
+            disabled={!termsScrolledToEnd || loadingTerms}
             activeOpacity={0.85}
           >
             <Text style={[styles.termsAcceptText, { color: colors.text }]}>

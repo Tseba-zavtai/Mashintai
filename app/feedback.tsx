@@ -9,9 +9,10 @@ import {
   Alert, 
   KeyboardAvoidingView, 
   Platform,
-  ScrollView // 🎯 ҮҮНИЙГ НЭМСЭН!
+  ScrollView 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar'; // 🎯 НЭМСЭН: Утасны дээд талын цаг, сүлжээний дүрсийг удирдах
 import { ChevronLeft, Send } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -32,7 +33,11 @@ export default function FeedbackScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={['top']}>
+    // 🎯 ЗАССАН: SafeAreaView-ийн өнгийг толгой хэсгийн нил ягаан өнгөтэй ижил болгов
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.headerBackground }]} edges={['top']}>
+      {/* 🎯 НЭМСЭН: Цаг сүлжээний дүрсийг цагаан (light) болгох тохиргоо */}
+      <StatusBar style="light" backgroundColor={colors.headerBackground} />
+      
       {/* Толгой хэсэг */}
       <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }} activeOpacity={0.7}>
@@ -42,7 +47,11 @@ export default function FeedbackScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      {/* 🎯 ЗАССАН: Дэвсгэр өнгө доошоо цагаан/саарал хэвээрээ үлдэх зохицуулалт */}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        style={{ flex: 1, backgroundColor: colors.background }}
+      >
         <ScrollView style={[styles.content, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
           <Text style={[styles.label, { color: colors.text }]}>
             Апп-ыг сайжруулах санал, илэрсэн алдаа зэргийг бидэнд илгээнэ үү.

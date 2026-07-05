@@ -27,9 +27,8 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/lib/supabase";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
-import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Нэгдсэн толгой
+import AppHeader from "@/components/AppHeader"; 
 
-// Хайлтын логикуудыг эндээс дуудна!
 import { searchMatch, normalizeForSearch, cyrillicToLatin } from "@/lib/searchUtils";
 
 const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null;
@@ -37,9 +36,11 @@ const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : nul
 const PROVIDER_GOOGLE = Platform.OS !== "web" ? require("react-native-maps").PROVIDER_GOOGLE : null;
 
 type PickedLocation = { latitude: number; longitude: number; address?: string; };
-type LocalSubcategory = { id: string; name: string; sort_order: number | null; };
-type LocalCategory = { id: string; name: string; sort_order: number | null; subcategories: LocalSubcategory[]; };
 type PickedImage = { uri: string; name: string; mimeType: string; };
+
+// 🎯 ШИНЭ: Supabase-аас ирэх өгөгдлийн төрлүүд
+type LocalSubcategory = { id: string; name: string; icon?: string | null; };
+type LocalCategory = { id: string; name: string; icon?: string | null; subcategories: LocalSubcategory[]; };
 
 const MAX_IMAGES = 5;
 const STORAGE_BUCKET = "post-images";
@@ -101,39 +102,6 @@ async function uriToArrayBuffer(uri: string): Promise<ArrayBuffer> {
   return base64ToArrayBuffer(base64);
 }
 
-function slugify(value: string) {
-  return normalizeForSearch(cyrillicToLatin(value)) || normalizeForSearch(value) || "item";
-}
-
-const CATEGORY_SOURCE: Array<{ name: string; subcategories: string[]; }> = [
-  { name: "Тээврийн хэрэгсэл", subcategories: ["Суудлын машин", "SUV", "Pickup", "Ачааны машин", "Микро", "Мотоцикл", "Скүүтер", "Унадаг дугуй", "Цахилгаан дугуй", "Caravan / trailer"] },
-  { name: "Барилга, засварын тоног төхөөрөмж", subcategories: ["Өрөм", "Дрилл", "Бетон зүсэгч", "Цахилгаан хөрөө", "Гагнуурын аппарат", "Шат", "Лазер тэгш ус", "Компрессор", "Генератор", "Усны насос"] },
-  { name: "Арга хэмжээ, event-ийн хэрэгсэл", subcategories: ["Майхан", "Ширээ сандал", "Тайзны тоноглол", "Speaker", "Microphone", "Karaoke set", "Projector", "LED screen", "Photo booth", "Гэрэлтүүлэг"] },
-  { name: "Ахуйн болон өдөр тутмын хэрэглээ", subcategories: ["Хүүхдийн тэрэг", "Хүүхдийн машины суудал", "Нялх хүүхдийн ор", "Wheelchair", "Өвчтөний ор", "Зөөврийн халаагуур", "Air purifier", "Vacuum cleaner", "Carpet cleaner"] },
-  { name: "Аялал, outdoor хэрэгсэл", subcategories: ["Кемпийн майхан", "Унтлагын уут", "Кемпийн ширээ сандал", "Хийн плитка", "Cool box", "Загасчлалын хэрэгсэл", "Уулын дугуй", "GPS төхөөрөмж", "Walkie talkie/станц", "Portable battery/power bank"] },
-  { name: "Фото, видео, контентын тоног төхөөрөмж", subcategories: ["Camera", "Lens", "Gimbal", "Tripod", "Drone", "Action camera", "Lighting kit", "Microphone", "Teleprompter", "Backdrop stand"] },
-  { name: "Тоглоом, entertainment", subcategories: ["Projector + screen set", "Karaoke set", "VR headset", "Board games багц", "Air hockey / party game set", "Sim racing setup", "PS, Nintendo, Sega, etc"] },
-  { name: "Оффис, бизнесийн хэрэглээ", subcategories: ["Зөөврийн компьютер", "Printer", "Scanner", "POS төхөөрөмж", "Barcode scanner", "Label printer", "Meeting speakerphone", "Tablet", "Wi-Fi router", "Зөөврийн дэлгэц"] },
-  { name: "Хүнд машин механизм, тусгай хэрэгсэл", subcategories: ["Сэрээт ачигч", "Кран", "Ковш", "Индүү", "Excavator төрлийн техник", "Pallet jack", "Hand stacker"] },
-  { name: "Хувцас, тусгай хэрэглээ", subcategories: ["Гоёлын даашинз", "Үндэсний хувцас", "Костюм", "Тайзны хувцас", "Mascot хувцас", "Хамгаалалтын хувцас"] },
-  { name: "Спорт, хобби", subcategories: ["Цанын хэрэгсэл", "Snowboard", "Тэшүүр", "Фитнес тоног төхөөрөмж", "Paddle board", "Kayak", "Tennis racket", "Boxing gear"] },
-  { name: "Мал аж ахуй, хөдөө аж ахуйн хэрэгсэл", subcategories: ["Өвс хадах машин", "Газар сэндийлэгч", "Мотоблок", "Шүршигч аппарат", "Усалгааны насос", "Цахилгаан хашааны төхөөрөмж"] },
-];
-
-const RENTAL_CATEGORIES: LocalCategory[] = CATEGORY_SOURCE.map((category, categoryIndex) => {
-  const categoryId = `cat-${categoryIndex + 1}-${slugify(category.name)}`;
-  return {
-    id: categoryId,
-    name: category.name,
-    sort_order: categoryIndex + 1,
-    subcategories: category.subcategories.map((sub, subIndex) => ({
-      id: `${categoryId}-sub-${subIndex + 1}-${slugify(sub)}`,
-      name: sub,
-      sort_order: subIndex + 1,
-    })),
-  };
-});
-
 export default function PostScreen() {
   const { addJob } = useJobs();
   const router = useRouter();
@@ -157,7 +125,48 @@ export default function PostScreen() {
   const [initialRegion, setInitialRegion] = useState({ latitude: 47.9184, longitude: 106.9177, latitudeDelta: 0.02, longitudeDelta: 0.02 });
   const [addBanners, setAddBanners] = useState<any[]>([]);
 
+  // 🎯 ШИНЭ: Категориудыг хадгалах state
+  const [dbCategories, setDbCategories] = useState<LocalCategory[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+
   const postCredits = (user as any)?.available_post_credits ?? 0;
+
+  // 🎯 ШИНЭ: Supabase-ээс категори татах функц
+  const fetchCategoriesFromDB = useCallback(async () => {
+    try {
+      setLoadingCategories(true);
+      const { data, error } = await supabase
+        .from('categories')
+        .select(`
+          id, name, icon,
+          subcategories ( id, name, icon )
+        `);
+      if (error) throw error;
+      
+      if (data) {
+        const formattedCats: LocalCategory[] = data.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          icon: c.icon,
+          subcategories: Array.isArray(c.subcategories) ? c.subcategories.map((sub: any) => ({
+            id: sub.id,
+            name: sub.name,
+            icon: sub.icon
+          })) : []
+        }));
+        setDbCategories(formattedCats);
+      }
+    } catch (err) {
+      console.log("Error fetching categories:", err);
+    } finally {
+      setLoadingCategories(false);
+    }
+  }, []);
+
+  // 🎯 ШИНЭ: Дэлгэц нээгдэхэд категориудыг татаж авна
+  useEffect(() => {
+    fetchCategoriesFromDB();
+  }, [fetchCategoriesFromDB]);
 
   const loadAddBanners = useCallback(async () => {
     try {
@@ -201,10 +210,11 @@ export default function PostScreen() {
     }
   };
 
+  // 🎯 ЗАССАН: Хуучин RENTAL_CATEGORIES-ийн оронд dbCategories-ийг ашиглана
   const selectedCategoryObj = useMemo(() => {
     if (!categoryId) return null;
-    return RENTAL_CATEGORIES.find((item) => item.id === categoryId) ?? null;
-  }, [categoryId]);
+    return dbCategories.find((item) => item.id === categoryId) ?? null;
+  }, [categoryId, dbCategories]);
 
   const selectedCategoryName = selectedCategoryObj?.name ?? null;
 
@@ -216,9 +226,9 @@ export default function PostScreen() {
   const selectedSubcategoryName = selectedSubcategoryObj?.name ?? null;
 
   const visibleCategories = useMemo(() => {
-    if (!categorySearch.trim()) return RENTAL_CATEGORIES;
-    return RENTAL_CATEGORIES.filter((item) => searchMatch(item.name, categorySearch));
-  }, [categorySearch]);
+    if (!categorySearch.trim()) return dbCategories;
+    return dbCategories.filter((item) => searchMatch(item.name, categorySearch));
+  }, [categorySearch, dbCategories]);
 
   const visibleSubcategories = useMemo(() => {
     const list = selectedCategoryObj?.subcategories ?? [];
@@ -325,16 +335,13 @@ export default function PostScreen() {
   };
 
   return (
-    // 🎯 ЗАССАН: edges=["bottom"] болгож, "top"-ийг хасав
     <SafeAreaView edges={["bottom"]} style={[styles.container, { backgroundColor: colors.background }]}>
       
-      {/* 🎯 ЗАССАН: Нэгдсэн толгой хэсгийг орууллаа. Таб цэс тул showBack={false} байна */}
       <AppHeader title="Зар нэмэх" showBack={false} />
 
       <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
           
-          {/* 🎯 ЗАССАН: Өмнө нь толгойд байсан тайлбар текстийг энд байрлуулав */}
           <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 20 }}>
             Түрээслүүлэх зарын дэлгэрэнгүй мэдээллээ оруулна уу
           </Text>
@@ -377,15 +384,25 @@ export default function PostScreen() {
 
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: colors.text }]}>Категори *</Text>
-            <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedCategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setCategorySearch(""); setCategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting}>
-              <View style={styles.selectButtonTextWrap}><Text style={[styles.selectButtonTitle, { color: selectedCategoryName ? colors.text : colors.textSecondary }]} numberOfLines={1}>{selectedCategoryName || "Категори сонгох"}</Text><Text style={[styles.selectButtonHint, { color: colors.textSecondary }]}>Дарж жагсаалтаас сонгоно</Text></View>
+            <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedCategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setCategorySearch(""); setCategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || loadingCategories}>
+              <View style={styles.selectButtonTextWrap}>
+                <Text style={[styles.selectButtonTitle, { color: selectedCategoryName ? colors.text : colors.textSecondary }]} numberOfLines={1}>
+                  {loadingCategories ? "Уншиж байна..." : (selectedCategoryName ? `${selectedCategoryObj?.icon || ''} ${selectedCategoryName}` : "Категори сонгох")}
+                </Text>
+                <Text style={[styles.selectButtonHint, { color: colors.textSecondary }]}>Дарж жагсаалтаас сонгоно</Text>
+              </View>
               <Text style={[styles.selectButtonArrow, { color: colors.textSecondary }]}>›</Text>
             </Pressable>
             {selectedCategoryObj ? (
               <View style={styles.subcategoryWrap}>
                 <Text style={[styles.label, { color: colors.text }]}>Дэд категори</Text>
                 <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedSubcategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategorySearch(""); setSubcategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || (selectedCategoryObj.subcategories?.length ?? 0) === 0}>
-                  <View style={styles.selectButtonTextWrap}><Text style={[styles.selectButtonTitle, { color: selectedSubcategoryName ? colors.text : colors.textSecondary }]} numberOfLines={1}>{selectedSubcategoryName || "Дэд категори сонгох / алгасах"}</Text><Text style={[styles.selectButtonHint, { color: colors.textSecondary }]}>Сонгохгүй байж болно</Text></View>
+                  <View style={styles.selectButtonTextWrap}>
+                    <Text style={[styles.selectButtonTitle, { color: selectedSubcategoryName ? colors.text : colors.textSecondary }]} numberOfLines={1}>
+                      {selectedSubcategoryName ? `${selectedSubcategoryObj?.icon || ''} ${selectedSubcategoryName}` : "Дэд категори сонгох / алгасах"}
+                    </Text>
+                    <Text style={[styles.selectButtonHint, { color: colors.textSecondary }]}>Сонгохгүй байж болно</Text>
+                  </View>
                   <Text style={[styles.selectButtonArrow, { color: colors.textSecondary }]}>›</Text>
                 </Pressable>
                 {selectedSubcategoryName ? (<Pressable style={({ pressed }) => [styles.clearSelectionButton, { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.85 : 1 }]} onPress={() => setSubcategoryId(null)} disabled={submitting}><Text style={[styles.clearSelectionText, { color: colors.textSecondary }]}>Дэд категори арилгах</Text></Pressable>) : null}
@@ -401,7 +418,14 @@ export default function PostScreen() {
                   <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Категори хайх..." placeholderTextColor={colors.textSecondary} value={categorySearch} onChangeText={setCategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
                   <FlatList data={visibleCategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох категори олдсонгүй</Text>} renderItem={({ item }) => {
                       const selected = categoryId === item.id;
-                      return (<Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectCategory(item)} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>{item.name}</Text>{selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}</Pressable>);
+                      return (
+                        <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectCategory(item)} android_ripple={{ color: colors.border }}>
+                          <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>
+                            {item.icon ? `${item.icon} ` : ''}{item.name}
+                          </Text>
+                          {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
+                        </Pressable>
+                      );
                     }} />
                 </View>
               </View>
@@ -417,7 +441,14 @@ export default function PostScreen() {
                   <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSubcategorySearch(""); setSubcategoryModalVisible(false); }} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? "#111" : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}</Pressable>
                   <FlatList data={visibleSubcategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох дэд категори олдсонгүй</Text>} renderItem={({ item }) => {
                       const selected = subcategoryId === item.id;
-                      return (<Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectSubcategory(item)} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>{item.name}</Text>{selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}</Pressable>);
+                      return (
+                        <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectSubcategory(item)} android_ripple={{ color: colors.border }}>
+                          <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>
+                            {item.icon ? `${item.icon} ` : ''}{item.name}
+                          </Text>
+                          {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
+                        </Pressable>
+                      );
                     }} />
                 </View>
               </View>
@@ -451,7 +482,6 @@ export default function PostScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  // 🎯 ЗАССАН: Хуучин гараар зурсан header хэсгийн стилийг устгав
   keyboardView: { flex: 1 },
   content: { flex: 1 },
   contentContainer: { paddingTop: 20, paddingHorizontal: 20, paddingBottom: 24 },

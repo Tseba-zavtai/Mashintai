@@ -1,11 +1,10 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getLogoSource } from "@/constants/logo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient"; // 🎯 Уусалт хийх сан
 
 type HeaderProps = {
   title?: string;
@@ -17,21 +16,9 @@ export default function AppHeader({ title, showBack = true }: HeaderProps) {
   const { colors, currentTheme } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // 🎯 ЗАССАН: TypeScript-д зориулж яг 2 өнгө буцаана <[string, string]> гэдгийг зааж өглөө
-  const gradientColors = useMemo<[string, string]>(() => {
-    if (currentTheme === "purple") {
-      return ["#8B5CF6", "#6D28D9"];
-    }
-    return [colors.headerBackground as string, colors.headerBackground as string];
-  }, [currentTheme, colors.headerBackground]);
-
   return (
-    <LinearGradient 
-      colors={gradientColors} 
-      start={{ x: 0, y: 0 }} 
-      end={{ x: 1, y: 0 }} 
-      style={styles.headerContainer}
-    >
+    // 🎯 ЗАССАН: Градиентийг устгаж, танай брэндийн үндсэн гоё тод өнгийг цэвэрхэн орууллаа.
+    <View style={[styles.headerContainer, { backgroundColor: colors.headerBackground }]}>
       <View style={{ height: insets.top }} />
       <View style={[styles.header, { borderBottomColor: "transparent" }]}>
         
@@ -62,7 +49,7 @@ export default function AppHeader({ title, showBack = true }: HeaderProps) {
           resizeMode="contain" 
         />
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 

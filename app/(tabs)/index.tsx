@@ -22,8 +22,8 @@ import {
   useWindowDimensions,
   RefreshControl,
   ActivityIndicator,
+  Linking,
 } from "react-native";
-// 🎯 FB Style JobCard (Expo Image-тэй, Зүрхтэй)
 import { Image } from "expo-image";
 import {
   Search,
@@ -31,47 +31,10 @@ import {
   Palette,
   Tag,
   Check,
-  MapPin,
-  Users,
-  ClipboardList,
-  Shield,
-  Home,
-  PhoneCall,
-  Settings,
-  Building2,
-  Car,
-  Truck,
-  Monitor,
-  Smartphone,
-  Sofa,
-  Package,
-  Bike,
-  Shirt,
-  Music,
-  Gamepad2,
-  Baby,
-  Camera,
-  Dumbbell,
-  Plane,
-  Sparkles,
-  Hammer,
-  Wrench,
-  Briefcase,
-  Leaf,
-  HeartHandshake,
-  Globe,
-  GraduationCap,
-  Ticket,
-  ShoppingCart,
-  Scissors,
-  Scale,
-  TrendingUp,
-  FolderKanban,
-  Gift,
-  BadgeHelp,
-  Dog,
   Heart,
-  RefreshCw, // 🎯 ШИНЭ: Дахин оролдох товчны икон
+  RefreshCw,
+  ClipboardList,
+  Sparkles,
 } from "lucide-react-native";
 import {
   SafeAreaView,
@@ -86,14 +49,14 @@ import { supabase } from "@/lib/supabase";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
 import { searchMatch } from "@/lib/searchUtils";
-
-// 🎯 ШИНЭ: Skeleton loader оруулж ирлээ
 import SkeletonCard from "@/components/SkeletonCard";
 
-type LucideIcon = React.ComponentType<{ size?: number; color?: string; fill?: string }>;
+// 🎯 ТӨСЛИЙН ХУВИЛБАР (app.json-той ижил байх ёстой)
+const CURRENT_VERSION = "1.0.0";
+
 type FilterType = "all" | "rent" | "need";
-type DbCategoryRow = { id: string; name: string; sort_order: number | null; };
-type DbSubcategoryRow = { id: string; name: string; category_id: string; sort_order: number | null; };
+type DbCategoryRow = { id: string; name: string; icon?: string | null; sort_order: number | null; };
+type DbSubcategoryRow = { id: string; name: string; icon?: string | null; category_id: string; sort_order: number | null; };
 
 type NormalizedJob = Job & {
   category_id?: string | null;
@@ -112,7 +75,7 @@ type NormalizedJob = Job & {
   itemRatingAvg?: number | null;
   itemReviewCount?: number; 
   rentalCount?: number; 
-  bumpedAt?: Date | null; 
+  bumpedAt?: Date | null;
   bumpCount?: number;
 };
 
@@ -159,11 +122,6 @@ function getBumpedAtDate(raw: any): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function formatRating(value: any) {
-  const n = asNumberOrNull(value);
-  return n == null ? "Шинэ" : n.toFixed(1);
-}
-
 function getJobRankingScore(job: any): number {
   const now = Date.now();
   const postedTs = job?.postedDate?.getTime?.() ?? toSafeDate(job?.created_at ?? job?.updated_at).getTime();
@@ -190,67 +148,6 @@ function getJobRankingScore(job: any): number {
   return score;
 }
 
-const CATEGORY_ICON_OVERRIDE: Record<string, LucideIcon> = {
-  "Тээврийн хэрэгсэл": Car, "Барилга, засварын тоног төхөөрөмж": Hammer, "Арга хэмжээ, event-ийн хэрэгсэл": Music,
-  "Ахуйн болон өдөр тутмын хэрэглээ": Home, "Аялал, outdoor хэрэгсэл": Plane, "Фото, видео, контентын тоног төхөөрөмж": Camera,
-  "Тоглоом, entertainment": Gamepad2, "Оффис, бизнесийн хэрэглээ": Briefcase, "Хүнд машин механизм, тусгай хэрэгсэл": Truck,
-  "Хувцас, тусгай хэрэглээ": Shirt, "Спорт, хобби": Dumbbell, "Мал аж ахуй, хөдөө аж ахуйн хэрэгсэл": Leaf,
-};
-
-function iconByKeyword(name: string): LucideIcon {
-  const t = normalizeText(name);
-  if (t.includes("тээврийн") || t.includes("машин") || t.includes("suv") || t.includes("pickup") || t.includes("ачааны") || t.includes("микро") || t.includes("мото") || t.includes("скүүтер") || t.includes("унадаг дугуй") || t.includes("цахилгаан дугуй") || t.includes("caravan") || t.includes("trailer") || t.includes("vehicle") || t.includes("auto")) return Car;
-  if (t.includes("барилга") || t.includes("засвар") || t.includes("тоног төхөөрөмж") || t.includes("өрөм") || t.includes("дрилл") || t.includes("бетон") || t.includes("хөрөө") || t.includes("гагнуур") || t.includes("шат") || t.includes("лазер") || t.includes("компрессор") || t.includes("генератор") || t.includes("насос") || t.includes("tool")) return Hammer;
-  if (t.includes("арга хэмжээ") || t.includes("event") || t.includes("майхан") || t.includes("тайз") || t.includes("speaker") || t.includes("microphone") || t.includes("karaoke") || t.includes("projector") || t.includes("led") || t.includes("photo booth") || t.includes("гэрэлтүүлэг")) return Music;
-  if (t.includes("ахуйн") || t.includes("өдөр тутмын") || t.includes("хүүхдийн тэрэг") || t.includes("машины суудал") || t.includes("нялх") || t.includes("wheelchair") || t.includes("өвчтөний ор") || t.includes("халаагуур") || t.includes("air purifier") || t.includes("vacuum") || t.includes("carpet cleaner") || t.includes("household")) return Home;
-  if (t.includes("аялал") || t.includes("outdoor") || t.includes("кемп") || t.includes("унтлагын уут") || t.includes("хийн плитка") || t.includes("cool box") || t.includes("загасчлал") || t.includes("gps") || t.includes("walkie") || t.includes("portable battery") || t.includes("power bank") || t.includes("travel")) return Plane;
-  if (t.includes("фото") || t.includes("видео") || t.includes("контент") || t.includes("camera") || t.includes("lens") || t.includes("gimbal") || t.includes("tripod") || t.includes("drone") || t.includes("action camera") || t.includes("lighting kit") || t.includes("teleprompter") || t.includes("backdrop")) return Camera;
-  if (t.includes("тоглоом") || t.includes("entertainment") || t.includes("vr") || t.includes("board games") || t.includes("air hockey") || t.includes("sim racing") || t.includes("ps") || t.includes("nintendo") || t.includes("sega") || t.includes("projector + screen")) return Gamepad2;
-  if (t.includes("оффис") || t.includes("бизнес") || t.includes("зөөврийн компьютер") || t.includes("printer") || t.includes("scanner") || t.includes("pos") || t.includes("barcode") || t.includes("label printer") || t.includes("meeting speakerphone") || t.includes("tablet") || t.includes("wi-fi") || t.includes("router") || t.includes("дэлгэц") || t.includes("office")) return Briefcase;
-  if (t.includes("хүнд машин") || t.includes("тусгай хэрэгсэл") || t.includes("сэрээт ачигч") || t.includes("кран") || t.includes("ковш") || t.includes("индүү") || t.includes("excavator") || t.includes("pallet jack") || t.includes("hand stacker") || t.includes("machinery")) return Truck;
-  if (t.includes("хувцас") || t.includes("гоёлын даашинз") || t.includes("үндэсний хувцас") || t.includes("костюм") || t.includes("тайзны хувцас") || t.includes("mascot") || t.includes("хамгаалалтын хувцас") || t.includes("dress")) return Shirt;
-  if (t.includes("спорт") || t.includes("хобби") || t.includes("цана") || t.includes("snowboard") || t.includes("тэшүүр") || t.includes("фитнес") || t.includes("paddle board") || t.includes("kayak") || t.includes("tennis") || t.includes("boxing")) return Dumbbell;
-  if (t.includes("мал аж ахуй") || t.includes("хөдөө аж ахуй") || t.includes("өвс хадах") || t.includes("сэндийлэгч") || t.includes("мотоблок") || t.includes("шүршигч") || t.includes("усалгааны насос") || t.includes("цахилгаан хашааны төхөөрөмж") || t.includes("agri") || t.includes("farm")) return Leaf;
-  if (t.includes("гэр") || t.includes("орон сууц") || t.includes("house") || t.includes("home")) return Home;
-  if (t.includes("тавилга") || t.includes("furniture") || t.includes("sofa")) return Sofa;
-  if (t.includes("мото") || t.includes("bike") || t.includes("унадаг")) return Bike;
-  if (t.includes("тээвэр") || t.includes("truck") || t.includes("логистик")) return Truck;
-  if (t.includes("комп") || t.includes("computer") || t.includes("monitor") || t.includes("pc")) return Monitor;
-  if (t.includes("утас") || t.includes("phone") || t.includes("mobile") || t.includes("smart")) return Smartphone;
-  if (t.includes("бэлэг") || t.includes("gift")) return Gift;
-  if (t.includes("хөгжим") || t.includes("music") || t.includes("instrument")) return Music;
-  if (t.includes("хүүхэд") || t.includes("baby") || t.includes("kid")) return Baby;
-  if (t.includes("амьтан") || t.includes("pet") || t.includes("dog") || t.includes("cat")) return Dog;
-  if (t.includes("бараа") || t.includes("item") || t.includes("product")) return Package;
-  return Tag;
-}
-
-function buildUniqueIconMap(categoryNames: string[]) {
-  const pool: LucideIcon[] = [
-    Briefcase, Wrench, Leaf, HeartHandshake, MapPin, Users, ClipboardList, Shield, Home, PhoneCall, Settings, Building2, Car, Truck, Monitor, Smartphone, Gift, BadgeHelp, Sofa, Package, Bike, Shirt, Music, Gamepad2, Baby, Dog, Scissors, Scale, TrendingUp, FolderKanban, Globe, Camera, Dumbbell, GraduationCap, Plane, Ticket, ShoppingCart, Sparkles, Hammer,
-  ];
-  const used = new Set<LucideIcon>();
-  const map: Record<string, LucideIcon> = {};
-  for (const name of categoryNames) {
-    const override = CATEGORY_ICON_OVERRIDE[name];
-    if (override) { map[name] = override; used.add(override); }
-  }
-  for (const name of categoryNames) {
-    if (map[name]) continue;
-    const keywordIcon = iconByKeyword(name);
-    if (keywordIcon !== Tag) { map[name] = keywordIcon; used.add(keywordIcon); }
-  }
-  let i = 0;
-  for (const name of categoryNames) {
-    if (map[name]) continue;
-    while (i < pool.length && used.has(pool[i])) i++;
-    map[name] = i < pool.length ? pool[i] : Tag;
-    used.add(map[name]);
-    i++;
-  }
-  return map;
-}
-
 function normalizeJob(raw: any): NormalizedJob {
   const postedBy = raw?.postedBy ?? raw?.posted_by ?? {
       id: raw?.posted_by_id ?? null,
@@ -263,12 +160,14 @@ function normalizeJob(raw: any): NormalizedJob {
   const legacySponsored = !!(raw?.isSponsored ?? raw?.is_sponsored ?? false);
   const isSponsoredByTime = sponsoredUntil ? sponsoredUntil.getTime() > Date.now() : false;
   const computedIsSponsored = sponsoredUntil ? isSponsoredByTime : legacySponsored;
-  const location = raw?.location && typeof raw.location === "object" ? raw.location : raw?.address ? { address: raw.address, latitude: raw?.latitude ?? null, longitude: raw?.longitude ?? null } : null;
+  const location = raw?.location && typeof raw.location === "object" ?
+    raw.location : raw?.address ? { address: raw.address, latitude: raw?.latitude ?? null, longitude: raw?.longitude ?? null } : null;
   const imageUrls = normalizeImageUrls(raw);
   const bumpedAt = getBumpedAtDate(raw);
   const itemRatingAvg = asNumberOrNull(raw?.itemRatingAvg ?? raw?.item_rating_avg);
   const itemReviewCount = asNumberOrNull(raw?.itemReviewCount ?? raw?.item_review_count) ?? 0;
   const rentalCount = asNumberOrNull(raw?.rentalCount ?? raw?.rental_count) ?? itemReviewCount;
+  
   return {
     ...raw, category_id: raw?.category_id ?? null, subcategory_id: raw?.subcategory_id ?? null,
     isSponsored: computedIsSponsored, sponsoredUntil, postType: raw?.postType ?? raw?.post_type ?? "job",
@@ -286,7 +185,7 @@ function JobCard({
   onToggleSave,
 }: {
   job: Job;
-  getCategoryIcon: (name: string) => LucideIcon;
+  getCategoryIcon: (name: string) => string;
   isSaved: boolean;
   onToggleSave: (id: string) => void;
 }) {
@@ -307,6 +206,7 @@ function JobCard({
   };
 
   const handleCardPress = () => { router.push(`/job-detail?id=${j.id}`); };
+  
   const formatDate = (date: Date) => {
     if (!date) return "Огноо алга";
     const now = new Date();
@@ -316,10 +216,13 @@ function JobCard({
     if (diffInDays === 1) return "Өчигдөр";
     return `${diffInDays} өдрийн өмнө`;
   };
+  
   if (j?.isActive === false) return null;
-  const CatIcon = getCategoryIcon(j.category ?? "");
+  
+  const iconEmoji = getCategoryIcon(j.category ?? "");
   const isSponsored = !!j.isSponsored;
   const postedAtDate: Date = j.postedDate ?? toSafeDate((j as any).created_at ?? (j as any).updated_at);
+  
   return (
     <TouchableOpacity style={[styles.jobCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={handleCardPress}>
       <View style={styles.feedHeader}>
@@ -328,7 +231,7 @@ function JobCard({
             <Image source={{ uri: photoUri }} style={styles.feedAvatar} transition={200} />
           ) : (
             <View style={[styles.feedAvatar, { backgroundColor: colors.accent }]}>
-              <Text style={[styles.posterInitial, { color: colors.headerText }]}>{initial}</Text>
+               <Text style={[styles.posterInitial, { color: colors.headerText }]}>{initial}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -368,7 +271,7 @@ function JobCard({
 
       <View style={styles.feedFooter}>
         <View style={[styles.feedTagBadge, { backgroundColor: colors.backgroundSecondary }]}>
-          <CatIcon size={14} color={colors.textSecondary} />
+          <Text style={{ fontSize: 14 }}>{iconEmoji}</Text>
           <Text style={[styles.feedTagText, { color: colors.textSecondary }]} numberOfLines={1}>{j.category ?? "Категори"}</Text>
         </View>
         {j.subcategory ? (
@@ -392,7 +295,6 @@ function ThemeSelector({ visible, onClose }: { visible: boolean; onClose: () => 
   ];
   const PREVIEW_BACKGROUNDS: Record<ThemeType, string> = { purple: "#6E0AB0", peach: "#FF6F61", navy: "#201A2E", gray: "#D0D2D8", mint: "#8FE3CF", sky: "#AFC6D9" };
   return (
-    /* 🎯 ЗАСВАР: onRequestClose={close} байсныг зөв зүйтэй onRequestClose={onClose} болгож лавшруулан засав */
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <TouchableOpacity style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" }} activeOpacity={1} onPress={onClose} />
@@ -430,15 +332,24 @@ export default function HomeScreen() {
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  
   const [dbCategories, setDbCategories] = useState<DbCategoryRow[]>([]);
   const [dbSubcategories, setDbSubcategories] = useState<DbSubcategoryRow[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [openCategoryIds, setOpenCategoryIds] = useState<Record<string, boolean>>({});
+  
   const [searchText, setSearchText] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [safeIsLoading, setSafeIsLoading] = useState(true);
+
+  // 🎯 Хувилбар болон Баярын мэдэгдлийн state-үүд
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [announcement, setAnnouncement] = useState<{ title: string; message: string; image_url?: string | null } | null>(null);
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  
   useEffect(() => { setSafeIsLoading(isLoading); if (isLoading) { const fallbackTimer = setTimeout(() => { setSafeIsLoading(false); }, 5000); return () => clearTimeout(fallbackTimer); } }, [isLoading]);
+  
   const searchJobsRef = useRef(searchJobs);
   const clearSearchRef = useRef(clearSearch);
   useEffect(() => { searchJobsRef.current = searchJobs; }, [searchJobs]);
@@ -446,16 +357,55 @@ export default function HomeScreen() {
 
   const [homeBanners, setHomeBanners] = useState<any[]>([]);
   const loadHomeBanners = useCallback(async () => { try { const b = await fetchBanners("home_feed", 3); setHomeBanners(b ?? []); } catch (e) { setHomeBanners([]); } }, []);
+  
+  // 🎯 Баазаас хувилбар болон постер шалгах функц
+  const checkVersionAndAnnouncements = useCallback(async () => {
+    try {
+      // 1. Апп-ын хувилбар шалгах
+      const { data: configData, error: configErr } = await supabase
+        .from('app_config')
+        .select('key, value');
+        
+      if (!configErr && configData) {
+        const minVersionConfig = configData.find(c => c.key === 'min_version');
+        if (minVersionConfig && minVersionConfig.value > CURRENT_VERSION) {
+          setShowUpdateModal(true);
+          return;
+        }
+      }
+
+      // 2. Баярын мэндчилгээ / Постер унших
+      const { data: annData, error: annErr } = await supabase
+        .from('system_announcements')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (!annErr && annData && annData.length > 0) {
+        setAnnouncement(annData[0]);
+        setShowAnnouncementModal(true);
+      }
+    } catch (e) {
+      console.log("Error checking app config/announcements:", e);
+    }
+  }, []);
+
   const fetchCategories = useCallback(async () => {
     setCategoriesLoading(true);
     try {
-      const { data, error } = await supabase.from("categories").select("id,name,sort_order").order("sort_order", { ascending: true });
+      const { data, error } = await supabase.from("categories").select("id,name,icon,sort_order").order("sort_order", { ascending: true });
       if (error) throw error; setDbCategories((data as DbCategoryRow[]) ?? []);
-      const { data: subs, error: subErr } = await supabase.from("subcategories").select("id,name,category_id,sort_order").order("sort_order", { ascending: true });
+      const { data: subs, error: subErr } = await supabase.from("subcategories").select("id,name,icon,category_id,sort_order").order("sort_order", { ascending: true });
       if (subErr) throw subErr; setDbSubcategories((subs as DbSubcategoryRow[]) ?? []);
     } catch (e) { setDbCategories([]); setDbSubcategories([]); } finally { setCategoriesLoading(false); }
   }, []);
-  useEffect(() => { fetchCategories(); }, [fetchCategories]);
+  
+  useEffect(() => { 
+    fetchCategories(); 
+    checkVersionAndAnnouncements(); 
+  }, [fetchCategories, checkVersionAndAnnouncements]);
+
   useEffect(() => { loadHomeBanners(); }, [loadHomeBanners]);
   useEffect(() => { if (!lastUpdatedAt && jobs.length > 0) setLastUpdatedAt(new Date()); }, [jobs, lastUpdatedAt]);
   
@@ -463,18 +413,34 @@ export default function HomeScreen() {
     setRefreshing(true);
     try {
       const q = searchText.trim();
-      await Promise.all([q ? searchJobsRef.current ? searchJobsRef.current(q) : Promise.resolve() : loadJobs(), fetchCategories(), loadHomeBanners()]);
+      await Promise.all([
+        q ? searchJobsRef.current ? searchJobsRef.current(q) : Promise.resolve() : loadJobs(), 
+        fetchCategories(), 
+        loadHomeBanners(),
+        checkVersionAndAnnouncements() 
+      ]);
       setLastUpdatedAt(new Date());
     } catch (e) {} finally { setRefreshing(false); }
-  }, [loadJobs, fetchCategories, searchText, loadHomeBanners]);
-
+  }, [loadJobs, fetchCategories, searchText, loadHomeBanners, checkVersionAndAnnouncements]);
+  
   const normalizedJobs: NormalizedJob[] = useMemo(() => (jobs as any[]).map(normalizeJob), [jobs]);
+  
   const subByCategoryId = useMemo(() => { const m: Record<string, DbSubcategoryRow[]> = {}; for (const s of dbSubcategories) { if (!m[s.category_id]) m[s.category_id] = []; m[s.category_id].push(s); } return m; }, [dbSubcategories]);
   const categoryById = useMemo(() => { const map: Record<string, DbCategoryRow> = {}; for (const item of dbCategories) map[item.id] = item; return map; }, [dbCategories]);
   const subcategoryById = useMemo(() => { const map: Record<string, DbSubcategoryRow> = {}; for (const item of dbSubcategories) map[item.id] = item; return map; }, [dbSubcategories]);
-  const categoryNames = useMemo(() => dbCategories.map((c) => c.name).filter(Boolean), [dbCategories]);
-  const categoryIconMap = useMemo(() => buildUniqueIconMap(categoryNames), [categoryNames]);
-  const getCategoryIcon = useCallback((name: string) => { if (!name) return Tag; return categoryIconMap[name] ?? Tag; }, [categoryIconMap]);
+  
+  const getCategoryIcon = useCallback((name: string): string => { 
+    if (!name) return "🏷️"; 
+    const cat = dbCategories.find(c => c.name === name);
+    if (cat?.icon) return cat.icon;
+    for (const c of dbCategories) {
+      const sub = dbSubcategories.find(s => s.name === name);
+      if (sub?.icon) return sub.icon;
+      if (sub && c.icon) return c.icon;
+    }
+    return "🏷️";
+  }, [dbCategories, dbSubcategories]);
+
   const selectedCategoryNames = useMemo(() => selectedCategoryIds.map((id) => categoryById[id]?.name).filter(Boolean), [selectedCategoryIds, categoryById]);
   const selectedSubcategoryNames = useMemo(() => selectedSubcategoryIds.map((id) => subcategoryById[id]?.name).filter(Boolean), [selectedSubcategoryIds, subcategoryById]);
   
@@ -508,9 +474,10 @@ export default function HomeScreen() {
   const toggleOpen = (id: string) => { setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] })); };
   const toggleMain = (catId: string) => { setSelectedCategoryIds((prev) => { const on = prev.includes(catId); const next = on ? prev.filter((x) => x !== catId) : [...prev, catId]; if (on) { const subs = (subByCategoryId[catId] ?? []).map((s) => s.id); setSelectedSubcategoryIds((current) => current.filter((id) => !subs.includes(id))); } return next; }); };
   const toggleSub = (catId: string, subId: string) => { setSelectedCategoryIds((prev) => prev.includes(catId) ? prev : [...prev, catId]); setSelectedSubcategoryIds((prev) => { const on = prev.includes(subId); return on ? prev.filter((x) => x !== subId) : [...prev, subId]; }); };
+  
   const matchesSearch = useCallback((text: string) => searchMatch(text, categorySearch), [categorySearch]);
   const canApply = selectedCategoryIds.length > 0 || selectedSubcategoryIds.length > 0;
-
+  
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(async () => {
@@ -522,7 +489,7 @@ export default function HomeScreen() {
     }, 350);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchText]);
-
+  
   const clearTopSearch = useCallback(async () => { setSearchText(""); try { if (clearSearchRef.current) await clearSearchRef.current(); setLastUpdatedAt(new Date()); } catch (e) {} }, []);
   
   const handleRetryLoad = () => {
@@ -610,6 +577,62 @@ export default function HomeScreen() {
       <TouchableOpacity style={[styles.floatingButton, { backgroundColor: colors.primary }]} onPress={() => setShowThemeSelector(true)} activeOpacity={0.8}><Palette size={24} color={colors.headerText} /></TouchableOpacity>
       <ThemeSelector visible={showThemeSelector} onClose={() => setShowThemeSelector(false)} />
 
+      {/* 🎯 МОДАЛ 1: Хүчээр Шинэчлэлт хийлгэх (Force Update) */}
+      <Modal visible={showUpdateModal} animationType="fade" transparent={true}>
+        <View style={styles.versionOverlay}>
+          <View style={[styles.versionContent, { backgroundColor: colors.card }]}>
+            <Sparkles size={48} color={colors.primary} style={{ marginBottom: 16 }} />
+            <Text style={[styles.versionTitle, { color: colors.text }]}>Шинэчлэлт олдлоо! 🚀</Text>
+            <Text style={[styles.versionDesc, { color: colors.textSecondary }]}>
+              Tureesly аппликейшнийг хэвийн ашиглахын тулд та заавал шинэ хувилбарыг татах шаардлагатай байна.
+            </Text>
+            <TouchableOpacity 
+              style={[styles.versionBtn, { backgroundColor: colors.primary }]} 
+              onPress={() => Linking.openURL("https://tureesly.mn")} 
+            >
+              <Text style={{ color: colors.headerText, fontWeight: "700", fontSize: 16 }}>Шинэчлэх</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🎯 МОДАЛ 2: Баярын постер / Чухал мэдэгдэл */}
+      <Modal visible={showAnnouncementModal} animationType="slide" transparent={true} onRequestClose={() => setShowAnnouncementModal(false)}>
+        <View style={styles.versionOverlay}>
+          <View style={[styles.annContent, { backgroundColor: colors.card }]}>
+            <View style={styles.annHeader}>
+              <Text style={[styles.annTitle, { color: colors.text }]} numberOfLines={1}>{announcement?.title}</Text>
+              <TouchableOpacity onPress={() => setShowAnnouncementModal(false)} style={{ padding: 4 }}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={{ maxHeight: 380, marginBottom: 16 }} showsVerticalScrollIndicator={false}>
+              {/* 🎯 ЗАССАН: Хэрэв баазад зургийн линк байвал энд уншиж харуулна */}
+              {announcement?.image_url && (
+                <Image 
+                  source={{ uri: announcement.image_url }} 
+                  style={styles.annImage} 
+                  contentFit="cover" 
+                  transition={300}
+                />
+              )}
+              <Text style={[styles.annMessage, { color: colors.textSecondary, marginTop: announcement?.image_url ? 12 : 0 }]}>
+                {announcement?.message}
+              </Text>
+            </ScrollView>
+            
+            <TouchableOpacity 
+              style={[styles.versionBtn, { backgroundColor: colors.primary }]} 
+              onPress={() => setShowAnnouncementModal(false)}
+            >
+              <Text style={{ color: colors.headerText, fontWeight: "700", fontSize: 15 }}>Баярлалаа</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Категори Сонгох Модал */}
       <Modal visible={showCategoryModal} animationType="slide" transparent statusBarTranslucent onShow={() => { Keyboard.dismiss(); }} onRequestClose={() => setShowCategoryModal(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setShowCategoryModal(false)}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalKeyboardWrap}>
@@ -629,25 +652,42 @@ export default function HomeScreen() {
                       const isSearching = !!categorySearch.trim();
                       const isOpen = isSearching ? categoryMatches || subs.some((s) => matchesSearch(s.name)) || !!openCategoryIds[c.id] : !!openCategoryIds[c.id];
                       const mainOn = selectedCategoryIds.includes(c.id);
-                      const MainIcon = getCategoryIcon(c.name);
+                      const mainIconEmoji = getCategoryIcon(c.name);
                       const visibleSubs = isSearching ? categoryMatches ? subs : subs.filter((s) => matchesSearch(s.name)) : subs;
+                      
                       return (
                         <View key={c.id} style={{ marginBottom: 8 }}>
                           <TouchableOpacity style={[styles.categoryItem, { backgroundColor: colors.backgroundSecondary, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }, mainOn && { backgroundColor: colors.accent }]} activeOpacity={0.85} onPress={() => toggleOpen(c.id)}>
-                            <View style={{ flex: 1 }}><View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><MainIcon size={18} color={colors.text} /><Text style={[styles.categoryItemText, { color: colors.text, fontWeight: mainOn ? "800" : "700" }]} numberOfLines={1}>{c.name}</Text></View>{subs.length > 0 ? (<Text style={{ marginTop: 2, opacity: 0.6, color: colors.textSecondary }} numberOfLines={1}>{isOpen ? "Дэдүүдийг нуух" : "Дэдүүдийг харах"}</Text>) : (<View style={{ height: 0 }} />)}</View>
-                            <TouchableOpacity onPress={() => toggleMain(c.id)} activeOpacity={0.85} style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: "rgba(0,0,0,0.12)" }}><Text style={{ fontWeight: "800", color: colors.text }}>{mainOn ? "Сонгосон" : "Сонгох"}</Text></TouchableOpacity>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                                <Text style={{fontSize: 18}}>{mainIconEmoji}</Text>
+                                <Text style={[styles.categoryItemText, { color: colors.text, fontWeight: mainOn ? "800" : "700" }]} numberOfLines={1}>{c.name}</Text>
+                              </View>
+                              {subs.length > 0 ? (<Text style={{ marginTop: 2, opacity: 0.6, color: colors.textSecondary }} numberOfLines={1}>{isOpen ? "Дэдүүдийг нуух" : "Дэдүүдийг харах"}</Text>) : (<View style={{ height: 0 }} />)}
+                            </View>
+                            <TouchableOpacity onPress={() => toggleMain(c.id)} activeOpacity={0.85} style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: "rgba(0,0,0,0.12)" }}>
+                              <Text style={{ fontWeight: "800", color: colors.text }}>{mainOn ? "Сонгосон" : "Сонгох"}</Text>
+                            </TouchableOpacity>
                           </TouchableOpacity>
                           {isOpen && visibleSubs.length > 0 && (
                             <View style={{ paddingLeft: 12, paddingTop: 6, gap: 6 }}>
                               {visibleSubs.map((s) => {
                                 const subOn = selectedSubcategoryIds.includes(s.id);
-                                return (<TouchableOpacity key={s.id} activeOpacity={0.85} onPress={() => toggleSub(c.id, s.id)} style={[styles.categoryItem, { backgroundColor: colors.backgroundSecondary, paddingVertical: 12 }, subOn && { backgroundColor: colors.accent }]}><View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><Tag size={16} color={colors.text} /><Text style={[styles.categoryItemText, { color: colors.text, fontWeight: subOn ? "800" : "600" }]}>{s.name} {subOn ? "✓" : ""}</Text></View></TouchableOpacity>);
+                                const subIcon = s.icon || c.icon || "🏷️";
+                                return (
+                                  <TouchableOpacity key={s.id} activeOpacity={0.85} onPress={() => toggleSub(c.id, s.id)} style={[styles.categoryItem, { backgroundColor: colors.backgroundSecondary, paddingVertical: 12 }, subOn && { backgroundColor: colors.accent }]}>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                                      <Text style={{fontSize: 16}}>{subIcon}</Text>
+                                      <Text style={[styles.categoryItemText, { color: colors.text, fontWeight: subOn ? "800" : "600" }]}>{s.name} {subOn ? "✓" : ""}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                );
                               })}
                             </View>
                           )}
                         </View>
                       );
-                   })
+                  })
                 )}
               </ScrollView>
               <TouchableOpacity style={[styles.applyButton, { backgroundColor: colors.accent }, !canApply && { opacity: 0.45 }]} disabled={!canApply} onPress={() => { setShowCategoryModal(false); setCategorySearch(""); }} activeOpacity={0.85}><Text style={[styles.applyButtonText, { color: colors.text }]}>Сонгох</Text></TouchableOpacity>
@@ -718,4 +758,21 @@ const styles = StyleSheet.create({
   selectedCategoryBadge: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, gap: 8 },
   selectedCategoryText: { fontSize: 14, fontWeight: "700" },
   clearCategoryButton: { padding: 4 },
+
+  // 🎯 ШИНЭ СТАЙЛУУД
+  versionOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.6)", justifyContent: "center", alignItems: "center", padding: 24 },
+  versionContent: { width: "100%", padding: 28, borderRadius: 24, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 12, elevation: 5 },
+  versionTitle: { fontSize: 22, fontWeight: "800", marginBottom: 12, textAlign: "center" },
+  versionDesc: { fontSize: 14, lineHeight: 22, textAlign: "center", marginBottom: 24 },
+  versionBtn: { width: "100%", paddingVertical: 14, borderRadius: 14, alignItems: "center" },
+  annContent: { width: "100%", padding: 24, borderRadius: 20, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 12, elevation: 5 },
+  annHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  annTitle: { fontSize: 18, fontWeight: "800", flex: 1, paddingRight: 8 },
+  annMessage: { fontSize: 14, lineHeight: 22 },
+  annImage: {
+  width: "100%",
+  aspectRatio: 1000 / 1200, // 🎯 НЭМСЭН: Зургийг яг 1000х1200 харьцаатай босоо болгоно
+  borderRadius: 12,
+  marginBottom: 8,
+}, // 🎯 НЭМСЭН: Постер зургийн стайл
 });
