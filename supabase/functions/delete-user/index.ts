@@ -46,15 +46,24 @@ serve(async (req) => {
       });
     }
 
-    // ✅ only self-delete
-    if (udata.user.id !== userId) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     const admin = createClient(url, serviceKey);
+
+    // A caller may always delete their own account. Deleting another account
+    // requires a server-side super-admin check; the client UI is not trusted.
+    if (udata.user.id !== userId) {
+      const { data: callerProfile, error: callerProfileError } = await admin
+        .from("users")
+        .select("is_super_admin")
+        .eq("id", udata.user.id)
+        .maybeSingle();
+
+      if (callerProfileError || callerProfile?.is_super_admin !== true) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // 1) public.users (table) устгана
     const { error: dbErr } = await admin.from("users").delete().eq("id", userId);

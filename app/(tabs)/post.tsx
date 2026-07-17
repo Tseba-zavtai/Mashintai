@@ -19,7 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useJobs } from "@/contexts/JobsContext";
 import { useRouter } from "expo-router";
 import * as Location from "expo-location";
-import * as FileSystem from "expo-file-system/legacy";
+import { File } from "expo-file-system";
 import * as ImageManipulator from "expo-image-manipulator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -30,9 +30,9 @@ import AppHeader from "@/components/AppHeader";
 
 import { searchMatch } from "@/lib/searchUtils";
 
-const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null;
-const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : null;
-const PROVIDER_GOOGLE = Platform.OS !== "web" ? require("react-native-maps").PROVIDER_GOOGLE : null;
+const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null; // eslint-disable-line @typescript-eslint/no-require-imports
+const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : null; // eslint-disable-line @typescript-eslint/no-require-imports
+const PROVIDER_GOOGLE = Platform.OS !== "web" ? require("react-native-maps").PROVIDER_GOOGLE : null; // eslint-disable-line @typescript-eslint/no-require-imports
 
 type PickedLocation = { latitude: number; longitude: number; address?: string; };
 type PickedImage = { uri: string; name: string; mimeType: string; };
@@ -84,31 +84,8 @@ function sanitizeFileNamePart(value: string) {
   return value.replace(/[^a-zA-Z0-9-_]/g, "");
 }
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let bufferLength = base64.length * 0.75;
-  const len = base64.length;
-  if (base64[len - 1] === "=") bufferLength--;
-  if (base64[len - 2] === "=") bufferLength--;
-  const arrayBuffer = new ArrayBuffer(bufferLength);
-  const bytes = new Uint8Array(arrayBuffer);
-  let p = 0;
-  for (let i = 0; i < len; i += 4) {
-    const encoded1 = chars.indexOf(base64[i]);
-    const encoded2 = chars.indexOf(base64[i + 1]);
-    const encoded3 = chars.indexOf(base64[i + 2]);
-    const encoded4 = chars.indexOf(base64[i + 3]);
-    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
-    if (encoded3 !== 64 && encoded3 !== -1) bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
-    if (encoded4 !== 64 && encoded4 !== -1) bytes[p++] = ((encoded3 & 3) << 6) | encoded4;
-  }
-  return arrayBuffer;
-}
-
 async function uriToArrayBuffer(uri: string): Promise<ArrayBuffer> {
-  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: "base64" as any });
-  if (!base64) throw new Error("Зураг уншихад алдаа гарлаа");
-  return base64ToArrayBuffer(base64);
+  return new File(uri).arrayBuffer();
 }
 
 export default function PostScreen() {
@@ -195,7 +172,7 @@ export default function PostScreen() {
     try {
       const banners = await fetchBanners("add_tab", 3);
       setAddBanners(banners ?? []);
-    } catch (error) { setAddBanners([]); }
+    } catch { setAddBanners([]); }
   }, []);
 
   useEffect(() => { loadAddBanners(); }, [loadAddBanners]);
@@ -218,7 +195,7 @@ export default function PostScreen() {
     })();
   }, []);
 
-  useEffect(() => { if (!isAuthenticated) { router.push("/auth"); } }, [isAuthenticated]);
+  useEffect(() => { if (!isAuthenticated) { router.push("/auth"); } }, [isAuthenticated, router]);
 
   const handleMapPress = async (event: any) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
@@ -289,27 +266,30 @@ export default function PostScreen() {
       if (!images.length) return [];
       const userIdRaw = (user as any)?.id || "anonymous";
       const userId = sanitizeFileNamePart(String(userIdRaw));
-      const uploadedPaths: string[] = [];
-      const publicUrls: string[] = [];
+      let uploadedPaths: string[] = [];
       try {
-        for (let i = 0; i < images.length; i += 1) {
-          const image = images[i];
+        const uploadResults = await Promise.allSettled(images.map(async (image, index) => {
           const ext = getFileExtension(image.uri, image.mimeType);
           const safeExt = sanitizeFileNamePart(ext || "jpg") || "jpg";
-          const fileName = `${Date.now()}-${i}.${safeExt}`;
+          const fileName = `${Date.now()}-${index}.${safeExt}`;
           const filePath = `${userId}/${fileName}`;
           const fileData = await uriToArrayBuffer(image.uri);
           const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(filePath, fileData, { contentType: image.mimeType || "image/jpeg", upsert: false });
           if (uploadError) throw uploadError;
-          uploadedPaths.push(filePath);
           const { data: publicData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(filePath);
-          if (publicData?.publicUrl) publicUrls.push(publicData.publicUrl);
-        }
-        return publicUrls;
+          if (!publicData?.publicUrl) throw new Error("IMAGE_PUBLIC_URL_UNAVAILABLE");
+          return { filePath, publicUrl: publicData.publicUrl };
+        }));
+
+        uploadedPaths = uploadResults
+          .filter((result): result is PromiseFulfilledResult<{ filePath: string; publicUrl: string }> => result.status === "fulfilled")
+          .map((result) => result.value.filePath);
+        const failedUpload = uploadResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
+        if (failedUpload) throw failedUpload.reason;
+
+        return uploadResults.map((result) => (result as PromiseFulfilledResult<{ filePath: string; publicUrl: string }>).value.publicUrl);
       } catch (error) {
-        for (const path of uploadedPaths) {
-          try { await supabase.storage.from(STORAGE_BUCKET).remove([path]); } catch (removeError) { console.log("ROLLBACK STORAGE REMOVE ERROR:", removeError); }
-        }
+        await Promise.allSettled(uploadedPaths.map((path) => supabase.storage.from(STORAGE_BUCKET).remove([path])));
         throw error;
       }
     }, [user]);
@@ -342,7 +322,7 @@ export default function PostScreen() {
       setSubmitting(true);
       const imageUrls = await uploadImagesToSupabase(pickedImages);
       const { data: creditRows, error: creditError } = await supabase
-        .from("profiles")
+        .from("users")
         .update({ available_post_credits: remainingCredits })
         .eq("id", (user as any)?.id)
         .eq("available_post_credits", originalCredits)
@@ -372,7 +352,7 @@ export default function PostScreen() {
       if (creditConsumed && !jobCreated) {
         try {
           const { error: rollbackError } = await supabase
-            .from("profiles")
+            .from("users")
             .update({ available_post_credits: originalCredits })
             .eq("id", (user as any)?.id)
             .eq("available_post_credits", remainingCredits);

@@ -15,12 +15,14 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { RefreshCw, Trash2, Edit2, Award, X, Search, MessageSquare } from "lucide-react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import { Job, JOB_CATEGORIES } from "@/mocks/jobs";
 import { useJobs } from "@/contexts/JobsContext";
 import { supabase } from "@/lib/supabase";
+import AppHeader from "@/components/AppHeader";
+import { useTheme } from "@/contexts/ThemeContext";
 
 type AdminUser = {
   id: string;
@@ -143,10 +145,11 @@ function DateRow({
 
 export default function AdminPanel() {
   const router = useRouter();
+  const { colors } = useTheme();
   const queryClient = useQueryClient();
   const { isSuperAdmin, isAdminUnlocked } = useAuth() as any;
   const { updateJobCategory, deleteJob, sponsorJob } = useJobs();
-  const [activeTab, setActiveTab] = useState<"users" | "jobs" | "feedback">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "jobs" | "banners" | "feedback">("users");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -171,7 +174,7 @@ export default function AdminPanel() {
   const hasAdminAccess = Boolean(isSuperAdmin && isAdminUnlocked);
 
   // ✅ Зөвхөн хэрэглэгч бүрмөсөн устгах үйлдэл л Edge Function шаардана (RLS-ээс гадуур устгах учраас)
-  const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
+  const DELETE_USER_URL = "https://wrekrjaitokrqydkwgtg.functions.supabase.co/delete-user";
 
   // ✅ USERS query (ШУУД БААЗААС ТАТАХ - Edge Function хэрэггүй)
   const usersQuery = useQuery({
@@ -212,6 +215,18 @@ export default function AdminPanel() {
     enabled: hasAdminAccess,
   });
 
+  const bannersQuery = useQuery({
+    queryKey: ["admin-banners"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("banners").select("*").order("created_at", { ascending: false });
+      if (error) {
+        console.log("admin-banners query error:", error);
+        throw error;
+      }
+      return data || [];
+    },
+    enabled: hasAdminAccess,
+  });
   // ✅ FEEDBACK query (ШУУД БААЗААС ТАТАХ - Edge Function хэрэггүй)
   const feedbackQuery = useQuery({
     queryKey: ["admin-feedback"],
@@ -406,7 +421,7 @@ export default function AdminPanel() {
   if (!hasAdminAccess) {
     return (
       <View style={styles.container}>
-        <Stack.Screen options={{ title: "Админ Панел", headerShown: true }} />
+        <AppHeader title="Админ самбар" />
         <View style={styles.loginContainer}>
           <Text style={styles.loginTitle}>Хандах эрхгүй</Text>
           <Text style={styles.loginSubtitle}>
@@ -423,25 +438,23 @@ export default function AdminPanel() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: "Админ Панел",
-          headerShown: true,
-          headerRight: () => (
-            <TouchableOpacity
-              onPress={() => {
-                usersQuery.refetch();
-                jobsQuery.refetch();
-                feedbackQuery.refetch();
-              }}
-              style={styles.refreshButton}
-            >
-              <RefreshCw size={20} color="#007AFF" />
-            </TouchableOpacity>
-          ),
-        }}
+      <AppHeader
+        title="Админ самбар"
+        rightAccessory={
+          <TouchableOpacity
+            onPress={() => {
+              usersQuery.refetch();
+              jobsQuery.refetch();
+              bannersQuery.refetch();
+              feedbackQuery.refetch();
+            }}
+            style={styles.refreshButton}
+            accessibilityLabel="Шинэчлэх"
+          >
+            <RefreshCw size={20} color={colors.headerText} />
+          </TouchableOpacity>
+        }
       />
-
       <View style={styles.masterSearchContainer}>
         <View style={styles.searchInputWrapper}>
           <Search size={20} color="#999" style={styles.searchIcon} />
@@ -510,6 +523,14 @@ export default function AdminPanel() {
           </Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.tab, activeTab === "banners" && styles.activeTab]}
+          onPress={() => setActiveTab("banners")}
+        >
+          <Text style={[styles.tabText, activeTab === "banners" && styles.activeTabText]}>
+            Баннер ({bannersQuery.data?.length || 0})
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === "feedback" && styles.activeTab]}
           onPress={() => setActiveTab("feedback")}
@@ -622,6 +643,9 @@ export default function AdminPanel() {
                         </View>
                       </View>
 
+                      {(Number(job.sponsored_view_count ?? 0) > 0 || Number(job.sponsored_click_count ?? 0) > 0) && (
+                        <Text style={styles.cardInfo}>📈 Үзэлт: {Number(job.sponsored_view_count ?? 0).toLocaleString()} · Даралт: {Number(job.sponsored_click_count ?? 0).toLocaleString()}</Text>
+                      )}
                       {job.category && job.category !== job.title && <Text style={styles.cardInfo}>🏷️ {job.category}</Text>}
 
                       {!!job.description && (
@@ -649,6 +673,32 @@ export default function AdminPanel() {
                 })}
 
                 {(jobsQuery.data || []).length === 0 && <Text style={styles.emptyText}>Зар байхгүй байна</Text>}
+              </>
+            )}
+          </View>
+        ) : activeTab === "banners" ? (
+          <View>
+            {bannersQuery.isLoading ? (
+              <ActivityIndicator size="large" color="#007AFF" style={styles.loader} />
+            ) : bannersQuery.error ? (
+              <Text style={styles.errorText}>Алдаа гарлаа: {String((bannersQuery.error as any)?.message ?? bannersQuery.error)}</Text>
+            ) : (
+              <>
+                {(bannersQuery.data || []).map((banner: any) => {
+                  const placementLabel = banner.placement === "home_feed" ? "Нүүр" : "Зар нэмэх";
+                  const isActive = banner.is_active === true;
+                  return (
+                    <View key={banner.id} style={styles.card}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>{banner.title || "Гарчиггүй баннер"}</Text>
+                        <Text style={[styles.cardInfo, { color: isActive ? "#059669" : "#999", marginTop: 0 }]}>{isActive ? "Идэвхтэй" : "Идэвхгүй"}</Text>
+                      </View>
+                      <Text style={styles.cardInfo}>Байршил: {placementLabel}</Text>
+                      <Text style={[styles.cardInfo, { marginTop: 8, color: "#111", fontWeight: "600" }]}>📈 Үзэлт: {Number(banner.view_count ?? 0).toLocaleString()} · Даралт: {Number(banner.click_count ?? 0).toLocaleString()}</Text>
+                    </View>
+                  );
+                })}
+                {(bannersQuery.data || []).length === 0 && <Text style={styles.emptyText}>Баннер байхгүй байна</Text>}
               </>
             )}
           </View>

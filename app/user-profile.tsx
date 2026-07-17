@@ -10,13 +10,14 @@ import { useAuth } from "@/contexts/AuthContext";
 // 🎯 ЗАССАН: ChevronLeft-ийг хасаж, AppHeader-ийг дуудсан
 import { User, Star, Briefcase, MessageSquare } from "lucide-react-native"; 
 import { supabase } from "@/lib/supabase";
-import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН
+import AppHeader from "@/components/AppHeader";
+import { isSponsoredPromotionActive, recordPromotionMetric } from "@/lib/promotionMetrics"; // 🎯 НЭМСЭН
 
 export default function UserProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const router = useRouter();
   const { colors, currentTheme } = useTheme();
-  const { jobs, submitRentalReview, rentalRequests } = useJobs() as any;
+  const { jobs, submitRentalReview, rentalRequests, loadRentalRequests } = useJobs() as any;
   const { user: currentUser } = useAuth() as any;
 
   const [profileUser, setProfileUser] = useState<any>(null);
@@ -26,6 +27,7 @@ export default function UserProfileScreen() {
   const [rating, setRating] = useState(1);
   const [comment, setComment] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewedRequestIds, setReviewedRequestIds] = useState<Set<string>>(new Set());
 
   const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
   const userBtnTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
@@ -54,6 +56,18 @@ export default function UserProfileScreen() {
           .order('created_at', { ascending: false });
 
         if (revData) setReviews(revData);
+
+        if (currentUser?.id) {
+          const { data: ownReviewRows, error: ownReviewError } = await supabase
+            .from("rental_reviews")
+            .select("request_id")
+            .eq("reviewer_id", currentUser.id)
+            .not("request_id", "is", null);
+          if (ownReviewError) throw ownReviewError;
+          setReviewedRequestIds(new Set((ownReviewRows ?? []).map((row: any) => String(row.request_id))));
+        } else {
+          setReviewedRequestIds(new Set());
+        }
       } catch (e) {
         console.log(e);
       } finally {
@@ -61,7 +75,7 @@ export default function UserProfileScreen() {
       }
     };
     fetchUserAndReviews();
-  }, [userId, profileUser?.id]);
+  }, [userId, profileUser?.id, currentUser?.id]);
 
   const userJobs = useMemo(() => {
     return (jobs as any[]).filter((j: any) => {
@@ -77,11 +91,11 @@ export default function UserProfileScreen() {
      const targetId = profileUser?.id || userId;
      return rentalRequests.find((req: any) =>
         req.status === 'completed' &&
-        !req.is_reviewed &&
+        !reviewedRequestIds.has(req.id) &&
         ((req.requester_id === currentUser.id && req.owner_id === targetId) ||
          (req.owner_id === currentUser.id && req.requester_id === targetId))
      );
-  }, [rentalRequests, currentUser, profileUser, userId]);
+  }, [rentalRequests, currentUser, profileUser, userId, reviewedRequestIds]);
 
   const handleSubmitReview = async () => {
     if (!pendingRequest) return;
@@ -89,13 +103,17 @@ export default function UserProfileScreen() {
       setReviewSubmitting(true);
       await submitRentalReview({
         jobId: pendingRequest.job_id,
+        requestId: pendingRequest.id,
+        reviewedUserId: pendingRequest.owner_id === currentUser?.id ? pendingRequest.requester_id : pendingRequest.owner_id,
         itemRating: rating,
         userRating: rating,
         comment: comment
       });
+      setReviewedRequestIds((previous) => new Set(previous).add(pendingRequest.id));
+      await loadRentalRequests?.();
       Alert.alert("Баярлалаа", "Таны үнэлгээг хүлээж авлаа!");
       setComment("");
-    } catch (e) {
+    } catch {
       Alert.alert("Анхаар", "Үнэлгээ илгээхэд алдаа гарлаа.");
     } finally {
       setReviewSubmitting(false);
@@ -168,7 +186,7 @@ export default function UserProfileScreen() {
                 />
 
                 <TouchableOpacity style={[styles.submitReviewBtn, { backgroundColor: colors.primary }]} onPress={handleSubmitReview} disabled={reviewSubmitting} activeOpacity={0.8}>
-                  {reviewSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={[styles.submitReviewText, { color: userBtnTextColor }]}>Үнэлгээ илгээх</Text>}
+                  {reviewSubmitting ? <ActivityIndicator color={colors.buttonText} /> : <Text style={[styles.submitReviewText, { color: userBtnTextColor }]}>Үнэлгээ илгээх</Text>}
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -212,7 +230,7 @@ export default function UserProfileScreen() {
                 userJobs.map((job: any) => {
                   const img = getFirstImage(job);
                   return (
-                    <TouchableOpacity key={job.id} style={[styles.jobCard, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8} onPress={() => router.push(`/job-detail?id=${job.id}`)}>
+                    <TouchableOpacity key={job.id} style={[styles.jobCard, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8} onPress={() => { if (isSponsoredPromotionActive(job)) void recordPromotionMetric("sponsored_job", job.id, "click"); router.push(`/job-detail?id=${job.id}`); }}>
                       {img ? (
                         <Image source={{ uri: img }} style={styles.jobImage} contentFit="cover" transition={200} />
                       ) : (

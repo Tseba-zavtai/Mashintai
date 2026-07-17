@@ -84,7 +84,8 @@
       ],
       "./plugins/with-bank-queries",
       "expo-notifications",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

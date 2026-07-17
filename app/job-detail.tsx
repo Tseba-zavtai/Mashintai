@@ -16,7 +16,7 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useJobs } from "@/contexts/JobsContext";
 import * as ExpoLinking from "expo-linking";
 import {
@@ -38,6 +38,7 @@ import {
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { isSponsoredPromotionActive, recordPromotionMetric } from "@/lib/promotionMetrics";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AppHeader from "@/components/AppHeader"; 
 
@@ -113,6 +114,16 @@ export default function JobDetailScreen() {
   const { colors, currentTheme } = useTheme();
   const { width } = useWindowDimensions();
   const job = useMemo(() => jobs.find((j: any) => j.id === id), [jobs, id]);
+  const viewedSponsoredJobIdsRef = useRef<Set<string>>(new Set());
+  const isSponsoredJobView = isSponsoredPromotionActive(job);
+
+  useEffect(() => {
+    const jobId = String(job?.id ?? "").trim();
+    if (!jobId || !isSponsoredJobView || viewedSponsoredJobIdsRef.current.has(jobId)) return;
+
+    viewedSponsoredJobIdsRef.current.add(jobId);
+    void recordPromotionMetric("sponsored_job", jobId, "impression");
+  }, [job?.id, isSponsoredJobView]);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [rentModalVisible, setRentModalVisible] = useState(false);
   const [rentQuantity, setRentQuantity] = useState(1);
@@ -214,7 +225,7 @@ export default function JobDetailScreen() {
       const supported = await Linking.canOpenURL(phoneUrl);
       if (supported) await Linking.openURL(phoneUrl);
       else Alert.alert("Алдаа", "Утас руу залгах боломжгүй байна");
-    } catch (error) { Alert.alert("Алдаа", "Утас руу залгах явцад алдаа гарлаа"); }
+    } catch { Alert.alert("Алдаа", "Утас руу залгах явцад алдаа гарлаа"); }
   };
 
   const handleSharePress = async () => {
@@ -258,6 +269,21 @@ export default function JobDetailScreen() {
 
     try {
       setRentSubmitting(true);
+      const requesterId = user?.id;
+      if (!requesterId) throw new Error("Нэвтэрсэн хэрэглэгч олдсонгүй");
+
+      const { data: existingRequests, error: existingRequestError } = await supabase
+        .from("rental_requests")
+        .select("id")
+        .eq("job_id", job.id)
+        .eq("requester_id", requesterId)
+        .eq("status", "pending")
+        .limit(1);
+      if (existingRequestError) throw existingRequestError;
+      if ((existingRequests ?? []).length > 0) {
+        throw new Error("Та энэ зарт хүлээгдэж буй хүсэлт илгээсэн байна.");
+      }
+
       const computedTotalPrice = jobPrice * rentQuantity * calculatedDuration;
 
       const { data: requestData, error: requestError } = await supabase
@@ -265,7 +291,7 @@ export default function JobDetailScreen() {
         .insert([
           {
             job_id: job.id,
-            requester_id: user?.id,
+            requester_id: requesterId,
             owner_id: postedBy?.id,
             quantity: rentQuantity,
             rent_days: calculatedDuration,

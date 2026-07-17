@@ -27,14 +27,14 @@ export interface ColorScheme {
 }
 
 const baseLight = {
-  background: "#F9FAFB", 
-  backgroundSecondary: "#F3F4F6", 
-  card: "#FFFFFF", 
-  text: "#111111", 
-  textSecondary: "#6B7280", 
-  border: "#E5E7EB", 
-  success: "#10B981", 
-  error: "#EF4444", 
+  background: "#F9FAFB",
+  backgroundSecondary: "#F3F4F6",
+  card: "#FFFFFF",
+  text: "#111111",
+  textSecondary: "#6B7280",
+  border: "#E5E7EB",
+  success: "#10B981",
+  error: "#EF4444",
 };
 
 // 💜 1. PURPLE (Нил ягаан)
@@ -43,11 +43,11 @@ const purpleTheme: ColorScheme = {
   primary: "#6E0AB0",       // Товчлуурын суурь: Нил ягаан
   buttonText: "#FFE3DD",    // Товчлуурын текст: Тоор
   headerBackground: "#6E0AB0",
-  headerText: "#FFE3DD", 
+  headerText: "#FFE3DD",
   tint: "#6E0AB0",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
-  accent: "#F3E8FF", 
+  accent: "#F3E8FF",
 };
 
 // 🍑 2. PEACH (Тоор) -> 🎯 ЯГ ТАНЫ ХҮССЭНЭЭР: Button суурь нь өөрийнх нь Peach өнгө, текст нь Нил ягаан!
@@ -55,8 +55,8 @@ const peachTheme: ColorScheme = {
   ...baseLight,
   primary: "#FFE3DD",       // Товчлуурын суурь: #FFE3DD (Peach)
   buttonText: "#6E0AB0",    // Товчлуурын текст/icon: #6E0AB0 (Нил ягаан)
-  headerBackground: "#FFE3DD",  
-  headerText: "#6E0AB0",    
+  headerBackground: "#FFE3DD",
+  headerText: "#2E0A4D",
   tint: "#FFE3DD",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
@@ -69,7 +69,7 @@ const navyTheme: ColorScheme = {
   primary: "#201A2E",       // Товчлуурын суурь: #201A2E (Navy)
   buttonText: "#FFE3DD",    // Товчлуурын текст/icon: #FFE3DD (Peach)
   headerBackground: "#201A2E",
-  headerText: "#FFE3DD", 
+  headerText: "#FFE3DD",
   tint: "#201A2E",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
@@ -81,8 +81,8 @@ const grayTheme: ColorScheme = {
   ...baseLight,
   primary: "#D0D2D8",       // Товчлуурын суурь: #D0D2D8 (Gray)
   buttonText: "#6E0AB0",    // Товчлуурын текст/icon: #6E0AB0 (Нил ягаан)
-  headerBackground: "#D0D2D8", 
-  headerText: "#6E0AB0", 
+  headerBackground: "#D0D2D8",
+  headerText: "#2E0A4D",
   tint: "#6B7280",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
@@ -94,8 +94,8 @@ const mintTheme: ColorScheme = {
   ...baseLight,
   primary: "#8FE3CF",       // Товчлуурын суурь: #8FE3CF (Mint)
   buttonText: "#6E0AB0",    // Товчлуурын текст/icon: #6E0AB0 (Нил ягаан)
-  headerBackground: "#8FE3CF", 
-  headerText: "#6E0AB0", 
+  headerBackground: "#8FE3CF",
+  headerText: "#2E0A4D",
   tint: "#8FE3CF",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
@@ -107,8 +107,8 @@ const skyTheme: ColorScheme = {
   ...baseLight,
   primary: "#AFC6D9",       // Товчлуурын суурь: #AFC6D9 (Sky)
   buttonText: "#6E0AB0",    // Товчлуурын текст/icon: #6E0AB0 (Нил ягаан)
-  headerBackground: "#AFC6D9", 
-  headerText: "#6E0AB0", 
+  headerBackground: "#AFC6D9",
+  headerText: "#2E0A4D",
   tint: "#AFC6D9",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",

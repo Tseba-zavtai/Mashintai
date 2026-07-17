@@ -73,7 +73,7 @@ export default function MyJobsScreen() {
           try {
             setLoadingId(jobId);
             await deleteJob(jobId);
-          } catch (e) {
+          } catch {
             Alert.alert("Алдаа", "Устгахад алдаа гарлаа");
           } finally {
             setLoadingId(null);
@@ -87,7 +87,7 @@ export default function MyJobsScreen() {
     try {
       setLoadingId(jobId);
       await toggleJobActive(jobId, !currentStatus);
-    } catch (e) {
+    } catch {
       Alert.alert("Алдаа", "Төлөв өөрчлөхөд алдаа гарлаа");
     } finally {
       setLoadingId(null);
@@ -212,6 +212,7 @@ export default function MyJobsScreen() {
                     </View>
                     <Text style={[styles.sponsoredTimer, { color: colors.text }]}>Үлдсэн: {formatTimeLeft(sponsoredUntil)}</Text>
                     <Text style={[styles.sponsoredEnd, { color: colors.textSecondary }]}>Дуусах: {formatDateToYMD(sponsoredUntil)}</Text>
+                    <Text style={[styles.sponsoredEnd, { color: colors.textSecondary, marginTop: 6 }]}>Үзэлт: {Number(job.sponsored_view_count ?? 0).toLocaleString()} · Даралт: {Number(job.sponsored_click_count ?? 0).toLocaleString()}</Text>
                   </View>
                 ) : (
                   <TouchableOpacity 

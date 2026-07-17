@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { Check, X, ClipboardList, RefreshCw, PhoneCall, CheckSquare, Square } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useJobs } from "@/contexts/JobsContext";
@@ -63,30 +63,46 @@ export default function RentalRequestsScreen() {
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [reviewedRequestIds, setReviewedRequestIds] = useState<Set<string>>(new Set());
+
+  const loadReviewStatuses = useCallback(async () => {
+    if (!user?.id) {
+      setReviewedRequestIds(new Set());
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("rental_reviews")
+      .select("request_id")
+      .eq("reviewer_id", user.id)
+      .not("request_id", "is", null);
+    if (error) throw error;
+    setReviewedRequestIds(new Set((data ?? []).map((row: any) => String(row.request_id))));
+  }, [user?.id]);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      await loadRentalRequests?.();
+      await Promise.all([loadRentalRequests?.(), loadReviewStatuses()]);
     } catch (e: any) {
       Alert.alert("Алдаа", e?.message ?? "Хүсэлтүүд татахад алдаа гарлаа");
     } finally {
       setLoading(false);
     }
-  }, [loadRentalRequests]);
+  }, [loadRentalRequests, loadReviewStatuses]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(useCallback(() => {
+    void load();
+  }, [load]));
 
   const onRefresh = useCallback(async () => {
     try {
       setRefreshing(true);
-      await loadRentalRequests?.();
+      await Promise.all([loadRentalRequests?.(), loadReviewStatuses()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadRentalRequests]);
+  }, [loadRentalRequests, loadReviewStatuses]);
 
   useEffect(() => {
     const clearAllBadges = async () => {
@@ -207,29 +223,42 @@ export default function RentalRequestsScreen() {
     }
   };
 
+  const openReviewForRequest = (requestId: string, jobId: string, targetUserId: string, isOwnerView: boolean) => {
+    router.push({
+      pathname: "/review" as any,
+      params: {
+        jobId,
+        ownerId: targetUserId,
+        requestId,
+        isOwnerView: isOwnerView ? "true" : "false",
+      },
+    });
+  };
   const handleEarlyReturnRequest = async (requestId: string, jobId: string, ownerId: string) => {
     handleMarkAsRead(requestId);
-    Alert.alert("Барааг буцааж тушаах уу?", "Бараагаа эзэнд нь буцааж өгсөн бол энэ товчийг дарна уу.", [
+    Alert.alert("Бараагаа буцааж тушаах уу?", "Бараагаа эзэнд нь буцааж өгсөн бол энэ үйлдлийг баталгаажуулна уу.", [
       { text: "Болих", style: "cancel" },
       {
         text: "Буцааж өгсөн",
         onPress: async () => {
           try {
             setBusyId(requestId);
-            const { error } = await supabase.from("rental_requests").update({ status: "paid" }).eq("id", requestId); 
+            const { error } = await supabase.from("rental_requests").update({ status: "paid" }).eq("id", requestId);
             if (error) throw error;
-            Alert.alert("Амжилттай", "Эзэнд нь буцааж өгөх хүсэлт илгээлээ.");
-            loadRentalRequests?.();
+            await loadRentalRequests?.();
+            Alert.alert("Амжилттай", "Эзэнд нь бараа буцсан тухай мэдэгдлээ. Эзнийг үнэлэх үү?", [
+              { text: "Дараа", style: "cancel" },
+              { text: "Үнэлгээ өгөх", onPress: () => openReviewForRequest(requestId, jobId, ownerId, false) },
+            ]);
           } catch (e: any) {
             Alert.alert("Алдаа", e.message || "Алдаа гарлаа");
           } finally {
             setBusyId(null);
           }
-        }
-      }
+        },
+      },
     ]);
   };
-
   const handleCompleteRental = async (requestId: string) => {
     handleMarkAsRead(requestId);
     Alert.alert("Түрээс дуусгах уу?", "Бараагаа бүрэн бүтэн хүлээж авсан бол гэрээг хааж, түрээслэгчийг үнэлнэ үү.", [
@@ -252,10 +281,7 @@ export default function RentalRequestsScreen() {
               const currentQty = jobData?.quantity ? Number(jobData.quantity) : 0;
               const returnQty = requestData?.quantity ? Number(requestData.quantity) : 1;
               await supabase.from("jobs").update({ quantity: currentQty + returnQty }).eq("id", requestData.job_id);
-              router.push({
-                pathname: "/review" as any,
-                params: { jobId: requestData.job_id, ownerId: requestData.requester_id, isOwnerView: "true" }
-              });
+              openReviewForRequest(requestId, requestData.job_id, requestData.requester_id, true);
             }
             loadRentalRequests?.();
           } catch (e: any) {
@@ -305,6 +331,7 @@ export default function RentalRequestsScreen() {
               const isOwner = currentUserId === item.owner_id;
               const isRequester = currentUserId === item.requester_id;
               const isApprovedOrActive = item.status !== "pending" && item.status !== "rejected" && item.status !== "cancelled";
+               const hasReviewed = reviewedRequestIds.has(item.id);
 
               return (
                 <TouchableOpacity 
@@ -385,7 +412,7 @@ export default function RentalRequestsScreen() {
                         </>
                       )}
 
-                      {(item.status === "paid" || item.status === "in_rent") && (
+                      {(item.status === "paid") && (
                          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => handleCompleteRental(item.id)}>
                            <Check size={18} color={colors.headerText} />
                            <Text style={[styles.actionText, { color: colors.headerText }]}>Түрээс дуусгах</Text>
@@ -423,6 +450,16 @@ export default function RentalRequestsScreen() {
                           <ActivityIndicator size="small" color={colors.primary} />
                           <Text style={{ color: colors.textSecondary, marginLeft: 8, fontWeight: '600' }}>Эзнийг хүлээж байна...</Text>
                         </View>
+                      )}
+
+                      {(item.status === "paid" || item.status === "completed") && !hasReviewed && (
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                          onPress={() => openReviewForRequest(item.id, item.job_id, item.owner_id, false)}
+                        >
+                          <Check size={18} color={colors.headerText} />
+                          <Text style={[styles.actionText, { color: colors.headerText }]}>Эзнийг үнэлэх</Text>
+                        </TouchableOpacity>
                       )}
                     </View>
                   )}

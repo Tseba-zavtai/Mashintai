@@ -27,8 +27,8 @@ const MAP_HEIGHT = SCREEN_HEIGHT - 200;
 const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : null;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const PROVIDER_GOOGLE =
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   Platform.OS !== "web" ? require("react-native-maps").PROVIDER_GOOGLE : null;
 
 export default function LocationPickerScreen() {

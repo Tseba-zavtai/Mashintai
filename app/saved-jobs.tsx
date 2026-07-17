@@ -8,6 +8,7 @@ import { useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import AppHeader from "@/components/AppHeader";
+import { isSponsoredPromotionActive, recordPromotionMetric } from "@/lib/promotionMetrics";
 
 export default function SavedJobsScreen() {
   const router = useRouter();
@@ -20,8 +21,9 @@ export default function SavedJobsScreen() {
     return jobs.filter((j) => savedJobIds.includes(j.id));
   }, [jobs, savedJobIds]);
 
-  const handleCardPress = (id: string) => {
-    router.push(`/job-detail?id=${id}`);
+  const handleCardPress = (job: any) => {
+    if (isSponsoredPromotionActive(job)) void recordPromotionMetric("sponsored_job", job.id, "click");
+    router.push(`/job-detail?id=${job.id}`);
   };
 
   const getFirstImage = (job: any) => {
@@ -48,7 +50,7 @@ export default function SavedJobsScreen() {
           savedJobs.map((job) => {
             const img = getFirstImage(job);
             return (
-              <TouchableOpacity key={job.id} style={[styles.jobCard, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8} onPress={() => handleCardPress(job.id)}>
+              <TouchableOpacity key={job.id} style={[styles.jobCard, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8} onPress={() => handleCardPress(job)}>
                 {img ? (
                   <Image source={{ uri: img }} style={styles.jobImage} contentFit="cover" transition={200} />
                 ) : (

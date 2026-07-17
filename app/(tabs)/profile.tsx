@@ -33,7 +33,7 @@ import {
   Star,
   Heart,
   Briefcase,
-  Info,
+
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
@@ -42,13 +42,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import ThemeSelector from "@/components/ThemeSelector";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import type { Href } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН
 
-const APP_VERSION = "1.0.0";
-const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
+
+const DELETE_USER_URL = "https://wrekrjaitokrqydkwgtg.functions.supabase.co/delete-user";
 const STORAGE_BUCKET = "avatars";
+const AVATAR_MAX_SIZE = 512;
+const AVATAR_COMPRESS_QUALITY = 0.65;
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -118,7 +121,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     refetchProfile?.().catch(() => {});
-  }, []);
+  }, [refetchProfile]);
 
   useEffect(() => {
     const fetchReviews = async () => {
@@ -164,14 +167,18 @@ export default function ProfileScreen() {
       });
       if (!result.canceled && result.assets[0]) {
         setIsUploadingImage(true);
-        const imageUri = result.assets[0].uri;
-        const response = await fetch(imageUri);
+        const pickedAsset = result.assets[0];
+        const manipulated = await ImageManipulator.manipulateAsync(
+          pickedAsset.uri,
+          [{ resize: { width: AVATAR_MAX_SIZE, height: AVATAR_MAX_SIZE } }],
+          { compress: AVATAR_COMPRESS_QUALITY, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        const response = await fetch(manipulated.uri);
         const arrayBuffer = await response.arrayBuffer();
         const userId = user?.id || "anonymous";
-        const fileExt = imageUri.substring(imageUri.lastIndexOf('.') + 1).toLowerCase() || 'jpeg';
-        const mimeType = fileExt === 'jpg' ? 'image/jpeg' : `image/${fileExt}`;
-        const fileName = `avatar-${userId}-${Date.now()}.${fileExt}`;
+        const fileName = `avatar-${userId}-${Date.now()}.jpg`;
         const filePath = `${fileName}`;
+        const mimeType = "image/jpeg";
 
         const { error: uploadError } = await supabase.storage
           .from(STORAGE_BUCKET)
@@ -217,7 +224,7 @@ export default function ProfileScreen() {
       setIsAdminModalVisible(false);
       setAdminPassword("");
       router.push("/admin");
-    } catch (e: any) {
+    } catch {
       Alert.alert("Алдаа", "Пасворд буруу байна");
     } finally {
       setIsUnlockingAdmin(false);
@@ -235,7 +242,7 @@ export default function ProfileScreen() {
       await changePassword(currentPw.trim(), newPw.trim());
       setIsPwModalVisible(false);
       Alert.alert("Амжилттай", "Нууц үг солигдлоо");
-    } catch (e: any) {
+    } catch {
       Alert.alert("Алдаа", "Алдаа гарлаа");
     } finally {
       setPwBusy(false);
@@ -250,10 +257,22 @@ export default function ProfileScreen() {
           try {
             setDeleteBusy(true);
             const { data: s } = await supabase.auth.getSession();
-            await fetch(DELETE_USER_URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${s?.session?.access_token}` }, body: JSON.stringify({ userId: user.id }) });
+            const accessToken = s?.session?.access_token;
+            if (!accessToken || !user?.id) throw new Error("Идэвхтэй session олдсонгүй");
+
+            const response = await fetch(DELETE_USER_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+              body: JSON.stringify({ userId: user.id }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result?.ok !== true) {
+              throw new Error(result?.error || "Профайл устгаж чадсангүй");
+            }
+
             await logout();
             router.replace("/auth");
-          } catch (e) { Alert.alert("Алдаа", "Алдаа гарлаа"); } finally { setDeleteBusy(false); }
+          } catch { Alert.alert("Алдаа", "Алдаа гарлаа"); } finally { setDeleteBusy(false); }
         }
       }
     ]);
@@ -296,7 +315,7 @@ export default function ProfileScreen() {
           <TouchableOpacity onPress={pickImage} activeOpacity={0.8} disabled={isUploadingImage}>
             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
               {isUploadingImage ? <ActivityIndicator color={colors.headerText} /> : user?.photoUri ? <Image source={{ uri: user.photoUri }} style={styles.avatarImage} /> : <User size={40} color={colors.headerText} strokeWidth={2} />}
-              <View style={[styles.cameraIcon, { backgroundColor: colors.primary, borderColor: colors.background }]}><Camera size={16} color="#fff" /></View>
+              <View style={[styles.cameraIcon, { backgroundColor: colors.primary, borderColor: colors.background }]}><Camera size={16} color={colors.buttonText} /></View>
             </View>
           </TouchableOpacity>
           <View style={styles.profileInfo}>

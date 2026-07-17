@@ -30,7 +30,6 @@ import {
   X,
   Palette,
   Tag,
-  Check,
   Heart,
   RefreshCw,
   ClipboardList,
@@ -44,11 +43,13 @@ import { Job } from "@/mocks/jobs";
 import { useJobs } from "@/contexts/JobsContext";
 import { useRouter } from "expo-router";
 import { useTheme } from "@/contexts/ThemeContext";
-import { ThemeType } from "@/constants/colors";
+import ThemeSelector from "@/components/ThemeSelector";
 import { supabase } from "@/lib/supabase";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
 import { searchMatch } from "@/lib/searchUtils";
+import { BUMP_PRIORITY_DECAY_PER_HOUR, BUMP_PRIORITY_MAX_SCORE } from "@/constants/monetization";
+import { recordPromotionMetric } from "@/lib/promotionMetrics";
 import SkeletonCard from "@/components/SkeletonCard";
 
 const CURRENT_VERSION = "1.0.0";
@@ -153,7 +154,7 @@ function getJobRankingScore(job: any): number {
   }
   if (bumpedTs > 0) {
     const ageHours = Math.max(0, (now - bumpedTs) / 36e5);
-    score += Math.max(0, 180_000 - ageHours * 4_000);
+    score += Math.max(0, BUMP_PRIORITY_MAX_SCORE - ageHours * BUMP_PRIORITY_DECAY_PER_HOUR);
   }
   score += itemRating * 4_000 + userRating * 2_000 + Math.min(rentalCount, 100) * 80 + postedTs / 1_000_000_000;
   return score;
@@ -209,6 +210,7 @@ function JobCard({
   const initial = (name[0] ?? "?").toUpperCase();
   const photoUri = postedBy?.photoUri ?? null;
   const imageUrls: string[] = Array.isArray(j.image_urls) ? j.image_urls : [];
+  const isSponsored = !!j.isSponsored;
 
   const handleAvatarPress = () => {
     const userId = postedBy?.phone ?? postedBy?.id;
@@ -216,7 +218,11 @@ function JobCard({
     router.push(`/user-profile?userId=${encodeURIComponent(String(userId))}`);
   };
 
-  const handleCardPress = () => { router.push(`/job-detail?id=${j.id}`); };
+
+  const handleCardPress = () => {
+    if (isSponsored) void recordPromotionMetric("sponsored_job", j.id, "click");
+    router.push(`/job-detail?id=${j.id}`);
+  };
   
   const formatDate = (date: Date) => {
     if (!date) return "Огноо алга";
@@ -231,7 +237,7 @@ function JobCard({
   if (j?.isActive === false) return null;
   
   const iconEmoji = getCategoryIcon(j.category ?? "");
-  const isSponsored = !!j.isSponsored;
+
   const postedAtDate: Date = j.postedDate ?? toSafeDate((j as any).created_at ?? (j as any).updated_at);
   
   return (
@@ -296,42 +302,9 @@ function JobCard({
   );
 }
 
-function ThemeSelector({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { currentTheme, setTheme, colors } = useTheme() as any;
-  const handleSelectTheme = (theme: ThemeType) => { if (typeof setTheme === "function") setTheme(theme); setTimeout(() => onClose(), 250); };
-  const themeOptions: { type: ThemeType; name: string; description: string }[] = [
-    { type: "purple", name: "Purple", description: "Нил ягаан өнгө" }, { type: "peach", name: "Peach", description: "Тоорын зөөлөн өнгө" },
-    { type: "sky", name: "Sky", description: "Тэнгэрийн цэнхэр өнгө" }, { type: "navy", name: "Navy", description: "Бараан хөх өнгө" },
-    { type: "gray", name: "Gray", description: "Саарал өнгө" }, { type: "mint", name: "Mint", description: "Минт ногоон өнгө" },
-  ];
-  const PREVIEW_BACKGROUNDS: Record<ThemeType, string> = { purple: "#6E0AB0", peach: "#FF6F61", navy: "#201A2E", gray: "#D0D2D8", mint: "#8FE3CF", sky: "#AFC6D9" };
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
-      <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        <TouchableOpacity style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" }} activeOpacity={1} onPress={onClose} />
-        <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 20, paddingBottom: 40, paddingHorizontal: 20, backgroundColor: colors.background }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}><Text style={{ fontSize: 20, fontWeight: "700", color: colors.text }}>Theme сонгох</Text><TouchableOpacity onPress={onClose} style={{ padding: 4 }}><X size={24} color={colors.text} /></TouchableOpacity></View>
-          <View style={{ gap: 12 }}>
-            {themeOptions.map((option) => {
-              const isSelected = currentTheme === option.type;
-              return (
-                <TouchableOpacity key={option.type} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.backgroundSecondary, borderColor: isSelected ? colors.primary : colors.border, borderWidth: isSelected ? 2 : 1 }} onPress={() => handleSelectTheme(option.type)} activeOpacity={0.7}>
-                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}><View style={{ width: 44, height: 44, borderRadius: 22, marginRight: 16, borderWidth: 1, backgroundColor: PREVIEW_BACKGROUNDS[option.type], borderColor: colors.border }} /><View style={{ flex: 1 }}><Text style={{ fontSize: 16, fontWeight: "600", color: colors.text, marginBottom: 2 }}>{option.name}</Text><Text style={{ fontSize: 12, color: colors.textSecondary }}>{option.description}</Text></View></View>
-                  {isSelected && <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}><Check size={18} color={colors.headerText} strokeWidth={3} /></View>}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 export default function HomeScreen() {
   const { jobs, loadJobs, isLoading, searchJobs, clearSearch, savedJobIds, toggleSaveJob } = useJobs() as any;
   const { colors, currentTheme } = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
 
@@ -367,7 +340,7 @@ export default function HomeScreen() {
   useEffect(() => { clearSearchRef.current = clearSearch; }, [clearSearch]);
 
   const [homeBanners, setHomeBanners] = useState<any[]>([]);
-  const loadHomeBanners = useCallback(async () => { try { const b = await fetchBanners("home_feed", 3); setHomeBanners(b ?? []); } catch (e) { setHomeBanners([]); } }, []);
+  const loadHomeBanners = useCallback(async () => { try { const b = await fetchBanners("home_feed", 3); setHomeBanners(b ?? []); } catch { setHomeBanners([]); } }, []);
   
   // 🎯 ЗАССАН: Баазаас хувилбар болон постер уншихдаа "Хугацаа" шалгадаг болгов
   const checkVersionAndAnnouncements = useCallback(async () => {
@@ -425,7 +398,7 @@ export default function HomeScreen() {
       if (error) throw error; setDbCategories((data as DbCategoryRow[]) ?? []);
       const { data: subs, error: subErr } = await supabase.from("subcategories").select("id,name,icon,category_id,sort_order").order("sort_order", { ascending: true });
       if (subErr) throw subErr; setDbSubcategories((subs as DbSubcategoryRow[]) ?? []);
-    } catch (e) { setDbCategories([]); setDbSubcategories([]); } finally { setCategoriesLoading(false); }
+    } catch { setDbCategories([]); setDbSubcategories([]); } finally { setCategoriesLoading(false); }
   }, []);
   
   useEffect(() => { 
@@ -447,7 +420,7 @@ export default function HomeScreen() {
         checkVersionAndAnnouncements() 
       ]);
       setLastUpdatedAt(new Date());
-    } catch (e) {} finally { setRefreshing(false); }
+    } catch {} finally { setRefreshing(false); }
   }, [loadJobs, fetchCategories, searchText, loadHomeBanners, checkVersionAndAnnouncements]);
   
   const normalizedJobs: NormalizedJob[] = useMemo(() => (jobs as any[]).map(normalizeJob), [jobs]);
@@ -517,12 +490,12 @@ export default function HomeScreen() {
       try {
         if (!q) { if (clearSearchRef.current) await clearSearchRef.current(); } else { if (searchJobsRef.current) await searchJobsRef.current(q); }
         setLastUpdatedAt(new Date());
-      } catch (e) {}
+      } catch {}
     }, 350);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchText]);
   
-  const clearTopSearch = useCallback(async () => { setSearchText(""); try { if (clearSearchRef.current) await clearSearchRef.current(); setLastUpdatedAt(new Date()); } catch (e) {} }, []);
+  const clearTopSearch = useCallback(async () => { setSearchText(""); try { if (clearSearchRef.current) await clearSearchRef.current(); setLastUpdatedAt(new Date()); } catch {} }, []);
   
   const handleRetryLoad = () => {
     setSafeIsLoading(true);
@@ -587,8 +560,8 @@ export default function HomeScreen() {
               onPress={handleRetryLoad}
               activeOpacity={0.8}
             >
-              <RefreshCw size={18} color="#FFFFFF" />
-              <Text style={styles.retryButtonText}>Дахин ачааллах</Text>
+              <RefreshCw size={18} color={colors.buttonText} />
+              <Text style={[styles.retryButtonText, { color: colors.buttonText }]}>Дахин ачааллах</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -741,7 +714,7 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 18, fontWeight: "600" },
   logo: { width: 140, height: 60 },
   searchRow: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, gap: 10, marginBottom: 12 },
-  searchContainer: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, gap: 10 },
+  searchContainer: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255, 255, 255, 0.92)", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, gap: 10 },
   searchInput: { flex: 1, fontSize: 16, padding: 0 },
   categoryIconBtn: { width: 48, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   content: { flex: 1 },

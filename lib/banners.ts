@@ -19,16 +19,22 @@ export type Banner = {
   id: string;
   title?: string | null;
   subtitle?: string | null;
-  image_url: string;
+  media_url: string;
+  media_type: "image" | "video";
   click_url?: string | null;
 };
 
 const BUCKET = "banners";
+const VIDEO_FILE_PATTERN = /\.(mp4|m4v|mov|webm)(?:$|[?#])/i;
 
 function publicUrlFromPath(path: string) {
   if (!path) return "";
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data?.publicUrl ?? "";
+}
+
+function mediaTypeFromPath(path: string): "image" | "video" {
+  return VIDEO_FILE_PATTERN.test(path.trim()) ? "video" : "image";
 }
 
 export async function fetchBanners(placement: BannerPlacement, limit = 3): Promise<Banner[]> {
@@ -56,14 +62,15 @@ export async function fetchBanners(placement: BannerPlacement, limit = 3): Promi
 
     return rows
       .filter((r) => !!r.image_path)
-      .map((r) => ({
+      .map((r): Banner => ({
         id: r.id,
         title: r.title,
         subtitle: r.subtitle,
         click_url: r.click_url,
-        image_url: publicUrlFromPath(r.image_path),
+        media_url: publicUrlFromPath(r.image_path),
+        media_type: mediaTypeFromPath(r.image_path),
       }))
-      .filter((b) => !!b.image_url);
+      .filter((banner) => !!banner.media_url);
   } catch (e) {
     console.log("FETCH BANNERS EXCEPTION:", e);
     return [];

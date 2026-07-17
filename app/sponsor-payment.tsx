@@ -41,7 +41,7 @@ const PAYMENTS_AVAILABLE = false;
 export default function SponsorPaymentScreen() {
   const router = useRouter();
   const { jobId, targetType } = useLocalSearchParams<{ jobId?: string; targetType?: "bump" | "sponsor" | "credit" }>();
-  const { jobs, loadJobs } = useJobs() as any;
+  const { jobs, loadJobs, bumpJob } = useJobs() as any;
   const { user, refetchProfile } = useAuth() as any;
   const { colors } = useTheme();
   const [step, setStep] = useState<"info" | "invoice" | "success">("info");
@@ -105,13 +105,18 @@ export default function SponsorPaymentScreen() {
         if (refetchProfile) await refetchProfile();
       } 
       else if (selectedPlanData.id === "bump" && jobId) {
-        const { error } = await supabase.from("jobs").update({ bumped_at: new Date().toISOString() }).eq("id", jobId);
-        if (error) throw error;
-        if (loadJobs) await loadJobs();
+        if (!bumpJob) throw new Error("BUMP_ACTION_UNAVAILABLE");
+        await bumpJob(jobId);
       } 
       else if (jobId) {
         const durationMs = selectedPlanData.durationDays * 24 * 60 * 60 * 1000;
-        const { error } = await supabase.from("jobs").update({ is_sponsored: true, sponsored_until: new Date(Date.now() + durationMs).toISOString() }).eq("id", jobId);
+        const currentUntilRaw = selectedJob?.sponsoredUntil ?? selectedJob?.sponsored_until ?? null;
+        const currentUntilMs = currentUntilRaw ? new Date(currentUntilRaw).getTime() : NaN;
+        const startsAtMs = Number.isFinite(currentUntilMs) && currentUntilMs > Date.now()
+          ? currentUntilMs
+          : Date.now();
+        const nextSponsoredUntil = new Date(startsAtMs + durationMs).toISOString();
+        const { error } = await supabase.from("jobs").update({ is_sponsored: true, sponsored_until: nextSponsoredUntil }).eq("id", jobId);
         if (error) throw error;
         if (loadJobs) await loadJobs();
       }

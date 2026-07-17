@@ -7,7 +7,7 @@ import {
   View,
   ScrollView,
   Dimensions,
-  Image,
+
   Platform,
   KeyboardAvoidingView,
   Modal,
@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Search, Navigation, List, Locate, X, ChevronDown } from "lucide-react-native";
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import * as Location from "expo-location";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -157,19 +157,21 @@ export default function LocationScreen() {
     });
   }, [jobsWithDistance]);
 
-  const recenterToUser = (zoomToRadius = false) => {
+  const recenterToUser = useCallback((zoomToRadius = false) => {
     if (!userCoords) return;
-    const next = zoomToRadius
-      ? regionForRadiusKm(userCoords.latitude, userCoords.longitude, RADIUS_KM)
-      : {
-          latitude: userCoords.latitude,
-          longitude: userCoords.longitude,
-          latitudeDelta: region.latitudeDelta,
-          longitudeDelta: region.longitudeDelta,
-        };
-    setRegion(next);
-    if (mapRef.current?.animateToRegion) mapRef.current.animateToRegion(next, 350);
-  };
+    setRegion((currentRegion) => {
+      const next = zoomToRadius
+        ? regionForRadiusKm(userCoords.latitude, userCoords.longitude, RADIUS_KM)
+        : {
+            latitude: userCoords.latitude,
+            longitude: userCoords.longitude,
+            latitudeDelta: currentRegion.latitudeDelta,
+            longitudeDelta: currentRegion.longitudeDelta,
+          };
+      if (mapRef.current?.animateToRegion) mapRef.current.animateToRegion(next, 350);
+      return next;
+    });
+  }, [userCoords]);
 
   const goToJobDetail = (jobId: string | number) => {
     router.push({ pathname: "/browse", params: { id: String(jobId) } });
@@ -180,7 +182,7 @@ export default function LocationScreen() {
 
   useEffect(() => {
     if (selectedFilter === "near") recenterToUser(true);
-  }, [selectedFilter]);
+  }, [selectedFilter, recenterToUser]);
 
   return (
     // 🎯 ЗАССАН: edges=["bottom"] болгож, "top"-ыг AppHeader дотор тооцоолдог болгов

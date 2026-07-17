@@ -12,6 +12,7 @@ import {
   safeUpdateJob,
 } from "@/lib/supabaseSafe";
 import { searchMatch } from "@/lib/searchUtils";
+import { BUMP_PRIORITY_DECAY_PER_HOUR, BUMP_PRIORITY_MAX_SCORE } from "@/constants/monetization";
 
 const STORAGE_KEY = "@jobs_storage";
 const USER_LOCATION_KEY = "@user_location";
@@ -199,7 +200,7 @@ function getJobRankingScore(job: any): number {
   }
   if (bumpedTs > 0) {
     const ageHours = Math.max(0, (now - bumpedTs) / 36e5);
-    score += Math.max(0, 180_000 - ageHours * 4_000);
+    score += Math.max(0, BUMP_PRIORITY_MAX_SCORE - ageHours * BUMP_PRIORITY_DECAY_PER_HOUR);
   }
   score += itemRating * 4_000 + userRating * 2_000 + Math.min(rentalCount, 100) * 80 + postedTs / 1_000_000_000;
   return score;
@@ -685,28 +686,57 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       } catch (error) { throw error; }
     }, [jobs, loadJobs]);
 
-  const submitRentalReview = useCallback(async (params: { jobId: string; itemRating: number; userRating?: number | null; comment?: string; }) => {
+  const submitRentalReview = useCallback(async (params: {
+    jobId: string;
+    requestId?: string | null;
+    reviewedUserId?: string | null;
+    itemRating: number;
+    userRating?: number | null;
+    comment?: string;
+  }) => {
       try {
         const session = await requireSession();
         const reviewerId = session?.user?.id ?? null;
         if (!reviewerId) throw new Error("Not authenticated. Please login again.");
+
         const job = jobs.find((j: any) => j.id === params.jobId) as any;
-        const reviewedUserId = job?.postedBy?.id ?? job?.posted_by_id ?? job?.postedById ?? null;
+        const requestId = typeof params.requestId === "string" ? params.requestId.trim() || null : null;
+        const reviewedUserId = String(
+          params.reviewedUserId ?? job?.postedBy?.id ?? job?.posted_by_id ?? job?.postedById ?? "",
+        ).trim();
+
         if (!params.jobId) throw new Error("Job ID is required");
         if (!reviewedUserId) throw new Error("Түрээслүүлэгчийн ID олдсонгүй");
-        if (reviewerId === reviewedUserId) throw new Error("Өөрийн зар дээр түрээс дуусгах үнэлгээ өгөх боломжгүй");
+        if (reviewerId === reviewedUserId) throw new Error("Өөрийгөө үнэлэх боломжгүй");
+
+        if (requestId) {
+          const { data: existingReviews, error: existingReviewError } = await supabase
+            .from("rental_reviews")
+            .select("id")
+            .eq("request_id", requestId)
+            .eq("reviewer_id", reviewerId)
+            .limit(1);
+          if (existingReviewError) throw existingReviewError;
+          if ((existingReviews ?? []).length > 0) {
+            throw new Error("Та энэ түрээсийн хүсэлтэд үнэлгээ өгсөн байна.");
+          }
+        }
 
         const itemRating = Math.max(1, Math.min(5, Number(params.itemRating)));
         const userRating = params.userRating ? Math.max(1, Math.min(5, Number(params.userRating))) : null;
-
         const { error } = await supabase.from("rental_reviews").insert({
-          job_id: params.jobId, reviewer_id: reviewerId, reviewed_user_id: reviewedUserId,
-          item_rating: itemRating, user_rating: userRating, comment: params.comment?.trim() || null,
+          job_id: params.jobId,
+          reviewer_id: reviewerId,
+          reviewed_user_id: reviewedUserId,
+          item_rating: itemRating,
+          user_rating: userRating,
+          comment: params.comment?.trim() || null,
+          ...(requestId ? { request_id: requestId } : {}),
         });
         if (error) throw error;
-        await loadJobs();
+        await Promise.all([loadJobs(), loadRentalRequests()]);
       } catch (error) { throw error; }
-    }, [jobs, loadJobs]);
+    }, [jobs, loadJobs, loadRentalRequests]);
 
   return {
     jobs, addJob, sponsorJob, updateJobCategory, deleteJob, toggleJobActive, bumpJob, submitRentalReview,

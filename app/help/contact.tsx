@@ -50,7 +50,7 @@ export default function ContactHelpScreen() {
         return; //[cite: 6]
       } //[cite: 6]
       await Linking.openURL(facebookUrl); //[cite: 6]
-    } catch (e) { //[cite: 6]
+    } catch { //[cite: 6]
       Alert.alert("Алдаа", "Facebook нээх үед алдаа гарлаа."); //[cite: 6]
     } //[cite: 6]
   };
@@ -65,7 +65,7 @@ export default function ContactHelpScreen() {
         return;
       }
       await Linking.openURL(telUrl);
-    } catch (e) {
+    } catch {
       Alert.alert("Алдаа", "Дуудлага хийхэд алдаа гарлаа.");
     }
   };

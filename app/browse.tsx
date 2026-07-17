@@ -22,6 +22,7 @@ import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import AppHeader from "@/components/AppHeader";
 import { supabase } from "@/lib/supabase";
+import { isSponsoredPromotionActive, recordPromotionMetric } from "@/lib/promotionMetrics";
 
 type LocalSubcategory = { id: string; name: string; icon?: string | null; };
 type LocalCategory = { id: string; name: string; icon?: string | null; subcategories: LocalSubcategory[]; };
@@ -98,7 +99,7 @@ function cyrillicToLatin(input: string) {
 function latinToCyrillic(input: string) {
   let s = (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 
-  const rules: Array<[RegExp, string]> = [
+  const rules: [RegExp, string][] = [
     [/sch/g, "щ"], [/sh/g, "ш"], [/ch/g, "ч"], [/ts/g, "ц"],
     [/ya/g, "я"], [/yo/g, "ё"], [/yu/g, "ю"], [/ye/g, "е"],
     [/kh/g, "х"],
@@ -135,6 +136,8 @@ function buildSearchVariants(input: string): string[] {
 
   const lowered = raw.toLowerCase();
 
+  add(lowered.replace(/(^|[^sck])h/g, "$1kh"));
+
   add(lowered.replace(/oo/g, "o"));
   add(lowered.replace(/uu/g, "u"));
   add(lowered.replace(/ii/g, "i"));
@@ -158,11 +161,12 @@ function buildSearchVariants(input: string): string[] {
 function searchMatch(text: string, query: string): boolean {
   const variants = buildSearchVariants(query);
   if (variants.length === 0) return true;
-
   const original = normalizeText(text);
-  const translit = normalizeText(cyrillicToLatin(text));
+  if (variants.some((q) => original.includes(q))) return true;
 
-  return variants.some((q) => original.includes(q) || translit.includes(q));
+  // Latin keyboard spelling can vary: kh/h and doubled-vowel forms are both accepted.
+  const transliteratedTextVariants = buildSearchVariants(cyrillicToLatin(text));
+  return variants.some((q) => transliteratedTextVariants.some((textVariant) => textVariant.includes(q)));
 }
 
 function normalizeJob(raw: any): BrowseJob {
@@ -208,6 +212,7 @@ function JobCard({
   };
 
   const handleCardPress = () => {
+    if (isSponsoredPromotionActive(job)) void recordPromotionMetric("sponsored_job", job.id, "click");
     router.push(`/job-detail?id=${job.id}`);
   };
 
@@ -485,6 +490,7 @@ export default function BrowseScreen() {
 
     if (result.type === "job" || result.type === "person") {
       const job = result.data as BrowseJob;
+      if (isSponsoredPromotionActive(job)) void recordPromotionMetric("sponsored_job", job.id, "click");
       router.push(`/job-detail?id=${job.id}`);
       setIsSearchFocused(false);
       Keyboard.dismiss();

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -16,23 +16,23 @@ function formatDiff(ms: number) {
 }
 
 export default function SponsorCountdown() {
-  const { user, isSponsoredActive, isSponsoredScheduled, refetchProfile } = useAuth() as any;
-  const [tick, setTick] = useState(0);
+  const { user, refetchProfile } = useAuth() as any;
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const status = useMemo(() => {
+  const now = Date.now();
+
+  const status = (() => {
     const fromIso = user?.sponsoredFrom ?? user?.sponsored_from ?? null;
     const untilIso = user?.sponsoredUntil ?? user?.sponsored_until ?? null;
 
     if (!fromIso || !untilIso) {
       return { kind: "none" as const };
     }
-
-    const now = Date.now();
     const from = new Date(fromIso).getTime();
     const until = new Date(untilIso).getTime();
 
@@ -49,14 +49,14 @@ export default function SponsorCountdown() {
     }
 
     return { kind: "expired" as const, fromIso, untilIso };
-  }, [user, tick, isSponsoredActive, isSponsoredScheduled]);
+  })();
 
   // optional: хугацаа дууссан үед profile нэг удаа refresh
   useEffect(() => {
     if (status.kind === "expired") {
       refetchProfile?.().catch(() => {});
     }
-  }, [status.kind]);
+  }, [status.kind, refetchProfile]);
 
   if (status.kind === "none") return null;
 

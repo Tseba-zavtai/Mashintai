@@ -1,5 +1,5 @@
 // app/review.tsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Star } from "lucide-react-native";
@@ -15,21 +15,75 @@ export default function ReviewScreen() {
   
   const jobId = params.jobId;
   const targetUserId = params.ownerId || params.owner_id;
+  const rentalRequestId = params.requestId || params.request_id;
   const isOwnerView = params.isOwnerView;
   const isOwner = isOwnerView === "true";
 
   const [rating, setRating] = useState(1);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [checkingExisting, setCheckingExisting] = useState(Boolean(rentalRequestId));
+  const [alreadyReviewed, setAlreadyReviewed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const checkExistingReview = async () => {
+      if (!rentalRequestId) {
+        if (active) setCheckingExisting(false);
+        return;
+      }
+
+      try {
+        if (active) setCheckingExisting(true);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data, error } = await supabase
+          .from("rental_reviews")
+          .select("id")
+          .eq("request_id", rentalRequestId)
+          .eq("reviewer_id", user.id)
+          .limit(1);
+        if (error) throw error;
+        if (active) setAlreadyReviewed((data ?? []).length > 0);
+      } catch (error) {
+        console.log("Review status check error:", error);
+      } finally {
+        if (active) setCheckingExisting(false);
+      }
+    };
+
+    void checkExistingReview();
+    return () => { active = false; };
+  }, [rentalRequestId]);
 
   const handleSubmitReview = async () => {
     try {
+      if (alreadyReviewed) throw new Error("Та энэ түрээсийн хүсэлтэд үнэлгээ өгсөн байна.");
       if (!targetUserId) throw new Error("Үнэлэгдэх хэрэглэгчийн мэдээлэл олдсонгүй.");
       setSubmitting(true);
       
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Хэрэглэгч нэвтрээгүй байна.");
 
+      if (rentalRequestId) {
+        const { data: existingReviews, error: existingReviewError } = await supabase
+          .from("rental_reviews")
+          .select("id")
+          .eq("request_id", rentalRequestId)
+          .eq("reviewer_id", user.id)
+          .limit(1);
+
+        if (existingReviewError) throw existingReviewError;
+        if ((existingReviews ?? []).length > 0) {
+          setAlreadyReviewed(true);
+          Alert.alert("Мэдэгдэл", "Та энэ түрээсийн хүсэлтэд үнэлгээ өгсөн байна.", [
+            { text: "Буцах", onPress: () => router.back() },
+          ]);
+          return;
+        }
+      }
       const insertData: any = {
         job_id: jobId,
         reviewer_id: user.id,
@@ -37,11 +91,13 @@ export default function ReviewScreen() {
         item_rating: rating,
         user_rating: rating,
         comment: comment.trim(),
+        ...(rentalRequestId ? { request_id: rentalRequestId } : {}),
       };
 
       const { error } = await supabase.from("rental_reviews").insert([insertData]);
       if (error) throw error;
 
+      setAlreadyReviewed(true);
       Alert.alert("Баярлалаа", "Үнэлгээг амжилттай хүлээн авлаа.", [
         { text: "Буцах", onPress: () => router.back() }
       ]);
@@ -86,11 +142,11 @@ export default function ReviewScreen() {
         </View>
 
         <TouchableOpacity 
-          style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: submitting ? 0.7 : 1 }]} 
+          style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: submitting || checkingExisting || alreadyReviewed ? 0.55 : 1 }]}
           onPress={handleSubmitReview}
-          disabled={submitting}
+          disabled={submitting || checkingExisting || alreadyReviewed}
         >
-          {submitting ? <ActivityIndicator color={colors.headerText} /> : <Text style={[styles.submitBtnText, { color: colors.headerText }]}>Үнэлгээ илгээх</Text>}
+          {submitting || checkingExisting ? <ActivityIndicator color={colors.headerText} /> : <Text style={[styles.submitBtnText, { color: colors.headerText }]}>{alreadyReviewed ? "Үнэлгээ өгсөн" : "Үнэлгээ илгээх"}</Text>}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

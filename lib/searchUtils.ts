@@ -56,6 +56,8 @@ export function buildSearchVariants(input: string): string[] {
 
   const lowered = raw.toLowerCase();
 
+  add(lowered.replace(/(^|[^sck])h/g, "$1kh"));
+
   add(lowered.replace(/oo/g, "o"));
   add(lowered.replace(/uu/g, "u"));
   add(lowered.replace(/ii/g, "i"));
@@ -80,7 +82,9 @@ export function searchMatch(text: string, query: string): boolean {
   const variants = buildSearchVariants(query);
   if (variants.length === 0) return true;
   const original = normalizeForSearch(text);
-  const translit = normalizeForSearch(cyrillicToLatin(text));
+  if (variants.some((q) => original.includes(q))) return true;
 
-  return variants.some((q) => original.includes(q) || translit.includes(q));
+  // Latin keyboard spelling can vary: kh/h and doubled-vowel forms are both accepted.
+  const transliteratedTextVariants = buildSearchVariants(cyrillicToLatin(text));
+  return variants.some((q) => transliteratedTextVariants.some((textVariant) => textVariant.includes(q)));
 }
