@@ -1,6 +1,6 @@
 // app/_layout.tsx
 import React, { useEffect } from "react";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -61,8 +61,30 @@ async function registerForPushNotificationsAsync() {
   return token;
 }
 
+function useNotificationObserver() {
+  useEffect(() => {
+    const openNotificationTarget = (notification: Notifications.Notification) => {
+      const url = notification.request.content.data?.url;
+      if (typeof url === "string" && url.startsWith("/")) {
+        router.push(url as any);
+      }
+    };
+
+    const lastResponse = Notifications.getLastNotificationResponse();
+    if (lastResponse?.notification) {
+      openNotificationTarget(lastResponse.notification);
+    }
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      openNotificationTarget(response.notification);
+    });
+
+    return () => subscription.remove();
+  }, []);
+}
 function RootLayoutNav() {
   const { isAuthenticated, isLoading, user } = useAuth();
+  useNotificationObserver();
 
   useEffect(() => {
     async function setupNotifications() {

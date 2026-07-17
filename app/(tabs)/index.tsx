@@ -51,7 +51,6 @@ import { fetchBanners } from "@/lib/banners";
 import { searchMatch } from "@/lib/searchUtils";
 import SkeletonCard from "@/components/SkeletonCard";
 
-// 🎯 ТӨСЛИЙН ХУВИЛБАР (app.json-той ижил байх ёстой)
 const CURRENT_VERSION = "1.0.0";
 
 type FilterType = "all" | "rent" | "need";
@@ -86,6 +85,18 @@ function toSafeDate(value: any): Date {
 }
 
 function normalizeText(s: string) { return (s ?? "").toLowerCase().trim(); }
+function isVersionGreater(candidate: string, current: string) {
+  const candidateParts = candidate.split(".").map((part) => Number(part) || 0);
+  const currentParts = current.split(".").map((part) => Number(part) || 0);
+  const length = Math.max(candidateParts.length, currentParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const difference = (candidateParts[index] ?? 0) - (currentParts[index] ?? 0);
+    if (difference !== 0) return difference > 0;
+  }
+
+  return false;
+}
 
 function normalizeImageUrls(raw: any): string[] {
   const source = raw?.image_urls ?? raw?.imageUrls ?? null;
@@ -322,7 +333,7 @@ export default function HomeScreen() {
   const { colors, currentTheme } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { height } = useWindowDimensions();
 
   const [selectedFilter, setSelectedFilter] = useState<FilterType>("all");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -340,12 +351,12 @@ export default function HomeScreen() {
   
   const [searchText, setSearchText] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasInitializedSearchRef = useRef(false);
 
   const [safeIsLoading, setSafeIsLoading] = useState(true);
 
-  // 🎯 Хувилбар болон Баярын мэдэгдлийн state-үүд
   const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [announcement, setAnnouncement] = useState<{ title: string; message: string; image_url?: string | null } | null>(null);
+  const [announcement, setAnnouncement] = useState<{ title: string; message: string; image_url?: string | null; start_at?: string | null; end_at?: string | null } | null>(null);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   
   useEffect(() => { setSafeIsLoading(isLoading); if (isLoading) { const fallbackTimer = setTimeout(() => { setSafeIsLoading(false); }, 5000); return () => clearTimeout(fallbackTimer); } }, [isLoading]);
@@ -358,33 +369,49 @@ export default function HomeScreen() {
   const [homeBanners, setHomeBanners] = useState<any[]>([]);
   const loadHomeBanners = useCallback(async () => { try { const b = await fetchBanners("home_feed", 3); setHomeBanners(b ?? []); } catch (e) { setHomeBanners([]); } }, []);
   
-  // 🎯 Баазаас хувилбар болон постер шалгах функц
+  // 🎯 ЗАССАН: Баазаас хувилбар болон постер уншихдаа "Хугацаа" шалгадаг болгов
   const checkVersionAndAnnouncements = useCallback(async () => {
     try {
-      // 1. Апп-ын хувилбар шалгах
       const { data: configData, error: configErr } = await supabase
         .from('app_config')
         .select('key, value');
         
       if (!configErr && configData) {
         const minVersionConfig = configData.find(c => c.key === 'min_version');
-        if (minVersionConfig && minVersionConfig.value > CURRENT_VERSION) {
+        if (minVersionConfig && isVersionGreater(String(minVersionConfig.value), CURRENT_VERSION)) {
           setShowUpdateModal(true);
           return;
         }
       }
 
-      // 2. Баярын мэндчилгээ / Постер унших
+      // Идэвхтэй бүх заруудыг унших
       const { data: annData, error: annErr } = await supabase
         .from('system_announcements')
         .select('*')
         .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1);
+        .order('created_at', { ascending: false });
 
-      if (!annErr && annData && annData.length > 0) {
-        setAnnouncement(annData[0]);
-        setShowAnnouncementModal(true);
+      if (!annErr && annData) {
+        const now = new Date();
+        
+        // 🎯 ШИНЭ ЛОГИК: Одоогийн цаг хугацаа заасан интервалд таарч байгаа эсэхийг шүүнэ
+        const activeAnn = annData.find(ann => {
+          const start = ann.start_at ? new Date(ann.start_at) : null;
+          const end = ann.end_at ? new Date(ann.end_at) : null;
+          
+          const isStarted = !start || start <= now;
+          const isNotExpired = !end || end >= now;
+          
+          return isStarted && isNotExpired;
+        });
+
+        if (activeAnn) {
+          setAnnouncement(activeAnn);
+          setShowAnnouncementModal(true);
+        } else {
+          setAnnouncement(null);
+          setShowAnnouncementModal(false);
+        }
       }
     } catch (e) {
       console.log("Error checking app config/announcements:", e);
@@ -479,6 +506,11 @@ export default function HomeScreen() {
   const canApply = selectedCategoryIds.length > 0 || selectedSubcategoryIds.length > 0;
   
   useEffect(() => {
+    if (!hasInitializedSearchRef.current) {
+      hasInitializedSearchRef.current = true;
+      return;
+    }
+
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(async () => {
       const q = searchText.trim();
@@ -577,7 +609,7 @@ export default function HomeScreen() {
       <TouchableOpacity style={[styles.floatingButton, { backgroundColor: colors.primary }]} onPress={() => setShowThemeSelector(true)} activeOpacity={0.8}><Palette size={24} color={colors.headerText} /></TouchableOpacity>
       <ThemeSelector visible={showThemeSelector} onClose={() => setShowThemeSelector(false)} />
 
-      {/* 🎯 МОДАЛ 1: Хүчээр Шинэчлэлт хийлгэх (Force Update) */}
+      {/* МОДАЛ 1: Хүчээр Шинэчлэлт хийлгэх (Force Update) */}
       <Modal visible={showUpdateModal} animationType="fade" transparent={true}>
         <View style={styles.versionOverlay}>
           <View style={[styles.versionContent, { backgroundColor: colors.card }]}>
@@ -596,10 +628,11 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      {/* 🎯 МОДАЛ 2: Баярын постер / Чухал мэдэгдэл */}
+      {/* МОДАЛ 2: Баярын постер / Чухал мэдэгдэл */}
       <Modal visible={showAnnouncementModal} animationType="slide" transparent={true} onRequestClose={() => setShowAnnouncementModal(false)}>
         <View style={styles.versionOverlay}>
-          <View style={[styles.annContent, { backgroundColor: colors.card }]}>
+          {/* 🎯 ЗАССАН: Модал картын өндрийг утасны дэлгэцийн 80%-иас хэтрэхгүй уян хатан (Dynamic) болгов */}
+          <View style={[styles.annContent, { backgroundColor: colors.card, maxHeight: height * 0.8 }]}>
             <View style={styles.annHeader}>
               <Text style={[styles.annTitle, { color: colors.text }]} numberOfLines={1}>{announcement?.title}</Text>
               <TouchableOpacity onPress={() => setShowAnnouncementModal(false)} style={{ padding: 4 }}>
@@ -607,8 +640,8 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
             
-            <ScrollView style={{ maxHeight: 380, marginBottom: 16 }} showsVerticalScrollIndicator={false}>
-              {/* 🎯 ЗАССАН: Хэрэв баазад зургийн линк байвал энд уншиж харуулна */}
+            {/* 🎯 ЗАССАН: Хатуу maxHeight-ийг устгаж, доторх бүх зүйлийг ScrollView-д уян хатан гүйдэг болгов */}
+            <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false}>
               {announcement?.image_url && (
                 <Image 
                   source={{ uri: announcement.image_url }} 
@@ -617,13 +650,14 @@ export default function HomeScreen() {
                   transition={300}
                 />
               )}
-              <Text style={[styles.annMessage, { color: colors.textSecondary, marginTop: announcement?.image_url ? 12 : 0 }]}>
+              {/* Текст зургийнхаа доор үргэлж гоё зайтай харагдаж, доошоо гүйнэ */}
+              <Text style={[styles.annMessage, { color: colors.textSecondary, marginTop: announcement?.image_url ? 12 : 0, paddingBottom: 16 }]}>
                 {announcement?.message}
               </Text>
             </ScrollView>
             
             <TouchableOpacity 
-              style={[styles.versionBtn, { backgroundColor: colors.primary }]} 
+              style={[styles.versionBtn, { backgroundColor: colors.primary, marginTop: 8 }]} 
               onPress={() => setShowAnnouncementModal(false)}
             >
               <Text style={{ color: colors.headerText, fontWeight: "700", fontSize: 15 }}>Баярлалаа</Text>
@@ -759,7 +793,6 @@ const styles = StyleSheet.create({
   selectedCategoryText: { fontSize: 14, fontWeight: "700" },
   clearCategoryButton: { padding: 4 },
 
-  // 🎯 ШИНЭ СТАЙЛУУД
   versionOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.6)", justifyContent: "center", alignItems: "center", padding: 24 },
   versionContent: { width: "100%", padding: 28, borderRadius: 24, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 12, elevation: 5 },
   versionTitle: { fontSize: 22, fontWeight: "800", marginBottom: 12, textAlign: "center" },
@@ -769,10 +802,5 @@ const styles = StyleSheet.create({
   annHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   annTitle: { fontSize: 18, fontWeight: "800", flex: 1, paddingRight: 8 },
   annMessage: { fontSize: 14, lineHeight: 22 },
-  annImage: {
-  width: "100%",
-  aspectRatio: 1000 / 1200, // 🎯 НЭМСЭН: Зургийг яг 1000х1200 харьцаатай босоо болгоно
-  borderRadius: 12,
-  marginBottom: 8,
-}, // 🎯 НЭМСЭН: Постер зургийн стайл
+  annImage: { width: "100%", aspectRatio: 1000 / 1200, borderRadius: 12, marginBottom: 8 }, 
 });

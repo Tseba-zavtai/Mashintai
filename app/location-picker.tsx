@@ -8,17 +8,16 @@ import {
   ActivityIndicator,
   Dimensions,
   PanResponder,
-  Image,
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { X, MapPin, Check } from "lucide-react-native";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { MapPin, Check } from "lucide-react-native";
+import { useState, useRef, useEffect } from "react";
 import * as Location from "expo-location";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getLogoSource } from "@/constants/logo";
+import AppHeader from "@/components/AppHeader";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const MAP_WIDTH = SCREEN_WIDTH;
@@ -35,9 +34,8 @@ const PROVIDER_GOOGLE =
 export default function LocationPickerScreen() {
   const router = useRouter();
   const { userLocation, saveUserLocation } = useJobs();
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
 
-  const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
 
   const [pinPosition, setPinPosition] = useState({
     x: MAP_WIDTH / 2,
@@ -121,32 +119,9 @@ export default function LocationPickerScreen() {
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["top"]}
+      edges={["bottom"]}
     >
-      <View
-        style={[
-          styles.header,
-          { backgroundColor: colors.background, borderBottomColor: colors.border },
-        ]}
-      >
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            style={[
-              styles.closeButton,
-              { backgroundColor: colors.backgroundSecondary },
-            ]}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <X size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            Байршил сонгох
-          </Text>
-        </View>
-
-        <Image source={logoSource} style={styles.logo} resizeMode="contain" />
-      </View>
+      <AppHeader title="Байршил сонгох" />
 
       <View style={styles.content}>
         <View

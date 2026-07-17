@@ -3,19 +3,18 @@ import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ChevronLeft, Heart, Image as ImageIcon } from "lucide-react-native";
+import { Heart, Image as ImageIcon } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getLogoSource } from "@/constants/logo";
+import AppHeader from "@/components/AppHeader";
 
 export default function SavedJobsScreen() {
   const router = useRouter();
   const { jobs, savedJobIds, toggleSaveJob } = useJobs();
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
   
   // 🎯 ШИНЭ: Лого дуудах
-  const logoSource = useMemo(() => getLogoSource(currentTheme), [currentTheme]);
 
   const savedJobs = useMemo(() => {
     return jobs.filter((j) => savedJobIds.includes(j.id));
@@ -32,17 +31,9 @@ export default function SavedJobsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
       {/* 🎯 ШИНЭ: Ягаан толгой, Буцах сум, Лого */}
-      <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }} activeOpacity={0.7}>
-            <ChevronLeft size={28} color={colors.headerText} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.headerText }]}>Хадгалсан зарууд</Text>
-        </View>
-        <Image source={logoSource} style={{ width: 94, height: 34, tintColor: colors.headerText }} contentFit="contain" />
-      </View>
+      <AppHeader title="Хадгалсан зарууд" />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         {savedJobs.length === 0 ? (

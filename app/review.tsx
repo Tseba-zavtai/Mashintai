@@ -2,8 +2,9 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Star, ChevronLeft } from "lucide-react-native";
+import { Star } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
+import AppHeader from "@/components/AppHeader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 
@@ -52,15 +53,9 @@ export default function ReviewScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["bottom"]}>
       {/* 🎯 ЗАСВАР: Буцах товч бүхий Header нэмэв */}
-      <View style={[styles.header, { backgroundColor: colors.background }]}>
-        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75} style={styles.backButton}>
-          <ChevronLeft size={28} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Үнэлгээ өгөх</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <AppHeader title="Үнэлгээ өгөх" />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={[styles.title, { color: colors.text }]}>

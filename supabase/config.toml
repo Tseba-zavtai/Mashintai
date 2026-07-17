@@ -399,3 +399,6 @@ entrypoint = "./functions/list-feedback/index.ts"
 # static_files = [ "./functions/list-feedback/*.html" ]
 [functions.create-qpay-invoice]
 verify_jwt = false
+
+[functions.send-rental-request-push]
+verify_jwt = true

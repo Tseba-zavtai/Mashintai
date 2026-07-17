@@ -1,7 +1,7 @@
 // app/feedback.tsx
 import React, { useState } from 'react';
 import { 
-  View, 
+
   Text, 
   TextInput, 
   TouchableOpacity, 
@@ -13,9 +13,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar'; // 🎯 НЭМСЭН: Утасны дээд талын цаг, сүлжээний дүрсийг удирдах
-import { ChevronLeft, Send } from 'lucide-react-native';
+import { Send } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import AppHeader from "@/components/AppHeader";
 
 export default function FeedbackScreen() {
   const router = useRouter();
@@ -34,18 +35,12 @@ export default function FeedbackScreen() {
 
   return (
     // 🎯 ЗАССАН: SafeAreaView-ийн өнгийг толгой хэсгийн нил ягаан өнгөтэй ижил болгов
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.headerBackground }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.headerBackground }]} edges={['bottom']}>
       {/* 🎯 НЭМСЭН: Цаг сүлжээний дүрсийг цагаан (light) болгох тохиргоо */}
       <StatusBar style="light" backgroundColor={colors.headerBackground} />
       
       {/* Толгой хэсэг */}
-      <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
-        <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }} activeOpacity={0.7}>
-          <ChevronLeft size={28} color={colors.headerText} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.headerText }]}>Санал хүсэлт</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <AppHeader title="Санал хүсэлт" />
 
       {/* 🎯 ЗАССАН: Дэвсгэр өнгө доошоо цагаан/саарал хэвээрээ үлдэх зохицуулалт */}
       <KeyboardAvoidingView 

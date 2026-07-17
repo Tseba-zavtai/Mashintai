@@ -1,9 +1,10 @@
 // app/payment.tsx
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft, CheckCircle } from "lucide-react-native";
+import { CheckCircle } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
+import AppHeader from "@/components/AppHeader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 
@@ -57,14 +58,8 @@ export default function PaymentScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
-      <View style={[styles.header, { backgroundColor: colors.background }]}>
-        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75} style={styles.backButton}>
-          <ChevronLeft size={28} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Төлбөр төлөлт</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
+      <AppHeader title="Төлбөр төлөлт" />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {step === "info" && (

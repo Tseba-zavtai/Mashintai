@@ -168,27 +168,10 @@ export default function AdminPanel() {
 
   const [feedbackDetailVisible, setFeedbackDetailVisible] = useState(false);
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(null);
+  const hasAdminAccess = Boolean(isSuperAdmin && isAdminUnlocked);
 
   // ✅ Зөвхөн хэрэглэгч бүрмөсөн устгах үйлдэл л Edge Function шаардана (RLS-ээс гадуур устгах учраас)
   const DELETE_USER_URL = "https://iijtaosyryyxervjjuzd.functions.supabase.co/delete-user";
-
-  if (!isSuperAdmin || !isAdminUnlocked) {
-    return (
-      <View style={styles.container}>
-        <Stack.Screen options={{ title: "Админ Панел", headerShown: true }} />
-        <View style={styles.loginContainer}>
-          <Text style={styles.loginTitle}>Хандах эрхгүй</Text>
-          <Text style={styles.loginSubtitle}>
-            Админ панел руу орохын тулд Profile дээрээс admin password-оо зөв оруулж unlock хийнэ үү.
-          </Text>
-
-          <TouchableOpacity style={styles.loginButton} onPress={() => router.back()}>
-            <Text style={styles.loginButtonText}>Буцах</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
 
   // ✅ USERS query (ШУУД БААЗААС ТАТАХ - Edge Function хэрэггүй)
   const usersQuery = useQuery({
@@ -212,7 +195,7 @@ export default function AdminPanel() {
 
       return sorted as AdminUser[];
     },
-    enabled: true,
+    enabled: hasAdminAccess,
   });
 
   // ✅ JOBS query
@@ -226,7 +209,7 @@ export default function AdminPanel() {
       }
       return (data || []) as any as Job[];
     },
-    enabled: true,
+    enabled: hasAdminAccess,
   });
 
   // ✅ FEEDBACK query (ШУУД БААЗААС ТАТАХ - Edge Function хэрэггүй)
@@ -245,7 +228,7 @@ export default function AdminPanel() {
       }
       return (data || []) as FeedbackItem[];
     },
-    enabled: true,
+    enabled: hasAdminAccess,
   });
 
   // ✅ Mutations (Users)
@@ -420,6 +403,23 @@ export default function AdminPanel() {
     setSelectedFeedback(f);
     setFeedbackDetailVisible(true);
   };
+  if (!hasAdminAccess) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen options={{ title: "Админ Панел", headerShown: true }} />
+        <View style={styles.loginContainer}>
+          <Text style={styles.loginTitle}>Хандах эрхгүй</Text>
+          <Text style={styles.loginSubtitle}>
+            Админ панел руу орохын тулд Profile дээрээс admin password-оо зөв оруулж unlock хийнэ үү.
+          </Text>
+
+          <TouchableOpacity style={styles.loginButton} onPress={() => router.back()}>
+            <Text style={styles.loginButtonText}>Буцах</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

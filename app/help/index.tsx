@@ -67,7 +67,7 @@ export default function HelpScreen() {
       onPress: () => router.push("/help/terms" as Href),
     },
     {
-      title: "Нийтлэсэн зараа хэрхэн Sponsored зар болгох вэ?",
+      title: "Төлбөртэй үйлчилгээ",
       description: "Sponsored зарын тайлбар, алхамууд",
       icon: <Award size={20} color="#111" />,
       onPress: () => router.push("/help/sponsored" as Href),

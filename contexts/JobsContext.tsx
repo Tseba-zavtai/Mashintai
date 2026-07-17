@@ -64,6 +64,17 @@ function normalizeImageUrls(row: any): string[] {
   return [];
 }
 
+function normalizeDynamicData(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {}
+  }
+  return {};
+}
 function getJobSearchHaystacks(row: any): string[] {
   const locationAddress = typeof row?.location === "string" ? row.location : (row?.location?.address ?? row?.address ?? "");
   return [
@@ -232,6 +243,8 @@ const mapDbToJob = (row: DbJobRow, reviewStats?: ReviewStats): Job => {
     itemReviewCount, item_review_count: itemReviewCount, rentalCount, rental_count: rentalCount,
     bumpedAt, bump_count: asNumberOrNull(row?.bump_count ?? row?.bumpCount) ?? 0, quantity,
     available_quantity: availableQuantity, price: asNumberOrNull(row?.price) ?? 0,
+    dynamic_data: normalizeDynamicData(row?.dynamic_data ?? row?.dynamicData),
+    price_type: row?.price_type ?? row?.priceType ?? null,
   };
   return mapped as Job;
 };
@@ -242,6 +255,33 @@ function formatSupabaseError(error: any) {
   return { message: error?.message ?? String(error), code: error?.code ?? null, details: error?.details ?? null, hint: error?.hint ?? null };
 }
 
+async function hydrateJobDetails(rows: any[]): Promise<any[]> {
+  const jobIds = Array.from(new Set(rows.map((row) => row?.id).filter(isNonEmptyString)));
+  if (!jobIds.length) return rows;
+
+  try {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("id,dynamic_data,price_type,category_id,subcategory_id")
+      .in("id", jobIds);
+    if (error || !Array.isArray(data)) return rows;
+
+    const detailsById = new Map(data.map((detail: any) => [detail.id, detail]));
+    return rows.map((row) => {
+      const detail = detailsById.get(row?.id);
+      if (!detail) return row;
+      return {
+        ...row,
+        dynamic_data: detail.dynamic_data ?? row?.dynamic_data ?? row?.dynamicData,
+        price_type: detail.price_type ?? row?.price_type ?? row?.priceType,
+        category_id: detail.category_id ?? row?.category_id ?? row?.categoryId,
+        subcategory_id: detail.subcategory_id ?? row?.subcategory_id ?? row?.subcategoryId,
+      };
+    });
+  } catch {
+    return rows;
+  }
+}
 async function queryJobsRobustly(): Promise<any[]> {
   const selectAttempts = [{ label: "jobs_with_subcategories", select: "*, subcategories(name)" }, { label: "jobs_only", select: "*" }];
   const activeFilterAttempts = [true, false];
@@ -255,11 +295,12 @@ async function queryJobsRobustly(): Promise<any[]> {
         const { data, error } = await query;
         if (error) { lastError = error; continue; }
         const rows = Array.isArray(data) ? data : [];
-        return rows.filter((row: any) => {
+        const activeRows = rows.filter((row: any) => {
           if (row?.is_active === false) return false;
           const available = Number(row?.available_quantity ?? row?.availableQuantity ?? 1);
           return !Number.isFinite(available) || available > 0;
         });
+        return hydrateJobDetails(activeRows);
       } catch (error) { lastError = error; }
     }
   }
@@ -391,6 +432,10 @@ export const [JobsContext, useJobs] = createContextHook(() => {
 
     try {
       if (mountedRef.current) setIsLoading(true);
+      const cachedJobs = hasQuery ? [] : await loadJobsFromCache();
+      if (!hasQuery && cachedJobs.length > 0 && mountedRef.current && requestIdRef.current === myReqId) {
+        setJobs(sortJobs(cachedJobs));
+      }
       let rows: any[] = [];
       for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
         try { rows = await queryJobsRobustly(); break; } catch (err) { if (attempt === MAX_RETRY) throw err; await sleep(300 * attempt); }
@@ -408,8 +453,12 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       const sorted = sortJobs(mapped);
       if (!mountedRef.current || requestIdRef.current !== myReqId) return;
 
-      setJobs(sorted);
-      if (!hasQuery) await saveJobsToCache(sorted);
+      if (!hasQuery && sorted.length === 0 && cachedJobs.length > 0) {
+        setJobs(sortJobs(cachedJobs));
+      } else {
+        setJobs(sorted);
+        if (!hasQuery) await saveJobsToCache(sorted);
+      }
     } catch (error) {
       if (!mountedRef.current || requestIdRef.current !== myReqId) return;
       const cached = await loadJobsFromCache();
@@ -423,7 +472,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         setJobs(sortJobs(MOCK_JOBS));
       }
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current && requestIdRef.current === myReqId) setIsLoading(false);
     }
   }, []);
 
@@ -563,7 +612,10 @@ export const [JobsContext, useJobs] = createContextHook(() => {
           image_url: imageUrls[0] ?? (newJob as any).image_url ?? null, image_urls: imageUrls,
           item_rating_avg: null, item_review_count: 0, rental_count: 0, bumped_at: null, bump_count: 0,
           quantity: asPositiveInt((newJob as any).quantity ?? 1, 1), available_quantity: asPositiveInt((newJob as any).available_quantity ?? (newJob as any).quantity ?? 1, 1),
-          price: Number((newJob as any).price) || 0, is_active: true,
+          price: Number((newJob as any).price) || 0,
+          is_active: true,
+          dynamic_data: (newJob as any).dynamic_data ?? null,
+          price_type: (newJob as any).price_type ?? null,
         };
         const res = await safeInsertJob(payload);
         if (res.error) throw res.error;

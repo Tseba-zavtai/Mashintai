@@ -1,4 +1,3 @@
-// app/(tabs)/post.tsx
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Alert,
@@ -29,7 +28,7 @@ import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
 import AppHeader from "@/components/AppHeader"; 
 
-import { searchMatch, normalizeForSearch, cyrillicToLatin } from "@/lib/searchUtils";
+import { searchMatch } from "@/lib/searchUtils";
 
 const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null;
 const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : null;
@@ -38,9 +37,19 @@ const PROVIDER_GOOGLE = Platform.OS !== "web" ? require("react-native-maps").PRO
 type PickedLocation = { latitude: number; longitude: number; address?: string; };
 type PickedImage = { uri: string; name: string; mimeType: string; };
 
-// 🎯 ШИНЭ: Supabase-аас ирэх өгөгдлийн төрлүүд
 type LocalSubcategory = { id: string; name: string; icon?: string | null; };
-type LocalCategory = { id: string; name: string; icon?: string | null; subcategories: LocalSubcategory[]; };
+type LocalCategory = { id: string; name: string; icon?: string | null; form_schema?: any[]; subcategories: LocalSubcategory[]; };
+type PriceType = "hourly" | "daily" | "monthly";
+
+const PRICE_TYPES: { value: PriceType; label: string }[] = [
+  { value: "hourly", label: "Цагийн" },
+  { value: "daily", label: "Өдрийн" },
+  { value: "monthly", label: "Сарын" },
+];
+function isClothingCategory(name?: string | null) {
+  const normalized = (name ?? "").toLocaleLowerCase().replace(/[\s,]/g, "");
+  return normalized.startsWith("хувцасхэрэг");
+}
 
 const MAX_IMAGES = 5;
 const STORAGE_BUCKET = "post-images";
@@ -112,6 +121,8 @@ export default function PostScreen() {
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [price, setPrice] = useState("");
+  const [priceType, setPriceType] = useState<PriceType>("daily");
+
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
   const [categorySearch, setCategorySearch] = useState("");
@@ -125,35 +136,50 @@ export default function PostScreen() {
   const [initialRegion, setInitialRegion] = useState({ latitude: 47.9184, longitude: 106.9177, latitudeDelta: 0.02, longitudeDelta: 0.02 });
   const [addBanners, setAddBanners] = useState<any[]>([]);
 
-  // 🎯 ШИНЭ: Категориудыг хадгалах state
+  const [dynamicData, setDynamicData] = useState<Record<string, any>>({});
+  const [dynamicModalVisible, setDynamicModalVisible] = useState(false);
+  const [activeDynamicField, setActiveDynamicField] = useState<any>(null);
+
   const [dbCategories, setDbCategories] = useState<LocalCategory[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
 
   const postCredits = (user as any)?.available_post_credits ?? 0;
 
-  // 🎯 ШИНЭ: Supabase-ээс категори татах функц
   const fetchCategoriesFromDB = useCallback(async () => {
     try {
       setLoadingCategories(true);
       const { data, error } = await supabase
         .from('categories')
-        .select(`
-          id, name, icon,
-          subcategories ( id, name, icon )
-        `);
+        .select(`id, name, icon, form_schema, subcategories ( id, name, icon )`)
+        .order('sort_order', { ascending: true });
+      
       if (error) throw error;
       
       if (data) {
-        const formattedCats: LocalCategory[] = data.map((c: any) => ({
+        let formattedCats: LocalCategory[] = data.map((c: any) => ({
           id: c.id,
           name: c.name,
           icon: c.icon,
+          form_schema: c.form_schema || [],
           subcategories: Array.isArray(c.subcategories) ? c.subcategories.map((sub: any) => ({
             id: sub.id,
             name: sub.name,
             icon: sub.icon
           })) : []
         }));
+
+        // ӨӨРЧЛӨЛТ 1 & 2: Эрүүл мэндийг Танин мэдэхүй рүү оруулах
+        const knowledgeIdx = formattedCats.findIndex(c => c.name.includes("Танин мэдэхүй"));
+        const healthIdx = formattedCats.findIndex(c => c.name.includes("Эрүүл мэнд"));
+
+        if (knowledgeIdx !== -1 && healthIdx !== -1) {
+            formattedCats[knowledgeIdx].subcategories = [
+                ...formattedCats[knowledgeIdx].subcategories,
+                ...formattedCats[healthIdx].subcategories
+            ];
+            formattedCats.splice(healthIdx, 1);
+        }
+
         setDbCategories(formattedCats);
       }
     } catch (err) {
@@ -163,25 +189,20 @@ export default function PostScreen() {
     }
   }, []);
 
-  // 🎯 ШИНЭ: Дэлгэц нээгдэхэд категориудыг татаж авна
-  useEffect(() => {
-    fetchCategoriesFromDB();
-  }, [fetchCategoriesFromDB]);
+  useEffect(() => { fetchCategoriesFromDB(); }, [fetchCategoriesFromDB]);
 
   const loadAddBanners = useCallback(async () => {
     try {
       const banners = await fetchBanners("add_tab", 3);
       setAddBanners(banners ?? []);
-    } catch (error) {
-      console.log("FETCH ADD BANNERS ERROR:", error);
-      setAddBanners([]);
-    }
+    } catch (error) { setAddBanners([]); }
   }, []);
 
   useEffect(() => { loadAddBanners(); }, [loadAddBanners]);
 
   const resetForm = useCallback(() => {
-    setDescription(""); setQuantity("1"); setPrice(""); setCategoryId(null); setSubcategoryId(null);
+    setDescription(""); setQuantity("1"); setPrice(""); setPriceType("daily");
+    setCategoryId(null); setSubcategoryId(null); setDynamicData({});
     setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false); setSubcategoryModalVisible(false);
     setSelectedLocation(null); setPickedImages([]); setSubmitting(false); setPickingImages(false);
   }, []);
@@ -210,7 +231,6 @@ export default function PostScreen() {
     }
   };
 
-  // 🎯 ЗАССАН: Хуучин RENTAL_CATEGORIES-ийн оронд dbCategories-ийг ашиглана
   const selectedCategoryObj = useMemo(() => {
     if (!categoryId) return null;
     return dbCategories.find((item) => item.id === categoryId) ?? null;
@@ -295,7 +315,8 @@ export default function PostScreen() {
     }, [user]);
 
   const handleSelectCategory = useCallback((cat: LocalCategory) => {
-    setCategoryId(cat.id); setSubcategoryId(null); setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false);
+    setCategoryId(cat.id); setSubcategoryId(null); setDynamicData({}); 
+    setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false);
   }, []);
 
   const handleSelectSubcategory = useCallback((sub: LocalSubcategory) => {
@@ -312,24 +333,54 @@ export default function PostScreen() {
     const parsedPrice = Number(price.replace(/[^0-9]/g, "")) || 0;
     if (parsedPrice <= 0) { Alert.alert("Алдаа", "Үнийг зөв оруулна уу"); return; }
 
+    const originalCredits = Math.max(0, Number(postCredits));
+    const remainingCredits = Math.max(0, originalCredits - 1);
+    let creditConsumed = false;
+    let jobCreated = false;
+
     try {
       setSubmitting(true);
-      const { error: creditError } = await supabase.from("profiles").update({ available_post_credits: Math.max(0, postCredits - 1) }).eq("id", (user as any)?.id);
-      if (creditError) throw creditError;
       const imageUrls = await uploadImagesToSupabase(pickedImages);
+      const { data: creditRows, error: creditError } = await supabase
+        .from("profiles")
+        .update({ available_post_credits: remainingCredits })
+        .eq("id", (user as any)?.id)
+        .eq("available_post_credits", originalCredits)
+        .select("id");
+      if (creditError) throw creditError;
+      if (!creditRows?.length) throw new Error("POST_CREDIT_UNAVAILABLE");
+      creditConsumed = true;
 
       await addJob({
           title: selectedSubcategoryObj?.name || selectedCategoryObj.name, description: description.trim(),
-          category: selectedCategoryObj.name, subcategory: selectedSubcategoryObj?.name ?? null, category_id: null, subcategory_id: null,
+          category: selectedCategoryObj.name, subcategory: selectedSubcategoryObj?.name ?? null, category_id: categoryId, subcategory_id: subcategoryId,
           postType, location: selectedLocation || undefined, image_url: imageUrls[0] ?? null, image_urls: imageUrls,
           quantity: parsedQuantity, available_quantity: parsedQuantity, price: parsedPrice, 
+          price_type: priceType, dynamic_data: dynamicData 
         } as any,
         { name: user?.name || user?.phone || "Хэрэглэгч", phone: user?.phone || "", photoUri: (user as any)?.photoUri, sponsoredUntil: (user as any)?.sponsoredUntil ?? null }
       );
+      jobCreated = true;
 
-      await refetchProfile?.();
+      try {
+        await refetchProfile?.();
+      } catch (profileError) {
+        console.log("PROFILE REFRESH ERROR:", profileError);
+      }
       Alert.alert("Амжилттай!", "Таны зар амжилттай нэмэгдлээ", [{ text: "OK", onPress: () => { resetForm(); router.replace("/(tabs)"); } }]);
     } catch (error: any) {
+      if (creditConsumed && !jobCreated) {
+        try {
+          const { error: rollbackError } = await supabase
+            .from("profiles")
+            .update({ available_post_credits: originalCredits })
+            .eq("id", (user as any)?.id)
+            .eq("available_post_credits", remainingCredits);
+          if (rollbackError) console.log("POST CREDIT ROLLBACK ERROR:", rollbackError);
+        } catch (rollbackFailure) {
+          console.log("POST CREDIT ROLLBACK ERROR:", rollbackFailure);
+        }
+      }
       console.log("POST JOB ERROR:", error); Alert.alert("Алдаа", error?.message ?? "Зар нэмэхэд алдаа гарлаа");
     } finally { setSubmitting(false); }
   };
@@ -350,15 +401,37 @@ export default function PostScreen() {
             <Text style={[styles.label, { color: colors.text }]}>Зарын мэдээлэл *</Text>
             <TextInput style={[styles.input, styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Зарын талаар дэлгэрэнгүй бич..." placeholderTextColor={colors.textSecondary} value={description} onChangeText={setDescription} multiline numberOfLines={6} textAlignVertical="top" editable={!submitting} scrollEnabled={false} autoCorrect={false} returnKeyType="default" blurOnSubmit={false} />
           </View>
+          
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: colors.text }]}>Үнэ (₮) *</Text>
             <TextInput style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Жишээ нь: 50000" placeholderTextColor={colors.textSecondary} value={price} onChangeText={(value) => { setPrice(value.replace(/[^0-9]/g, "")); }} keyboardType="number-pad" editable={!submitting} />
+            
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              {PRICE_TYPES.map(({ value, label }) => {
+                const selected = priceType === value;
+                return (
+                  <TouchableOpacity
+                    key={value}
+                    onPress={() => setPriceType(value)}
+                    style={{
+                      paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1,
+                      borderColor: selected ? colors.primary : colors.border,
+                      backgroundColor: selected ? colors.primary : "transparent"
+                    }}
+                  >
+                    <Text style={{ color: selected ? '#111' : colors.text, fontSize: 13, fontWeight: '600' }}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
+
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: colors.text }]}>Тоо ширхэг *</Text>
             <TextInput style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="1" placeholderTextColor={colors.textSecondary} value={quantity} onChangeText={(value) => { setQuantity(value.replace(/[^0-9]/g, "")); }} keyboardType="number-pad" editable={!submitting} selectTextOnFocus={true} />
             <Text style={[styles.helperText, { color: colors.textSecondary }]}>Нэг л ширхэг бараа бол 1 гэж үлдээнэ. Олон ширхэгтэй бол нийт тоогоо оруулна.</Text>
           </View>
+
           <View style={styles.formSection}>
             <View style={styles.imagesHeaderRow}>
               <Text style={[styles.label, { color: colors.text, marginBottom: 0 }]}>Зураг</Text>
@@ -408,52 +481,44 @@ export default function PostScreen() {
                 {selectedSubcategoryName ? (<Pressable style={({ pressed }) => [styles.clearSelectionButton, { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.85 : 1 }]} onPress={() => setSubcategoryId(null)} disabled={submitting}><Text style={[styles.clearSelectionText, { color: colors.textSecondary }]}>Дэд категори арилгах</Text></Pressable>) : null}
               </View>
             ) : null}
-
-            <Modal visible={categoryModalVisible} animationType="slide" transparent onRequestClose={() => setCategoryModalVisible(false)}>
-              <View style={styles.modalOverlay}>
-                <Pressable style={styles.modalBackdrop} onPress={() => setCategoryModalVisible(false)} />
-                <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-                  <View style={styles.modalHandle} />
-                  <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Категори сонгох</Text><Pressable onPress={() => setCategoryModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
-                  <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Категори хайх..." placeholderTextColor={colors.textSecondary} value={categorySearch} onChangeText={setCategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
-                  <FlatList data={visibleCategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох категори олдсонгүй</Text>} renderItem={({ item }) => {
-                      const selected = categoryId === item.id;
-                      return (
-                        <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectCategory(item)} android_ripple={{ color: colors.border }}>
-                          <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>
-                            {item.icon ? `${item.icon} ` : ''}{item.name}
-                          </Text>
-                          {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
-                        </Pressable>
-                      );
-                    }} />
-                </View>
-              </View>
-            </Modal>
-
-            <Modal visible={subcategoryModalVisible} animationType="slide" transparent onRequestClose={() => setSubcategoryModalVisible(false)}>
-              <View style={styles.modalOverlay}>
-                <Pressable style={styles.modalBackdrop} onPress={() => setSubcategoryModalVisible(false)} />
-                <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-                  <View style={styles.modalHandle} />
-                  <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Дэд категори сонгох</Text><Pressable onPress={() => setSubcategoryModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
-                  <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Дэд категори хайх..." placeholderTextColor={colors.textSecondary} value={subcategorySearch} onChangeText={setSubcategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
-                  <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSubcategorySearch(""); setSubcategoryModalVisible(false); }} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? "#111" : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}</Pressable>
-                  <FlatList data={visibleSubcategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох дэд категори олдсонгүй</Text>} renderItem={({ item }) => {
-                      const selected = subcategoryId === item.id;
-                      return (
-                        <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectSubcategory(item)} android_ripple={{ color: colors.border }}>
-                          <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>
-                            {item.icon ? `${item.icon} ` : ''}{item.name}
-                          </Text>
-                          {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
-                        </Pressable>
-                      );
-                    }} />
-                </View>
-              </View>
-            </Modal>
           </View>
+
+          {/* ӨӨРЧЛӨЛТ 3: ХУВЦАС ХЭРЭГСЭЛ дээр ӨНГӨ ОРУУЛАХ */}
+          {isClothingCategory(selectedCategoryName) && (
+            <View style={styles.formSection}>
+              <Text style={[styles.label, { color: colors.text }]}>Өнгө</Text>
+              <TextInput 
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} 
+                placeholder="Жишээ нь: Хар, Цагаан..." 
+                placeholderTextColor={colors.textSecondary} 
+                value={dynamicData['Өнгө'] || ""} 
+                onChangeText={(val) => setDynamicData(prev => ({...prev, 'Өнгө': val}))} 
+                editable={!submitting} 
+              />
+            </View>
+          )}
+
+          {selectedCategoryObj?.form_schema && selectedCategoryObj.form_schema.length > 0 && (
+            <View style={styles.formSection}>
+              <Text style={[styles.label, { color: colors.text, marginBottom: 16, fontSize: 16 }]}>
+                Нэмэлт мэдээлэл (Заавал биш)
+              </Text>
+              {selectedCategoryObj.form_schema.map((field: any) => (
+                <View key={field.name} style={{ marginBottom: 16 }}>
+                  <Text style={[styles.label, { color: colors.text }]}>{field.label}</Text>
+                  {field.type === 'dropdown' ? (
+                    <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: dynamicData[field.name] ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} 
+                      onPress={() => { setActiveDynamicField(field); setDynamicModalVisible(true); }}>
+                      <Text style={[styles.selectButtonTitle, { color: dynamicData[field.name] ? colors.text : colors.textSecondary }]}>{dynamicData[field.name] || "Сонгох..."}</Text>
+                      <Text style={[styles.selectButtonArrow, { color: colors.textSecondary }]}>›</Text>
+                    </Pressable>
+                  ) : (
+                    <TextInput style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder={field.label} placeholderTextColor={colors.textSecondary} value={dynamicData[field.name] || ""} onChangeText={(val) => setDynamicData(prev => ({...prev, [field.name]: val}))} keyboardType={field.type === 'number' ? 'number-pad' : 'default'} editable={!submitting} />
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: colors.text }]}>Байршил (заавал биш)</Text>
@@ -476,6 +541,77 @@ export default function PostScreen() {
           <View style={styles.bottomPadding} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={categoryModalVisible} animationType="slide" transparent onRequestClose={() => setCategoryModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setCategoryModalVisible(false)} />
+          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Категори сонгох</Text><Pressable onPress={() => setCategoryModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
+            <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Категори хайх..." placeholderTextColor={colors.textSecondary} value={categorySearch} onChangeText={setCategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
+            <FlatList data={visibleCategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох категори олдсонгүй</Text>} renderItem={({ item }) => {
+                const selected = categoryId === item.id;
+                return (
+                  <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectCategory(item)} android_ripple={{ color: colors.border }}>
+                    <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>
+                      {item.icon ? `${item.icon} ` : ''}{item.name}
+                    </Text>
+                    {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
+                  </Pressable>
+                );
+              }} />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={subcategoryModalVisible} animationType="slide" transparent onRequestClose={() => setSubcategoryModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setSubcategoryModalVisible(false)} />
+          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Дэд категори сонгох</Text><Pressable onPress={() => setSubcategoryModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
+            <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Дэд категори хайх..." placeholderTextColor={colors.textSecondary} value={subcategorySearch} onChangeText={setSubcategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
+            <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSubcategorySearch(""); setSubcategoryModalVisible(false); }} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? "#111" : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}</Pressable>
+            <FlatList data={visibleSubcategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох дэд категори олдсонгүй</Text>} renderItem={({ item }) => {
+                const selected = subcategoryId === item.id;
+                return (
+                  <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectSubcategory(item)} android_ripple={{ color: colors.border }}>
+                    <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>
+                      {item.icon ? `${item.icon} ` : ''}{item.name}
+                    </Text>
+                    {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
+                  </Pressable>
+                );
+              }} />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={dynamicModalVisible} animationType="slide" transparent onRequestClose={() => setDynamicModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setDynamicModalVisible(false)} />
+          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>{activeDynamicField?.label || "Сонгох"}</Text>
+              <Pressable onPress={() => setDynamicModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable>
+            </View>
+            <FlatList data={activeDynamicField?.options || []} keyExtractor={(item) => item} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} renderItem={({ item }) => {
+                const selected = dynamicData[activeDynamicField?.name] === item;
+                return (
+                  <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => {
+                      setDynamicData(prev => ({ ...prev, [activeDynamicField.name]: item }));
+                      setDynamicModalVisible(false);
+                  }} android_ripple={{ color: colors.border }}>
+                    <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>{item}</Text>
+                    {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
+                  </Pressable>
+                );
+              }} />
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }

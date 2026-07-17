@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, CheckCircle, Check, CreditCard } from "lucide-react-native";
+import { CheckCircle, Check, CreditCard } from "lucide-react-native";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -36,12 +36,14 @@ const ALL_PLANS: SponsorPlan[] = [
   { id: "monthly", name: "30 хоног", price: 45000, durationDays: 30, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 30 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
 ];
 
+const PAYMENTS_AVAILABLE = false;
+
 export default function SponsorPaymentScreen() {
   const router = useRouter();
   const { jobId, targetType } = useLocalSearchParams<{ jobId?: string; targetType?: "bump" | "sponsor" | "credit" }>();
   const { jobs, loadJobs } = useJobs() as any;
   const { user, refetchProfile } = useAuth() as any;
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
   const [step, setStep] = useState<"info" | "invoice" | "success">("info");
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,8 +66,6 @@ export default function SponsorPaymentScreen() {
   const selectedJob = useMemo(() => (jobs as any[]).find((j) => String(j?.id) === String(jobId)) ?? null, [jobs, jobId]);
   const screenTitle = "Төлбөр төлөлт";
 
-  const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
-  const creditButtonTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
 
   const handleGenerateInvoice = () => {
     if (!selectedPlanData) return;
@@ -75,28 +75,6 @@ export default function SponsorPaymentScreen() {
       setStep("invoice");
       setIsSubmitting(false);
     }, 800);
-  };
-
-  const handleAppleGooglePay = () => {
-    if (!selectedPlanData) return;
-    setPayType("apple_google");
-    const payMethodName = Platform.OS === "ios" ? "Apple Pay" : "Google Pay";
-    Alert.alert(
-      payMethodName,
-      `${payMethodName}-ээр ${selectedPlanData.price.toLocaleString()}₮ төлж, үйлчилгээг идэвхжүүлэх үү?`,
-      [
-        { text: "Болих", style: "cancel" },
-        {
-          text: "Төлөх",
-          onPress: () => {
-            setIsSubmitting(true);
-            setTimeout(() => {
-              handleFakePayment();
-            }, 1200);
-          }
-        }
-      ]
-    );
   };
 
   const handleFakePayment = async () => {
@@ -223,10 +201,10 @@ export default function SponsorPaymentScreen() {
                 
                 <View style={{ gap: 12 }}>
                   <TouchableOpacity 
-                    style={[styles.payMethodBtn, { backgroundColor: "#111111" }]} 
+                    style={[styles.payMethodBtn, { backgroundColor: "#111111", opacity: PAYMENTS_AVAILABLE ? 1 : 0.55 }]} 
                     activeOpacity={0.85}
-                    onPress={handleAppleGooglePay}
-                    disabled={isSubmitting}
+                    onPress={undefined}
+                    disabled={!PAYMENTS_AVAILABLE || isSubmitting}
                   >
                     {isSubmitting && payType === "apple_google" ? (
                       <ActivityIndicator color="#FFFFFF" />
@@ -234,7 +212,7 @@ export default function SponsorPaymentScreen() {
                       <View style={styles.payMethodBtnContent}>
                         <CreditCard size={24} color="#FFFFFF" />
                         <Text style={[styles.payMethodBtnText, { color: "#FFFFFF" }]}>
-                          {Platform.OS === "ios" ? "Apple Pay" : "Google Pay"}
+                          {`${Platform.OS === "ios" ? "Apple Pay" : "Google Pay"} — Coming soon`}
                         </Text>
                       </View>
                     )}

@@ -20,6 +20,7 @@ import {
 import { useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import AppHeader from "@/components/AppHeader";
 import { supabase } from "@/lib/supabase";
 
 type LocalSubcategory = { id: string; name: string; icon?: string | null; };
@@ -185,11 +186,7 @@ function normalizeJob(raw: any): BrowseJob {
   };
 }
 
-function getLogoUri(currentTheme: string) {
-  return currentTheme === "navy"
-    ? "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns"
-    : "https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/0rqqd3riktgmfxudfl0s8";
-}
+
 
 function JobCard({
   job,
@@ -274,7 +271,7 @@ function JobCard({
 
 export default function BrowseScreen() {
   const { jobs } = useJobs();
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
   const router = useRouter();
 
   const normalizedJobs = useMemo<BrowseJob[]>(
@@ -689,23 +686,10 @@ export default function BrowseScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SafeAreaView
-        edges={["top"]}
-        style={[styles.safeArea, { backgroundColor: colors.primary }]}
+        edges={["bottom"]}
+        style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}
       >
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-              <ArrowLeft size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Хайх</Text>
-          </View>
-
-          <Image
-            source={{ uri: getLogoUri(currentTheme) }}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
+        <AppHeader title="Хайх" />
 
         <View style={styles.searchContainer}>
           <Search size={20} color={colors.textSecondary} style={styles.searchIcon} />
