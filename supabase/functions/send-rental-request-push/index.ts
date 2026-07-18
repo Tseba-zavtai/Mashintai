@@ -59,7 +59,7 @@ serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const { data: rentalRequest, error: rentalRequestError } = await admin
       .from("rental_requests")
-      .select("id, requester_id, owner_id, job_id")
+      .select("id, requester_id, owner_id, job_id, insurance_status")
       .eq("id", body.rentalRequestId)
       .maybeSingle();
 

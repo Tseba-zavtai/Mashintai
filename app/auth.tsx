@@ -399,11 +399,11 @@ export default function AuthScreen() {
             <View style={styles.header}>
               <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
                 {isForgotPassword ? (
-                  <KeyRound size={48} color={colors.text} strokeWidth={2} />
+                  <KeyRound size={48} color={colors.buttonText} strokeWidth={2} />
                 ) : isSignUp ? (
-                  <UserPlus size={48} color={colors.text} strokeWidth={2} />
+                  <UserPlus size={48} color={colors.buttonText} strokeWidth={2} />
                 ) : (
-                  <LogIn size={48} color={colors.text} strokeWidth={2} />
+                  <LogIn size={48} color={colors.buttonText} strokeWidth={2} />
                 )}
               </View>
 
@@ -581,7 +581,7 @@ export default function AuthScreen() {
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: termsAccepted }}
                   >
-                    {termsAccepted && <Text style={[styles.checkMark, { color: colors.text }]}>✓</Text>}
+                    {termsAccepted && <Text style={[styles.checkMark, { color: colors.buttonText }]}>✓</Text>}
                   </Pressable>
 
                   <Text style={[styles.termsText, { color: colors.textSecondary }]}>
@@ -604,7 +604,7 @@ export default function AuthScreen() {
                 disabled={isMainDisabled}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.buttonText, { color: colors.headerText }]}>{mainButtonText}</Text>
+                <Text style={[styles.buttonText, { color: colors.buttonText }]}>{mainButtonText}</Text>
               </TouchableOpacity>
 
               {!isForgotPassword && !isSignUp && (
@@ -702,7 +702,7 @@ export default function AuthScreen() {
             disabled={!termsScrolledToEnd || loadingTerms}
             activeOpacity={0.85}
           >
-            <Text style={[styles.termsAcceptText, { color: colors.text }]}>
+            <Text style={[styles.termsAcceptText, { color: colors.buttonText }]}>
               {termsScrolledToEnd ? "Зөвшөөрөх" : "Доош нь гүйлгээд үргэлжлүүлнэ үү"}
             </Text>
           </TouchableOpacity>

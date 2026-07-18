@@ -26,7 +26,7 @@ export type RentalRequest = {
   id: string; job_id: string; requester_id: string; owner_id: string;
   requester_name?: string | null; requester_phone?: string | null; requester_photo?: string | null;
   quantity: number; rent_days?: number; total_price?: number; status: RentalRequestStatus;
-  message?: string | null; created_at?: string; updated_at?: string; jobs?: any;
+  message?: string | null; insurance_status?: string | null; insurance_payer_id?: string | null; insurance_payer_role?: "requester" | "owner" | null; insurance_premium?: number | null; insurance_rate_percent?: number | null; insurance_paid_at?: string | null; created_at?: string; updated_at?: string; jobs?: any;
 };
 
 function asPositiveInt(value: any, fallback = 1): number {
@@ -488,7 +488,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         return [];
       }
       const uid = data.session.user.id;
-      const selectWithJob = "id,job_id,requester_id,owner_id,requester_name,requester_phone,requester_photo,quantity,rent_days,total_price,status,message,created_at,updated_at,jobs(id,title,description,category,subcategory,posted_by_name,posted_by_phone,image_url,image_urls)";
+      const selectWithJob = "id,job_id,requester_id,owner_id,requester_name,requester_phone,requester_photo,quantity,rent_days,total_price,status,message,insurance_status,insurance_payer_id,insurance_payer_role,insurance_premium,insurance_rate_percent,insurance_paid_at,created_at,updated_at,jobs(id,title,description,category,subcategory,posted_by_name,posted_by_phone,image_url,image_urls)";
 
       let rows: any[] = [];
       const withJoin = await supabase

@@ -227,13 +227,13 @@ export default function LocationScreen() {
             style={[
               styles.filterButton,
               { backgroundColor: colors.card, borderColor: colors.border },
-              selectedFilter === "near" && { backgroundColor: "#1A1A1A", borderColor: "#1A1A1A" },
+              selectedFilter === "near" && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => setSelectedFilter("near")}
             activeOpacity={0.7}
           >
-            <Locate size={18} color={selectedFilter === "near" ? "#fff" : colors.text} />
-            <Text style={[styles.filterButtonText, { color: selectedFilter === "near" ? "#fff" : colors.text }]}>
+            <Locate size={18} color={selectedFilter === "near" ? colors.buttonText : colors.text} />
+            <Text style={[styles.filterButtonText, { color: selectedFilter === "near" ? colors.buttonText : colors.text }]}>
               Надтай ойр
             </Text>
           </TouchableOpacity>
@@ -242,13 +242,13 @@ export default function LocationScreen() {
             style={[
               styles.filterButton,
               { backgroundColor: colors.card, borderColor: colors.border },
-              selectedFilter === "location" && { backgroundColor: "#1A1A1A", borderColor: "#1A1A1A" },
+              selectedFilter === "location" && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => setSelectedFilter("location")}
             activeOpacity={0.7}
           >
-            <Navigation size={18} color={selectedFilter === "location" ? "#fff" : colors.text} />
-            <Text style={[styles.filterButtonText, { color: selectedFilter === "location" ? "#fff" : colors.text }]}>
+            <Navigation size={18} color={selectedFilter === "location" ? colors.buttonText : colors.text} />
+            <Text style={[styles.filterButtonText, { color: selectedFilter === "location" ? colors.buttonText : colors.text }]}>
               Байршилаар
             </Text>
           </TouchableOpacity>
@@ -257,13 +257,13 @@ export default function LocationScreen() {
             style={[
               styles.filterButton,
               { backgroundColor: colors.card, borderColor: colors.border },
-              selectedFilter === "list" && { backgroundColor: "#1A1A1A", borderColor: "#1A1A1A" },
+              selectedFilter === "list" && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => setSelectedFilter("list")}
             activeOpacity={0.7}
           >
-            <List size={18} color={selectedFilter === "list" ? "#fff" : colors.text} />
-            <Text style={[styles.filterButtonText, { color: selectedFilter === "list" ? "#fff" : colors.text }]}>
+            <List size={18} color={selectedFilter === "list" ? colors.buttonText : colors.text} />
+            <Text style={[styles.filterButtonText, { color: selectedFilter === "list" ? colors.buttonText : colors.text }]}>
               Жагсаалтаар
             </Text>
           </TouchableOpacity>
@@ -342,7 +342,7 @@ export default function LocationScreen() {
                     </Text>
 
                     <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                      <Text style={[styles.jobCategory, { color: colors.headerText, backgroundColor: colors.primary }]}>
+                      <Text style={[styles.jobCategory, { color: colors.buttonText, backgroundColor: colors.primary }]}>
                         {normalizeCategory(job.category) || "Категори байхгүй"}
                       </Text>
                       {selectedFilter === "near" && distanceKm != null ? (
@@ -382,7 +382,7 @@ export default function LocationScreen() {
                   </Text>
 
                   <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginTop: 8 }}>
-                    <Text style={[styles.badge, { color: colors.headerText, backgroundColor: colors.primary }]}>
+                    <Text style={[styles.badge, { color: colors.buttonText, backgroundColor: colors.primary }]}>
                       {normalizeCategory(job.category) || "Категори байхгүй"}
                     </Text>
                     {distanceKm != null ? (

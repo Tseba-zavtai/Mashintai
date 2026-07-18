@@ -1,4 +1,4 @@
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Modal, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { Check, X } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ThemeType } from "@/constants/colors";
@@ -25,6 +25,8 @@ const themeOptions: ThemeOption[] = [
 
 export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) {
   const { currentTheme, changeTheme, colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const swatchSize = Math.min(48, Math.max(44, Math.floor((width - 62) / 6)));
 
   const handleSelectTheme = async (theme: ThemeType) => {
     if (theme !== currentTheme) {
@@ -52,7 +54,7 @@ export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) 
 
         <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
           <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Өнгө сонгох</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Өнгө</Text>
             <TouchableOpacity
               onPress={onClose}
               style={styles.closeButton}
@@ -63,14 +65,14 @@ export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) 
             </TouchableOpacity>
           </View>
 
-          <View style={styles.themeGrid}>
+          <View style={styles.themeRow}>
             {themeOptions.map((option) => {
               const isSelected = currentTheme === option.type;
 
               return (
                 <TouchableOpacity
                   key={option.type}
-                  style={styles.themeButton}
+                  style={[styles.themeButton, { width: swatchSize, height: swatchSize }]}
                   onPress={() => handleSelectTheme(option.type)}
                   activeOpacity={0.78}
                   accessibilityRole="button"
@@ -88,8 +90,8 @@ export default function ThemeSelector({ visible, onClose }: ThemeSelectorProps) 
                     ]}
                   >
                     {isSelected ? (
-                      <View style={[styles.selectionMark, { backgroundColor: colors.card }]}>
-                        <Check size={17} color={option.color} strokeWidth={3} />
+                      <View style={[styles.selectionMark, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Check size={13} color={option.color} strokeWidth={3} />
                       </View>
                     ) : null}
                   </View>
@@ -114,46 +116,47 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.42)",
   },
   modalContent: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 20,
-    paddingBottom: 36,
-    paddingHorizontal: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 18,
+    paddingBottom: 30,
+    paddingHorizontal: 16,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 20,
   },
-  modalTitle: { fontSize: 18, fontWeight: "800", letterSpacing: -0.2 },
-  closeButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 18 },
-  themeGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 18 },
-  themeButton: { width: "29.5%", aspectRatio: 1, padding: 3 },
+  modalTitle: { fontSize: 17, fontWeight: "800", letterSpacing: -0.2 },
+  closeButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 17 },
+  themeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  themeButton: { padding: 2 },
   swatch: {
     flex: 1,
-    borderRadius: 24,
+    borderRadius: 999,
     borderWidth: 1,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowRadius: 4,
+    elevation: 2,
   },
   selectedSwatch: { borderWidth: 3 },
   selectionMark: {
     position: "absolute",
-    right: -7,
-    bottom: -7,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    right: -5,
+    bottom: -5,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+    elevation: 2,
   },
 });

@@ -8,6 +8,12 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
+import {
+  calculateRentalInsurancePremium,
+  isRentalInsurancePaid,
+  rentalInsurancePayerLabel,
+  RENTAL_INSURANCE_RATE_PERCENT,
+} from "@/lib/rentalInsurance";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Нэгдсэн стандартын толгой
 
 type RentalRequest = {
@@ -23,6 +29,10 @@ type RentalRequest = {
   total_price?: number | null;
   status: "pending" | "approved" | "rejected" | "cancelled" | "completed" | "paid" | "handover_requested" | "in_rent";
   message?: string | null;
+  insurance_status?: string | null;
+  insurance_payer_id?: string | null;
+  insurance_payer_role?: "requester" | "owner" | null;
+  insurance_premium?: number | null;
   created_at?: string;
   jobs?: any;
 };
@@ -141,11 +151,68 @@ export default function RentalRequestsScreen() {
     setTermsModalVisible(true);
   };
 
-  const confirmApprove = async () => {
-    if (!selectedRequestId || busyId) return;
+  const continueOwnerInsurancePayment = (request: RentalRequest) => {
+    const premium = Math.max(0, Number(request.insurance_premium ?? calculateRentalInsurancePremium(request.total_price)));
+    if (premium <= 0) {
+      Alert.alert("Анхаар", "Даатгалын дүн тооцоологдсонгүй.");
+      return;
+    }
+    setTermsModalVisible(false);
+    setSelectedRequestId(null);
+    router.push({
+      pathname: "/insurance-payment",
+      params: {
+        requestId: request.id,
+        flow: "owner",
+        premium: String(premium),
+        title: String(request.jobs?.title || request.jobs?.subcategory || request.jobs?.category || "Түрээсийн хүсэлт"),
+      },
+    });
+  };
+
+  const startOwnerInsurancePayment = async (request: RentalRequest) => {
+    const premium = calculateRentalInsurancePremium(request.total_price);
+    if (premium <= 0) {
+      Alert.alert("Анхаар", "Даатгалын дүн тооцоологдсонгүй.");
+      return;
+    }
+
     try {
-      setBusyId(selectedRequestId);
-      await approveRentalRequest?.(selectedRequestId);
+      setBusyId(request.id);
+      const { error } = await supabase.rpc("prepare_rental_insurance_demo_payment", {
+        p_request_id: request.id,
+        p_premium: premium,
+        p_rate_percent: RENTAL_INSURANCE_RATE_PERCENT,
+      });
+      if (error) throw error;
+      await loadRentalRequests?.();
+      continueOwnerInsurancePayment({
+        ...request,
+        insurance_status: "payment_pending_owner",
+        insurance_payer_role: "owner",
+        insurance_premium: premium,
+      });
+    } catch (e: any) {
+      Alert.alert("Алдаа", e?.message ?? "Даатгалын test төлбөр үүсгэхэд алдаа гарлаа.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const finishApprove = async (request: RentalRequest, recordInsuranceDecline: boolean) => {
+    if (busyId) return;
+    try {
+      setBusyId(request.id);
+      if (recordInsuranceDecline) {
+        const premium = calculateRentalInsurancePremium(request.total_price);
+        const { error: insuranceError } = await supabase.rpc("decline_rental_insurance", {
+          p_request_id: request.id,
+          p_premium: premium,
+          p_rate_percent: RENTAL_INSURANCE_RATE_PERCENT,
+        });
+        if (insuranceError) throw insuranceError;
+      }
+      await approveRentalRequest?.(request.id);
       setTermsModalVisible(false);
       Alert.alert("Мэдэгдэл", "Түрээслэх хүсэлтийг зөвшөөрлөө. Утасны дугаараар холбогдоно уу.");
     } catch (e: any) {
@@ -154,6 +221,43 @@ export default function RentalRequestsScreen() {
       setBusyId(null);
       setSelectedRequestId(null);
     }
+  };
+
+  const confirmApprove = async () => {
+    if (!selectedRequestId || busyId) return;
+    const request = (Array.isArray(rentalRequests) ? rentalRequests : []).find((item: RentalRequest) => item.id === selectedRequestId) as RentalRequest | undefined;
+    if (!request) {
+      Alert.alert("Алдаа", "Түрээсийн хүсэлт олдсонгүй.");
+      return;
+    }
+
+    const insuranceStatus = request.insurance_status ?? "not_requested";
+    if (isRentalInsurancePaid(insuranceStatus)) {
+      await finishApprove(request, false);
+      return;
+    }
+
+    if (insuranceStatus === "payment_pending_owner") {
+      continueOwnerInsurancePayment(request);
+      return;
+    }
+
+    if (insuranceStatus === "payment_pending_requester") {
+      Alert.alert("Мэдэгдэл", "Түрээслэгч даатгалын test төлбөрөө баталгаажуулсны дараа хүсэлт танд ирнэ.");
+      return;
+    }
+
+    const premium = calculateRentalInsurancePremium(request.total_price);
+    setTermsModalVisible(false);
+    Alert.alert(
+      "Бараагаа даатгуулах уу?",
+      `Даатгал нь сонголттой. Test хураамж: ${premium.toLocaleString()} ₮ (нийт түрээсийн дүнгийн ${RENTAL_INSURANCE_RATE_PERCENT}%). Нэг хүсэлтэд зөвхөн нэг тал л төлнө.`,
+      [
+        { text: "Буцах", style: "cancel" },
+        { text: "Даатгалгүй зөвшөөрөх", onPress: () => void finishApprove(request, true) },
+        { text: "Даатгуулах", onPress: () => void startOwnerInsurancePayment(request) },
+      ],
+    );
   };
 
   const handleReject = async (id: string) => {
@@ -294,8 +398,13 @@ export default function RentalRequestsScreen() {
     ]);
   };
 
-  const list: RentalRequest[] = Array.isArray(rentalRequests) ? rentalRequests : [];
+  const allRequests: RentalRequest[] = Array.isArray(rentalRequests) ? rentalRequests : [];
   const currentUserId = user?.id;
+  // A renter can start the test payment before notifying the owner. Do not expose
+  // that draft to the owner until the payment is confirmed.
+  const list = allRequests.filter((item) => !(
+    item.owner_id === currentUserId && item.insurance_status === "payment_pending_requester"
+  ));
 
   return (
     <>
@@ -332,6 +441,10 @@ export default function RentalRequestsScreen() {
               const isRequester = currentUserId === item.requester_id;
               const isApprovedOrActive = item.status !== "pending" && item.status !== "rejected" && item.status !== "cancelled";
                const hasReviewed = reviewedRequestIds.has(item.id);
+               const insuranceStatus = item.insurance_status ?? "not_requested";
+               const insurancePaid = isRentalInsurancePaid(insuranceStatus);
+               const insurancePayer = rentalInsurancePayerLabel(insuranceStatus);
+               const insurancePaymentPending = insuranceStatus === "payment_pending_requester" || insuranceStatus === "payment_pending_owner";
 
               return (
                 <TouchableOpacity 
@@ -382,19 +495,34 @@ export default function RentalRequestsScreen() {
                       </Text>
                     ) : null}
                   </View>
+                  {(insurancePaid || insurancePaymentPending) && (
+                    <View style={[styles.insuranceBadge, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
+                      <Text style={[styles.insuranceBadgeText, { color: insurancePaid ? colors.primary : colors.textSecondary }]}>
+                        {insurancePaid
+                          ? `Даатгалтай · ${insurancePayer || "Төлөгдсөн"}`
+                          : "Даатгалын test төлбөр хүлээгдэж байна"}
+                      </Text>
+                    </View>
+                  )}
 
                   {/* ТҮРЭЭСЛҮҮЛЭГЧИЙН ҮЙЛДЛҮҮД */}
                   {isOwner && (
                     <View style={styles.actionsRow}>
-                      {item.status === "pending" && (
+                      {item.status === "pending" && insuranceStatus === "payment_pending_owner" && (
+                        <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => continueOwnerInsurancePayment(item)}>
+                          <Check size={18} color={colors.buttonText} />
+                          <Text style={[styles.actionText, { color: colors.buttonText }]}>Даатгалын төлбөр үргэлжлүүлэх</Text>
+                        </TouchableOpacity>
+                      )}
+                      {item.status === "pending" && insuranceStatus !== "payment_pending_owner" && (
                         <>
                           <TouchableOpacity style={[styles.actionButton, styles.rejectButton, { borderColor: colors.border }]} onPress={() => handleReject(item.id)}>
                             <X size={18} color={colors.text} />
                             <Text style={[styles.actionText, { color: colors.text }]}>Татгалзах</Text>
                           </TouchableOpacity>
                           <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => openApproveModal(item.id)}>
-                            <Check size={18} color={colors.headerText} />
-                            <Text style={[styles.actionText, { color: colors.headerText }]}>Зөвшөөрөх</Text>
+                            <Check size={18} color={colors.buttonText} />
+                            <Text style={[styles.actionText, { color: colors.buttonText }]}>Зөвшөөрөх</Text>
                           </TouchableOpacity>
                         </>
                       )}
@@ -406,16 +534,16 @@ export default function RentalRequestsScreen() {
                             <Text style={[styles.actionText, { color: colors.text }]}>Цуцлах</Text>
                           </TouchableOpacity>
                           <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => handleConfirmHandover(item.id)}>
-                            <Check size={18} color={colors.headerText} />
-                            <Text style={[styles.actionText, { color: colors.headerText }]}>Баталгаажуулах</Text>
+                            <Check size={18} color={colors.buttonText} />
+                            <Text style={[styles.actionText, { color: colors.buttonText }]}>Баталгаажуулах</Text>
                           </TouchableOpacity>
                         </>
                       )}
 
                       {(item.status === "paid") && (
                          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => handleCompleteRental(item.id)}>
-                           <Check size={18} color={colors.headerText} />
-                           <Text style={[styles.actionText, { color: colors.headerText }]}>Түрээс дуусгах</Text>
+                           <Check size={18} color={colors.buttonText} />
+                           <Text style={[styles.actionText, { color: colors.buttonText }]}>Түрээс дуусгах</Text>
                          </TouchableOpacity>
                       )}
                     </View>
@@ -424,10 +552,27 @@ export default function RentalRequestsScreen() {
                   {/* ТҮРЭЭСЛЭГЧИЙН ҮЙЛДЛҮҮД */}
                   {isRequester && (
                     <View style={styles.actionsRow}>
+                      {item.status === "pending" && insuranceStatus === "payment_pending_requester" && item.insurance_payer_id === currentUserId && (
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                          onPress={() => router.push({
+                            pathname: "/insurance-payment",
+                            params: {
+                              requestId: item.id,
+                              flow: "requester",
+                              premium: String(item.insurance_premium ?? calculateRentalInsurancePremium(item.total_price)),
+                              title: String(job.title || job.subcategory || job.category || "Түрээсийн хүсэлт"),
+                            },
+                          })}
+                        >
+                          <Check size={18} color={colors.buttonText} />
+                          <Text style={[styles.actionText, { color: colors.buttonText }]}>Даатгалын төлбөр үргэлжлүүлэх</Text>
+                        </TouchableOpacity>
+                      )}
                       {item.status === "approved" && (
                         <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => handleReceiveItem(item.id)}>
-                          <Check size={18} color={colors.headerText} />
-                          <Text style={[styles.actionText, { color: colors.headerText }]}>Бараа хүлээж авах</Text>
+                          <Check size={18} color={colors.buttonText} />
+                          <Text style={[styles.actionText, { color: colors.buttonText }]}>Бараа хүлээж авах</Text>
                         </TouchableOpacity>
                       )}
                       
@@ -457,8 +602,8 @@ export default function RentalRequestsScreen() {
                           style={[styles.actionButton, { backgroundColor: colors.primary }]}
                           onPress={() => openReviewForRequest(item.id, item.job_id, item.owner_id, false)}
                         >
-                          <Check size={18} color={colors.headerText} />
-                          <Text style={[styles.actionText, { color: colors.headerText }]}>Эзнийг үнэлэх</Text>
+                          <Check size={18} color={colors.buttonText} />
+                          <Text style={[styles.actionText, { color: colors.buttonText }]}>Эзнийг үнэлэх</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -553,6 +698,8 @@ const styles = StyleSheet.create({
   phoneText: { marginTop: 10, fontSize: 13, fontWeight: "700" },
   statusRow: { marginTop: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderColor: "rgba(0,0,0,0.1)" },
   statusText: { fontSize: 14, fontWeight: "800" },
+  insuranceBadge: { marginTop: 10, borderWidth: 1, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8 },
+  insuranceBadgeText: { fontSize: 12, fontWeight: "700" },
   priceText: { fontSize: 16, fontWeight: "900" },
   actionsRow: { flexDirection: "row", gap: 10, marginTop: 14 },
   actionButton: { flex: 1, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 },

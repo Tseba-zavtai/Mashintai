@@ -579,7 +579,7 @@ export default function HomeScreen() {
         <View style={styles.bottomPadding} />
       </ScrollView>
 
-      <TouchableOpacity style={[styles.floatingButton, { backgroundColor: colors.primary }]} onPress={() => setShowThemeSelector(true)} activeOpacity={0.8}><Palette size={24} color={colors.headerText} /></TouchableOpacity>
+      <TouchableOpacity style={[styles.floatingButton, { backgroundColor: colors.primary }]} onPress={() => setShowThemeSelector(true)} activeOpacity={0.8}><Palette size={24} color={colors.buttonText} /></TouchableOpacity>
       <ThemeSelector visible={showThemeSelector} onClose={() => setShowThemeSelector(false)} />
 
       {/* МОДАЛ 1: Хүчээр Шинэчлэлт хийлгэх (Force Update) */}
@@ -595,7 +595,7 @@ export default function HomeScreen() {
               style={[styles.versionBtn, { backgroundColor: colors.primary }]} 
               onPress={() => Linking.openURL("https://tureesly.mn")} 
             >
-              <Text style={{ color: colors.headerText, fontWeight: "700", fontSize: 16 }}>Шинэчлэх</Text>
+              <Text style={{ color: colors.buttonText, fontWeight: "700", fontSize: 16 }}>Шинэчлэх</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -633,7 +633,7 @@ export default function HomeScreen() {
               style={[styles.versionBtn, { backgroundColor: colors.primary, marginTop: 8 }]} 
               onPress={() => setShowAnnouncementModal(false)}
             >
-              <Text style={{ color: colors.headerText, fontWeight: "700", fontSize: 15 }}>Баярлалаа</Text>
+              <Text style={{ color: colors.buttonText, fontWeight: "700", fontSize: 15 }}>Баярлалаа</Text>
             </TouchableOpacity>
           </View>
         </View>

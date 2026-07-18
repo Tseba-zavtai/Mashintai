@@ -56,7 +56,7 @@ const peachTheme: ColorScheme = {
   primary: "#FFE3DD",       // Товчлуурын суурь: #FFE3DD (Peach)
   buttonText: "#6E0AB0",    // Товчлуурын текст/icon: #6E0AB0 (Нил ягаан)
   headerBackground: "#FFE3DD",
-  headerText: "#2E0A4D",
+  headerText: "#6E0AB0",
   tint: "#FFE3DD",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
@@ -82,7 +82,7 @@ const grayTheme: ColorScheme = {
   primary: "#D0D2D8",       // Товчлуурын суурь: #D0D2D8 (Gray)
   buttonText: "#6E0AB0",    // Товчлуурын текст/icon: #6E0AB0 (Нил ягаан)
   headerBackground: "#D0D2D8",
-  headerText: "#2E0A4D",
+  headerText: "#6E0AB0",
   tint: "#6B7280",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
@@ -95,7 +95,7 @@ const mintTheme: ColorScheme = {
   primary: "#8FE3CF",       // Товчлуурын суурь: #8FE3CF (Mint)
   buttonText: "#6E0AB0",    // Товчлуурын текст/icon: #6E0AB0 (Нил ягаан)
   headerBackground: "#8FE3CF",
-  headerText: "#2E0A4D",
+  headerText: "#6E0AB0",
   tint: "#8FE3CF",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",
@@ -108,7 +108,7 @@ const skyTheme: ColorScheme = {
   primary: "#AFC6D9",       // Товчлуурын суурь: #AFC6D9 (Sky)
   buttonText: "#6E0AB0",    // Товчлуурын текст/icon: #6E0AB0 (Нил ягаан)
   headerBackground: "#AFC6D9",
-  headerText: "#2E0A4D",
+  headerText: "#6E0AB0",
   tint: "#AFC6D9",
   tabIconDefault: "#9CA3AF",
   tabIconSelected: "#6E0AB0",

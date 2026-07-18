@@ -16,7 +16,7 @@ import { isSponsoredPromotionActive, recordPromotionMetric } from "@/lib/promoti
 export default function UserProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const router = useRouter();
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
   const { jobs, submitRentalReview, rentalRequests, loadRentalRequests } = useJobs() as any;
   const { user: currentUser } = useAuth() as any;
 
@@ -29,8 +29,7 @@ export default function UserProfileScreen() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewedRequestIds, setReviewedRequestIds] = useState<Set<string>>(new Set());
 
-  const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
-  const userBtnTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
+  const userBtnTextColor = colors.buttonText;
 
   useEffect(() => {
     const fetchUserAndReviews = async () => {

@@ -18,6 +18,7 @@ import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/lib/supabase";
+import { recordMockServicePaymentAndReceipt, type MockEbarimtReceipt, type PaidServiceType } from "@/lib/mockEbarimt";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Нэгдсэн стандартын толгой
 
 type SponsorPlan = {
@@ -38,6 +39,12 @@ const ALL_PLANS: SponsorPlan[] = [
 
 const PAYMENTS_AVAILABLE = false;
 
+function getEbarimtServiceType(planId: string): PaidServiceType {
+  if (planId === "credit") return "post_credit";
+  if (planId === "bump") return "bump";
+  return "sponsored";
+}
+
 export default function SponsorPaymentScreen() {
   const router = useRouter();
   const { jobId, targetType } = useLocalSearchParams<{ jobId?: string; targetType?: "bump" | "sponsor" | "credit" }>();
@@ -48,6 +55,7 @@ export default function SponsorPaymentScreen() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [payType, setPayType] = useState<"qpay" | "apple_google">("qpay");
+  const [mockReceipt, setMockReceipt] = useState<MockEbarimtReceipt | null>(null);
 
   const dummyBanks = [
     { name: "Хаан Банк", logo: "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns" },
@@ -57,6 +65,7 @@ export default function SponsorPaymentScreen() {
   ];
 
   useEffect(() => {
+    setMockReceipt(null);
     if (targetType === "bump") setSelectedPlan("bump");
     else if (targetType === "credit") setSelectedPlan("credit");
     else setSelectedPlan("daily");
@@ -69,6 +78,7 @@ export default function SponsorPaymentScreen() {
 
   const handleGenerateInvoice = () => {
     if (!selectedPlanData) return;
+    setMockReceipt(null);
     setPayType("qpay");
     setIsSubmitting(true);
     setTimeout(() => {
@@ -82,22 +92,14 @@ export default function SponsorPaymentScreen() {
     try {
       setIsSubmitting(true);
       
-      const { error: historyError } = await supabase
-        .from("payments")
-        .insert([
-          {
-            user_id: user?.id,
-            amount: selectedPlanData.price,
-            payment_method: payType === "apple_google" ? (Platform.OS === "ios" ? "apple_pay" : "google_pay") : "qpay",
-            status: "success",
-            paid_at: new Date().toISOString()
-          }
-        ]);
-        
-      if (historyError) {
-        console.log("Төлбөрийн түүх хадгалахад алдаа гарлаа (SQL RLS-ээ шалгана уу):", historyError);
-      }
-      
+      const receipt = await recordMockServicePaymentAndReceipt({
+        serviceType: getEbarimtServiceType(selectedPlanData.id),
+        serviceName: selectedPlanData.name,
+        amount: selectedPlanData.price,
+        referenceId: selectedPlanData.id === "credit" ? null : (jobId ? String(jobId) : null),
+      });
+      setMockReceipt(receipt);
+
       if (selectedPlanData.id === "credit") {
         const currentCredits = user?.available_post_credits ?? 0;
         const { error } = await supabase.from("users").update({ available_post_credits: currentCredits + 3 }).eq("id", user?.id);
@@ -289,8 +291,24 @@ export default function SponsorPaymentScreen() {
             <Text style={[styles.successText, { color: colors.textSecondary }]}>
                {targetType === "credit" ? "Таны зарын эрх амжилттай 3-аар нэмэгдлээ." : "Үйлчилгээ амжилттай идэвхжлээ."}
             </Text>
+            {mockReceipt && (
+              <View style={[styles.mockReceiptCard, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
+                <Text style={[styles.mockReceiptTitle, { color: colors.primary }]}>Mock Ebarimt бүртгэгдлээ</Text>
+                <Text style={[styles.mockReceiptNumber, { color: colors.text }]}>Баримт № {mockReceipt.receipt_no}</Text>
+                <Text style={[styles.mockReceiptService, { color: colors.textSecondary }]}>{mockReceipt.service_name}</Text>
+                <View style={styles.mockReceiptRow}>
+                  <Text style={[styles.mockReceiptLabel, { color: colors.textSecondary }]}>НӨАТ (0%)</Text>
+                  <Text style={[styles.mockReceiptValue, { color: colors.text }]}>0₮</Text>
+                </View>
+                <View style={styles.mockReceiptRow}>
+                  <Text style={[styles.mockReceiptTotal, { color: colors.text }]}>Нийт төлсөн</Text>
+                  <Text style={[styles.mockReceiptTotal, { color: colors.text }]}>{mockReceipt.total_amount.toLocaleString()}₮</Text>
+                </View>
+                <Text style={[styles.mockReceiptNote, { color: colors.textSecondary }]}>Тест баримт — ebarimt.mn рүү илгээгдээгүй.</Text>
+              </View>
+            )}
             <TouchableOpacity style={[styles.doneBtn, { backgroundColor: colors.primary }]} onPress={() => router.replace(targetType === "credit" ? "/profile" : "/my-jobs")}>
-              <Text style={[styles.doneBtnText, { color: colors.headerText }]}>Дуусгах</Text>
+              <Text style={[styles.doneBtnText, { color: colors.buttonText }]}>Дуусгах</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -344,7 +362,16 @@ const styles = StyleSheet.create({
   actionBtnCloseText: { fontSize: 14, fontWeight: "700" },
   successBox: { borderRadius: 16, padding: 32, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   successTitle: { fontSize: 20, fontWeight: "800", marginTop: 16, marginBottom: 8 },
-  successText: { fontSize: 14, textAlign: "center", lineHeight: 20, marginBottom: 24 },
+  successText: { fontSize: 14, textAlign: "center", lineHeight: 20, marginBottom: 16 },
+  mockReceiptCard: { width: "100%", borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 24, gap: 6 },
+  mockReceiptTitle: { fontSize: 14, fontWeight: "800" },
+  mockReceiptNumber: { fontSize: 15, fontWeight: "800" },
+  mockReceiptService: { fontSize: 13, marginBottom: 4 },
+  mockReceiptRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  mockReceiptLabel: { fontSize: 13 },
+  mockReceiptValue: { fontSize: 13, fontWeight: "700" },
+  mockReceiptTotal: { fontSize: 14, fontWeight: "800" },
+  mockReceiptNote: { fontSize: 11, lineHeight: 16, marginTop: 5 },
   doneBtn: { width: "100%", height: 50, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   doneBtnText: { fontSize: 15, fontWeight: "800" }
 });

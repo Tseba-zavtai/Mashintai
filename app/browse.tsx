@@ -228,7 +228,7 @@ function JobCard({
             <Image source={{ uri: job.postedBy.photoUri }} style={styles.posterAvatarImage} />
           ) : (
             <View style={[styles.posterAvatar, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.posterInitial, { color: colors.text }]}>{initial}</Text>
+              <Text style={[styles.posterInitial, { color: colors.buttonText }]}>{initial}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -517,7 +517,7 @@ export default function BrowseScreen() {
       >
         <View style={[styles.searchHeader, { backgroundColor: colors.primary }]}>
           <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-            <ArrowLeft size={24} color={colors.text} />
+            <ArrowLeft size={24} color={colors.buttonText} />
           </TouchableOpacity>
 
           <View style={[styles.searchInputContainer, { backgroundColor: colors.card }]}>
@@ -627,7 +627,7 @@ export default function BrowseScreen() {
                     </View>
                   ) : result.type === "person" ? (
                     <View style={[styles.personAvatar, { backgroundColor: colors.primary }]}>
-                      <Text style={[styles.personInitial, { color: colors.text }]}>
+                      <Text style={[styles.personInitial, { color: colors.buttonText }]}>
                         {result.title?.[0] ?? "?"}
                       </Text>
                     </View>
@@ -725,7 +725,7 @@ export default function BrowseScreen() {
             <SlidersHorizontal size={20} color={colors.text} />
             {activeFiltersCount > 0 && (
               <View style={[styles.filterBadge, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.filterBadgeText, { color: colors.text }]}>
+                <Text style={[styles.filterBadgeText, { color: colors.buttonText }]}>
                   {activeFiltersCount}
                 </Text>
               </View>
@@ -765,7 +765,7 @@ export default function BrowseScreen() {
                 ]}
                 onPress={() => setSelectedCategory(null)}
               >
-                <Text style={[styles.filterChipText, { color: colors.text }]}>Бүгд</Text>
+                <Text style={[styles.filterChipText, { color: !selectedCategory ? colors.buttonText : colors.text }]}>Бүгд</Text>
               </TouchableOpacity>
 
               {dbCategories.map((category) => (
@@ -784,7 +784,7 @@ export default function BrowseScreen() {
                   ]}
                   onPress={() => setSelectedCategory(category.name)}
                 >
-                  <Text style={[styles.filterChipText, { color: colors.text }]}>
+                  <Text style={[styles.filterChipText, { color: selectedCategory === category.name ? colors.buttonText : colors.text }]}>
                     {category.icon ? `${category.icon} ` : ''}{category.name}
                   </Text>
                 </TouchableOpacity>

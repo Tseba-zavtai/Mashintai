@@ -146,7 +146,7 @@ export default function ReviewScreen() {
           onPress={handleSubmitReview}
           disabled={submitting || checkingExisting || alreadyReviewed}
         >
-          {submitting || checkingExisting ? <ActivityIndicator color={colors.headerText} /> : <Text style={[styles.submitBtnText, { color: colors.headerText }]}>{alreadyReviewed ? "Үнэлгээ өгсөн" : "Үнэлгээ илгээх"}</Text>}
+          {submitting || checkingExisting ? <ActivityIndicator color={colors.buttonText} /> : <Text style={[styles.submitBtnText, { color: colors.buttonText }]}>{alreadyReviewed ? "Үнэлгээ өгсөн" : "Үнэлгээ илгээх"}</Text>}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

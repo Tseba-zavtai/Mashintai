@@ -399,7 +399,7 @@ export default function PostScreen() {
                       backgroundColor: selected ? colors.primary : "transparent"
                     }}
                   >
-                    <Text style={{ color: selected ? '#111' : colors.text, fontSize: 13, fontWeight: '600' }}>{label}</Text>
+                    <Text style={{ color: selected ? colors.buttonText : colors.text, fontSize: 13, fontWeight: '600' }}>{label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -514,7 +514,7 @@ export default function PostScreen() {
           </View>
 
           <TouchableOpacity style={[styles.submitButton, { backgroundColor: postCredits <= 0 ? colors.border : colors.primary, opacity: submitting ? 0.75 : 1 }]} onPress={handleSubmit} activeOpacity={0.85} disabled={submitting}>
-            {submitting ? (<ActivityIndicator color={colors.headerText} />) : (<Text style={[styles.submitButtonText, { color: postCredits <= 0 ? colors.textSecondary : colors.headerText }]}>{postCredits <= 0 ? "Эрх дууссан" : "Зар нэмэх (1 эрх хасагдана)"}</Text>)}
+            {submitting ? (<ActivityIndicator color={colors.buttonText} />) : (<Text style={[styles.submitButtonText, { color: postCredits <= 0 ? colors.textSecondary : colors.buttonText }]}>{postCredits <= 0 ? "Эрх дууссан" : "Зар нэмэх (1 эрх хасагдана)"}</Text>)}
           </TouchableOpacity>
           {postCredits <= 0 && (<Text style={{ textAlign: "center", color: colors.error, marginTop: 12, fontSize: 13, fontWeight: "600" }}>Таны зар оруулах эрх дууссан байна. Профайл руу орж цэнэглэнэ үү.</Text>)}
           {addBanners.length > 0 ? (<View style={styles.addBannerOuter}><View style={styles.addBannerWrap}><BannerCarousel banners={addBanners} /></View></View>) : null}
@@ -533,10 +533,10 @@ export default function PostScreen() {
                 const selected = categoryId === item.id;
                 return (
                   <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectCategory(item)} android_ripple={{ color: colors.border }}>
-                    <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>
+                    <Text style={[styles.modalOptionText, { color: selected ? colors.buttonText : colors.text }]}>
                       {item.icon ? `${item.icon} ` : ''}{item.name}
                     </Text>
-                    {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
+                    {selected ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}
                   </Pressable>
                 );
               }} />
@@ -551,15 +551,15 @@ export default function PostScreen() {
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Дэд категори сонгох</Text><Pressable onPress={() => setSubcategoryModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
             <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Дэд категори хайх..." placeholderTextColor={colors.textSecondary} value={subcategorySearch} onChangeText={setSubcategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
-            <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSubcategorySearch(""); setSubcategoryModalVisible(false); }} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? "#111" : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}</Pressable>
+            <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSubcategorySearch(""); setSubcategoryModalVisible(false); }} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? colors.buttonText : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}</Pressable>
             <FlatList data={visibleSubcategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох дэд категори олдсонгүй</Text>} renderItem={({ item }) => {
                 const selected = subcategoryId === item.id;
                 return (
                   <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectSubcategory(item)} android_ripple={{ color: colors.border }}>
-                    <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>
+                    <Text style={[styles.modalOptionText, { color: selected ? colors.buttonText : colors.text }]}>
                       {item.icon ? `${item.icon} ` : ''}{item.name}
                     </Text>
-                    {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
+                    {selected ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}
                   </Pressable>
                 );
               }} />
@@ -583,8 +583,8 @@ export default function PostScreen() {
                       setDynamicData(prev => ({ ...prev, [activeDynamicField.name]: item }));
                       setDynamicModalVisible(false);
                   }} android_ripple={{ color: colors.border }}>
-                    <Text style={[styles.modalOptionText, { color: selected ? "#111" : colors.text }]}>{item}</Text>
-                    {selected ? (<Text style={styles.modalSelectedMark}>✓</Text>) : null}
+                    <Text style={[styles.modalOptionText, { color: selected ? colors.buttonText : colors.text }]}>{item}</Text>
+                    {selected ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}
                   </Pressable>
                 );
               }} />

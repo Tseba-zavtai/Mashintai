@@ -245,7 +245,7 @@ export default function LocationPickerScreen() {
                 { backgroundColor: colors.primary },
               ]}
             >
-              <Text style={styles.coordinatesText}>
+              <Text style={[styles.coordinatesText, { color: colors.buttonText }]}>
                 Pin: {pinPosition.x.toFixed(0)}, {pinPosition.y.toFixed(0)}
               </Text>
             </View>
@@ -281,8 +281,8 @@ export default function LocationPickerScreen() {
           disabled={!currentLocation || isLoadingLocation}
           activeOpacity={0.8}
         >
-          <Check size={20} color="#fff" />
-          <Text style={styles.saveButtonText}>Хадгалах</Text>
+          <Check size={20} color={colors.buttonText} />
+          <Text style={[styles.saveButtonText, { color: colors.buttonText }]}>Хадгалах</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

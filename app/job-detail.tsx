@@ -39,6 +39,10 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { isSponsoredPromotionActive, recordPromotionMetric } from "@/lib/promotionMetrics";
+import {
+  calculateRentalInsurancePremium,
+  RENTAL_INSURANCE_RATE_PERCENT,
+} from "@/lib/rentalInsurance";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AppHeader from "@/components/AppHeader"; 
 
@@ -126,6 +130,7 @@ export default function JobDetailScreen() {
   }, [job?.id, isSponsoredJobView]);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [rentModalVisible, setRentModalVisible] = useState(false);
+  const [insuranceModalVisible, setInsuranceModalVisible] = useState(false);
   const [rentQuantity, setRentQuantity] = useState(1);
   const [rentSubmitting, setRentSubmitting] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
@@ -139,8 +144,7 @@ export default function JobDetailScreen() {
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
-  const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
-  const buttonTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
+  const buttonTextColor = colors.buttonText;
   const dynamicData = normalizeDynamicData((job as any)?.dynamic_data ?? (job as any)?.dynamicData);
   const priceType = normalizePriceType((job as any)?.price_type ?? (job as any)?.priceType);
   const priceTypeLabel = priceType === "hourly" ? "цаг" : priceType === "monthly" ? "сар" : "өдөр";
@@ -253,7 +257,7 @@ export default function JobDetailScreen() {
     setRentModalVisible(true);
   };
   
-  const handleRentSubmit = async () => {
+  const handleRentSubmit = () => {
     if (!agreeTerms) { Alert.alert("Анхаар", "Та хариуцлагын санамжтай танилцаж, хүлээн зөвшөөрөх ёстой."); return; }
     if (rentSubmitting) return;
     const rentalStart = new Date(startDate);
@@ -266,6 +270,18 @@ export default function JobDetailScreen() {
       rentalEnd.setHours(0, 0, 0, 0);
     }
     if (rentalEnd <= rentalStart) { Alert.alert("Анхаар", "Дуусах огноо эхлэх огнооноос хойш байх ёстой."); return; }
+
+    setRentModalVisible(false);
+    setInsuranceModalVisible(true);
+  };
+
+  const submitRentalRequest = async (withInsurance: boolean) => {
+    const computedTotalPrice = jobPrice * rentQuantity * calculatedDuration;
+    const insurancePremium = calculateRentalInsurancePremium(computedTotalPrice);
+    if (withInsurance && insurancePremium <= 0) {
+      Alert.alert("Анхаар", "Даатгалын дүн тооцоологдсонгүй. Түрээсийн үнийг шалгана уу.");
+      return;
+    }
 
     try {
       setRentSubmitting(true);
@@ -283,8 +299,6 @@ export default function JobDetailScreen() {
       if ((existingRequests ?? []).length > 0) {
         throw new Error("Та энэ зарт хүлээгдэж буй хүсэлт илгээсэн байна.");
       }
-
-      const computedTotalPrice = jobPrice * rentQuantity * calculatedDuration;
 
       const { data: requestData, error: requestError } = await supabase
         .from("rental_requests")
@@ -305,17 +319,50 @@ export default function JobDetailScreen() {
             end_time: hasTime ? formatTimeLabel(endTime) : null,
             requester_name: user?.name,
             requester_phone: user?.phone,
-            requester_photo: user?.photoUri
+            requester_photo: user?.photoUri,
+            insurance_status: withInsurance ? "not_requested" : "requester_declined",
+            insurance_premium: insurancePremium || null,
+            insurance_rate_percent: RENTAL_INSURANCE_RATE_PERCENT,
           }
         ])
         .select()
         .single();
 
       if (requestError) throw requestError;
+
+      if (requestData && withInsurance) {
+        const { error: insuranceError } = await supabase.rpc("prepare_rental_insurance_demo_payment", {
+          p_request_id: requestData.id,
+          p_premium: insurancePremium,
+          p_rate_percent: RENTAL_INSURANCE_RATE_PERCENT,
+        });
+        if (insuranceError) {
+          await supabase
+            .from("rental_requests")
+            .delete()
+            .eq("id", requestData.id)
+            .eq("requester_id", requesterId)
+            .eq("status", "pending");
+          throw insuranceError;
+        }
+
+        setInsuranceModalVisible(false);
+        router.push({
+          pathname: "/insurance-payment",
+          params: {
+            requestId: requestData.id,
+            flow: "requester",
+            premium: String(insurancePremium),
+            title: String(job.title || job.subcategory || job.category || "Зар"),
+          },
+        });
+        return;
+      }
+
       if (requestData) {
         const { error: inAppNotificationError } = await supabase.from("notifications").insert([
           {
-            user_id: postedBy?.id, 
+            user_id: postedBy?.id,
             title: "Шинэ түрээсийн хүсэлт",
             content: `${user?.name || "Хэрэглэгч"} таны ${job.title || "бараа"}-г түрээслэх хүсэлт илгээлээ.`,
             is_read: false,
@@ -337,14 +384,15 @@ export default function JobDetailScreen() {
         }
       }
 
-      setRentModalVisible(false);
+      setInsuranceModalVisible(false);
       Alert.alert("Амжилттай", "Түрээслэх хүсэлт илгээгдлээ. Зарын эзэн зөвшөөрөх үед танд мэдэгдэл очино.", [{ text: "ОК", onPress: () => router.replace("/(tabs)") }]);
-    } catch (e: any) { Alert.alert("Алдаа", e?.message ?? "Түрээслэх хүсэлт илгээхэд алдаа гарлаа"); } finally { setRentSubmitting(false); }
+    } catch (e: any) { Alert.alert("Алдаа", e?.message ?? "Түрээслэх хүсэлт илгээхөд алдаа гарлаа"); } finally { setRentSubmitting(false); }
   };
 
   const activeImage = imageUrls[activeImageIndex] ?? imageUrls[0] ?? null;
   const mainImageHeight = Math.min(Math.max(width * 0.62, 220), 340);
   const totalPrice = jobPrice * rentQuantity * calculatedDuration;
+  const insurancePremiumForDisplay = calculateRentalInsurancePremium(totalPrice);
   
   return (
     <>
@@ -358,7 +406,7 @@ export default function JobDetailScreen() {
             {postedBy?.photoUri ? (
               <Image source={{ uri: postedBy.photoUri }} style={styles.posterAvatar} contentFit="cover" transition={200} />
             ) : (
-              <View style={[styles.posterAvatar, { backgroundColor: colors.primary }]}><Text style={[styles.posterInitial, { color: colors.headerBackground }]}>{initial}</Text></View>
+              <View style={[styles.posterAvatar, { backgroundColor: colors.primary }]}><Text style={[styles.posterInitial, { color: colors.buttonText }]}>{initial}</Text></View>
             )}
             <View style={styles.posterInfo}>
               <Text style={[styles.posterName, { color: colors.text }]}>{posterName}</Text>
@@ -615,6 +663,36 @@ export default function JobDetailScreen() {
             </View>
           </View>
         </Modal>
+        <Modal visible={insuranceModalVisible} transparent animationType="slide" onRequestClose={() => setInsuranceModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.reviewModal, { backgroundColor: colors.background }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Бараагаа даатгуулах уу?</Text>
+              <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>Даатгал нь сонголттой. Нэг түрээсийн хүсэлтэд зөвхөн нэг тал л төлөх боломжтой.</Text>
+
+              <View style={[styles.totalPriceWrap, { backgroundColor: colors.backgroundSecondary }]}>
+                <Text style={[styles.totalPriceLabel, { color: colors.textSecondary }]}>Даатгалын test хураамж ({RENTAL_INSURANCE_RATE_PERCENT}%):</Text>
+                <Text style={[styles.totalPriceValue, { color: colors.primary }]}>{insurancePremiumForDisplay.toLocaleString()} ₮</Text>
+                <Text style={[styles.calculationHint, { color: colors.textSecondary }]}>Нийт түрээсийн дүнгээс тооцсон; доод 1,000₮, дээд 15,000₮.</Text>
+              </View>
+
+              <View style={[styles.termsWrap, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
+                <Text style={[styles.termsDesc, { color: colors.textSecondary }]}>Энэ нь QPay урсгалыг шалгах demo юм. Бодит даатгалын түнш, нөхцөл батлагдсаны дараа жинхэнэ бодлого үүснэ.</Text>
+              </View>
+
+              <TouchableOpacity style={[styles.insuranceBackButton, { borderColor: colors.border }]} onPress={() => { setInsuranceModalVisible(false); setRentModalVisible(true); }} disabled={rentSubmitting}>
+                <Text style={[styles.modalCancelText, { color: colors.text }]}>Буцах</Text>
+              </TouchableOpacity>
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={[styles.modalCancelButton, { borderColor: colors.border }]} onPress={() => void submitRentalRequest(false)} disabled={rentSubmitting}>
+                  <Text style={[styles.modalCancelText, { color: colors.text }]}>Даатгалгүй үргэлжлүүлэх</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalSubmitButton, { backgroundColor: insurancePremiumForDisplay > 0 ? colors.primary : colors.border }]} onPress={() => void submitRentalRequest(true)} disabled={rentSubmitting || insurancePremiumForDisplay <= 0}>
+                  {rentSubmitting ? <ActivityIndicator color={buttonTextColor} /> : <Text style={[styles.modalSubmitText, { color: insurancePremiumForDisplay > 0 ? buttonTextColor : colors.textSecondary }]}>Даатгуулах</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </>
   );
@@ -705,6 +783,7 @@ const styles = StyleSheet.create({
   modalCancelButton: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   modalSubmitButton: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: "center", justifyContent: "center", minHeight: 48 },
   modalCancelText: { fontSize: 15, fontWeight: "700" },
-  modalSubmitText: { fontSize: 15, fontWeight: "800" },
+  modalSubmitText: { fontSize: 15, fontWeight: "800", textAlign: "center" },
+  insuranceBackButton: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, alignItems: "center", marginBottom: 10 },
   bottomPadding: { height: 30 },
 });

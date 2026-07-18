@@ -65,8 +65,8 @@ export default function FeedbackScreen() {
             onPress={handleSend} 
             activeOpacity={0.8}
           >
-            <Send size={20} color={colors.headerText} />
-            <Text style={[styles.sendBtnText, { color: colors.headerText }]}>Илгээх</Text>
+            <Send size={20} color={colors.buttonText} />
+            <Text style={[styles.sendBtnText, { color: colors.buttonText }]}>Илгээх</Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

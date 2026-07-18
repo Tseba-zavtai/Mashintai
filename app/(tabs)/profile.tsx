@@ -67,7 +67,7 @@ export default function ProfileScreen() {
     refetchProfile,
     changePassword,
   } = useAuth() as any;
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
 
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editedName, setEditedName] = useState("");
@@ -88,8 +88,7 @@ export default function ProfileScreen() {
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [isReviewsModalVisible, setIsReviewsModalVisible] = useState(false);
   
-  const isDarkTheme = currentTheme === "purple" || currentTheme === "navy";
-  const creditButtonTextColor = isDarkTheme ? "#FFE3DD" : "#6E0AB0";
+  const creditButtonTextColor = colors.buttonText;
 
   const myJobs = useMemo(() => {
     if (!user) return [];
@@ -314,7 +313,7 @@ export default function ProfileScreen() {
         <View style={[styles.profileCard, { backgroundColor: colors.background }]}>
           <TouchableOpacity onPress={pickImage} activeOpacity={0.8} disabled={isUploadingImage}>
             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-              {isUploadingImage ? <ActivityIndicator color={colors.headerText} /> : user?.photoUri ? <Image source={{ uri: user.photoUri }} style={styles.avatarImage} /> : <User size={40} color={colors.headerText} strokeWidth={2} />}
+              {isUploadingImage ? <ActivityIndicator color={colors.buttonText} /> : user?.photoUri ? <Image source={{ uri: user.photoUri }} style={styles.avatarImage} /> : <User size={40} color={colors.buttonText} strokeWidth={2} />}
               <View style={[styles.cameraIcon, { backgroundColor: colors.primary, borderColor: colors.background }]}><Camera size={16} color={colors.buttonText} /></View>
             </View>
           </TouchableOpacity>
@@ -324,7 +323,7 @@ export default function ProfileScreen() {
             <Text style={[styles.profileRatingText, { color: colors.text }]}>★ {formatRating(myProfileStats.userRatingAvg)} · {myProfileStats.userReviewCount} үнэлгээ</Text>
             <Text style={[styles.profileRentalText, { color: colors.textSecondary }]}>{myProfileStats.rentalCount} удаа түрээслүүлсэн</Text>
           </View>
-          <TouchableOpacity onPress={handleEditName} style={[styles.editButton, { backgroundColor: "#000000" }]}><Edit2 size={20} color={colors.primary} /></TouchableOpacity>
+          <TouchableOpacity onPress={handleEditName} style={[styles.editButton, { backgroundColor: colors.primary }]}><Edit2 size={20} color={colors.buttonText} /></TouchableOpacity>
         </View>
 
         <View style={{ marginHorizontal: 20, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
