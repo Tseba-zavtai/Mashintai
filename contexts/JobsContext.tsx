@@ -1,7 +1,7 @@
 // contexts/JobsContext.tsx
 import createContextHook from "@nkzw/create-context-hook";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Job, MOCK_JOBS } from "@/mocks/jobs";
+import { Job } from "@/mocks/jobs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import {
@@ -12,6 +12,7 @@ import {
   safeUpdateJob,
 } from "@/lib/supabaseSafe";
 import { searchMatch } from "@/lib/searchUtils";
+import { loadDefaultContactPhone } from "@/lib/contactPhones";
 import { BUMP_PRIORITY_DECAY_PER_HOUR, BUMP_PRIORITY_MAX_SCORE } from "@/constants/monetization";
 
 const STORAGE_KEY = "@jobs_storage";
@@ -213,6 +214,9 @@ const mapDbToJob = (row: DbJobRow, reviewStats?: ReviewStats): Job => {
     id: postedUserId, name: row?.posted_by_name ?? row?.posted_by_phone ?? "Unknown",
     phone: row?.posted_by_phone ?? null, photoUri: row?.posted_by_photo ?? null,
   } as any) as any;
+  postedBy.isDanVerified = Boolean(
+    row?.postedBy?.isDanVerified ?? row?.postedBy?.is_dan_verified ?? row?.posted_by_is_dan_verified ?? false,
+  );
   postedBy.userRatingAvg = userStat?.avg ?? asNumberOrNull(row?.posted_by_user_rating_avg ?? row?.user_rating_avg) ?? null;
   postedBy.userReviewCount = userStat?.count ?? asNumberOrNull(row?.posted_by_user_review_count ?? row?.user_review_count) ?? 0;
   postedBy.rentalCount = userStat?.rentalCount ?? asNumberOrNull(row?.posted_by_rental_count ?? row?.user_rental_count) ?? 0;
@@ -283,6 +287,24 @@ async function hydrateJobDetails(rows: any[]): Promise<any[]> {
     return rows;
   }
 }
+async function loadDanVerificationStatuses(rows: any[]): Promise<Map<string, boolean>> {
+  const ownerIds = Array.from(new Set(rows
+    .map((row) => row?.posted_by_id ?? row?.postedBy?.id)
+    .filter(isNonEmptyString)));
+  if (!ownerIds.length) return new Map();
+
+  try {
+    const { data, error } = await supabase.rpc("get_dan_verification_statuses", {
+      p_user_ids: ownerIds,
+    });
+    if (error || !Array.isArray(data)) return new Map();
+
+    return new Map(data.map((row: any) => [String(row.id), Boolean(row.is_dan_verified)]));
+  } catch {
+    return new Map();
+  }
+}
+
 async function queryJobsRobustly(): Promise<any[]> {
   const selectAttempts = [{ label: "jobs_with_subcategories", select: "*, subcategories(name)" }, { label: "jobs_only", select: "*" }];
   const activeFilterAttempts = [true, false];
@@ -301,7 +323,7 @@ async function queryJobsRobustly(): Promise<any[]> {
           const available = Number(row?.available_quantity ?? row?.availableQuantity ?? 1);
           return !Number.isFinite(available) || available > 0;
         });
-        return hydrateJobDetails(activeRows);
+        return activeRows;
       } catch (error) { lastError = error; }
     }
   }
@@ -333,10 +355,11 @@ async function loadJobsFromCache(): Promise<Job[]> {
 }
 
 export const [JobsContext, useJobs] = createContextHook(() => {
-  const [jobs, setJobs] = useState<Job[]>(MOCK_JOBS);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
+  const [rentalRequestsError, setRentalRequestsError] = useState<string | null>(null);
   
   // Хадгалсан заруудын ID-г барьж байх State
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
@@ -443,23 +466,51 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       }
       if (!mountedRef.current || requestIdRef.current !== myReqId) return;
 
-      const reviewStats = await loadRentalReviewStats(
-        rows.map((row: any) => row?.id).filter(isNonEmptyString),
-        rows.map((row: any) => row?.posted_by_id).filter(isNonEmptyString),
-      );
+      const mapAndSort = (sourceRows: any[], reviewStats?: ReviewStats) => {
+        let mapped = sourceRows.map((row: any) => mapDbToJob(row, reviewStats));
+        if (hasQuery) mapped = mapped.filter((job) => jobMatchesQuery(job, qRaw));
+        return sortJobs(mapped);
+      };
 
-      let mapped = rows.map((row: any) => mapDbToJob(row, reviewStats));
-      if (hasQuery) mapped = mapped.filter((job) => jobMatchesQuery(job, qRaw));
-
-      const sorted = sortJobs(mapped);
-      if (!mountedRef.current || requestIdRef.current !== myReqId) return;
-
-      if (!hasQuery && sorted.length === 0 && cachedJobs.length > 0) {
+      // Render the listing data immediately. Image/details and rating aggregation
+      // are refreshed in the background so a slow secondary query does not keep the
+      // home screen stuck on a loader.
+      const initialSorted = mapAndSort(rows);
+      if (!hasQuery && initialSorted.length === 0 && cachedJobs.length > 0) {
         setJobs(sortJobs(cachedJobs));
       } else {
-        setJobs(sorted);
-        if (!hasQuery) await saveJobsToCache(sorted);
+        setJobs(initialSorted);
       }
+
+      void (async () => {
+        try {
+          const [hydratedRows, reviewStats, danStatuses] = await Promise.all([
+            hydrateJobDetails(rows),
+            loadRentalReviewStats(
+              rows.map((row: any) => row?.id).filter(isNonEmptyString),
+              rows.map((row: any) => row?.posted_by_id).filter(isNonEmptyString),
+            ),
+            loadDanVerificationStatuses(rows),
+          ]);
+          if (!mountedRef.current || requestIdRef.current !== myReqId) return;
+
+          const rowsWithDanVerification = hydratedRows.map((row: any) => {
+            const ownerId = row?.posted_by_id ?? row?.postedBy?.id ?? null;
+            return {
+              ...row,
+              posted_by_is_dan_verified: ownerId
+                ? (danStatuses.get(String(ownerId)) ?? Boolean(row?.posted_by_is_dan_verified))
+                : false,
+            };
+          });
+          const enrichedSorted = mapAndSort(rowsWithDanVerification, reviewStats);
+          if (!hasQuery && enrichedSorted.length === 0 && cachedJobs.length > 0) return;
+          setJobs(enrichedSorted);
+          if (!hasQuery) await saveJobsToCache(enrichedSorted);
+        } catch (error) {
+          console.log("BACKGROUND JOB ENRICHMENT ERROR:", formatSupabaseError(error));
+        }
+      })();
     } catch (error) {
       if (!mountedRef.current || requestIdRef.current !== myReqId) return;
       const cached = await loadJobsFromCache();
@@ -470,7 +521,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       } else if (hasQuery) {
         setJobs([]);
       } else {
-        setJobs(sortJobs(MOCK_JOBS));
+        setJobs([]);
       }
     } finally {
       if (mountedRef.current && requestIdRef.current === myReqId) setIsLoading(false);
@@ -484,11 +535,14 @@ export const [JobsContext, useJobs] = createContextHook(() => {
     try {
       const { data, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !data.session?.user?.id) {
-        if (mountedRef.current) setRentalRequests([]);
+        if (mountedRef.current) {
+          setRentalRequests([]);
+          setRentalRequestsError(null);
+        }
         return [];
       }
       const uid = data.session.user.id;
-      const selectWithJob = "id,job_id,requester_id,owner_id,requester_name,requester_phone,requester_photo,quantity,rent_days,total_price,status,message,insurance_status,insurance_payer_id,insurance_payer_role,insurance_premium,insurance_rate_percent,insurance_paid_at,created_at,updated_at,jobs(id,title,description,category,subcategory,posted_by_name,posted_by_phone,image_url,image_urls)";
+      const selectWithJob = "id,job_id,requester_id,owner_id,requester_name,requester_phone,requester_photo,quantity,rent_days,total_price,status,message,insurance_status,insurance_payer_id,insurance_payer_role,insurance_premium,insurance_rate_percent,insurance_paid_at,deposit_amount,agreement_snapshot,owner_agreed_at,requester_agreed_at,agreement_completed_at,created_at,updated_at,jobs(id,title,description,category,subcategory,posted_by_name,posted_by_phone,image_url,image_urls)";
 
       let rows: any[] = [];
       const withJoin = await supabase
@@ -509,10 +563,16 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         rows = Array.isArray(withJoin.data) ? withJoin.data : [];
       }
 
-      if (mountedRef.current) setRentalRequests(rows as RentalRequest[]);
+      if (mountedRef.current) {
+        setRentalRequests(rows as RentalRequest[]);
+        setRentalRequestsError(null);
+      }
       return rows as RentalRequest[];
     } catch (error) {
-      if (mountedRef.current) setRentalRequests([]);
+      console.log("LOAD RENTAL REQUESTS ERROR:", error);
+      if (mountedRef.current) {
+        setRentalRequestsError("Хүсэлтүүдийг серверээс татаж чадсангүй. Сүлжээгээ шалгаад дахин оролдоно уу.");
+      }
       return [];
     }
   }, []);
@@ -521,6 +581,8 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       const session = await requireSession();
       const requesterId = session?.user?.id ?? null;
       if (!requesterId) throw new Error("Нэвтэрсний дараа түрээслэх боломжтой");
+      const requesterPhone = await loadDefaultContactPhone(requesterId);
+      if (!requesterPhone) throw new Error("Түрээслэх хүсэлт илгээхийн өмнө холбоо барих утсаа нэмнэ үү.");
 
       const job = jobs.find((item: any) => String(item.id) === String(jobId)) as any;
       if (!job) throw new Error("Зар олдсонгүй");
@@ -553,7 +615,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         .insert({
           job_id: jobId, requester_id: requesterId, owner_id: ownerId,
           requester_name: requesterMeta.name ?? requesterMeta.full_name ?? session?.user?.phone ?? session?.user?.email ?? "Хэрэглэгч",
-          requester_phone: requesterMeta.phone ?? session?.user?.phone ?? null,
+          requester_phone: requesterPhone,
           requester_photo: requesterMeta.photoUri ?? requesterMeta.avatar_url ?? null,
           quantity: requestQuantity, rent_days: requestDays, total_price: totalPrice,
           message: message?.trim() || null, status: "pending",
@@ -589,6 +651,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
   }, [loadJobs, loadUserLocation, loadSavedJobs, loadRentalRequests]);
 
   const addJob = useCallback(async (newJob: Omit<Job, "id" | "postedDate" | "applicants" | "postedBy">, userInfo: { name: string; phone: string; photoUri?: string; isSponsored?: boolean; sponsoredUntil?: Date | string | null; }) => {
+      if (!isNonEmptyString(userInfo.phone)) throw new Error("Зар нийтлэхийн өмнө холбоо барих утсаа сонгоно уу.");
       try {
         const session = await requireSession();
         const uid = session?.user?.id ?? null;
@@ -740,7 +803,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
 
   return {
     jobs, addJob, sponsorJob, updateJobCategory, deleteJob, toggleJobActive, bumpJob, submitRentalReview,
-    rentalRequests, loadRentalRequests, createRentalRequest, approveRentalRequest, rejectRentalRequest,
+    rentalRequests, rentalRequestsError, loadRentalRequests, createRentalRequest, approveRentalRequest, rejectRentalRequest,
     isLoading, userLocation, saveUserLocation, loadJobs, searchJobs, clearSearch,
     savedJobIds, toggleSaveJob,
   };

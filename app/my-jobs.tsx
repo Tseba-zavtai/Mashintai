@@ -54,7 +54,9 @@ export default function MyJobsScreen() {
     if (!user) return [];
     let list = (jobs as any[]).filter((job: any) => {
       const postedBy = job?.postedBy ?? {};
-      return String(postedBy.phone ?? postedBy.id ?? "") === String(user.phone ?? user.id ?? "");
+      const ownerKey = postedBy.phone || postedBy.id || "";
+      const currentUserKey = user.phone || user.id || "";
+      return String(ownerKey) === String(currentUserKey);
     });
     
     if (!showInactive) {

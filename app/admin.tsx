@@ -16,7 +16,7 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { RefreshCw, Trash2, Edit2, Award, X, Search, MessageSquare } from "lucide-react-native";
+import { RefreshCw, Trash2, Edit2, Award, X, Search, MessageSquare, ShieldAlert, LockKeyhole, UnlockKeyhole, CalendarDays } from "lucide-react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import { Job, JOB_CATEGORIES } from "@/mocks/jobs";
 import { useJobs } from "@/contexts/JobsContext";
@@ -32,7 +32,22 @@ type AdminUser = {
   is_super_admin: boolean;
   sponsored_from: string | null;
   sponsored_until: string | null;
+  suspended_until: string | null;
+  suspension_reason: string | null;
   created_at: string;
+};
+
+type RentalDispute = {
+  id: string;
+  rental_request_id: string;
+  reporter_id: string;
+  reported_user_id: string;
+  reason: "not_returned" | "damaged" | "payment" | "conduct" | "other";
+  description: string;
+  status: "open" | "under_review" | "resolved" | "dismissed";
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type FeedbackItem = {
@@ -44,6 +59,16 @@ type FeedbackItem = {
   platform: string | null;
   app_version: string | null;
   created_at: string;
+};
+
+const isUserSuspended = (u: Pick<AdminUser, "suspended_until">) => Boolean(u.suspended_until && new Date(u.suspended_until).getTime() > Date.now());
+
+const disputeReasonLabel: Record<RentalDispute["reason"], string> = {
+  not_returned: "Бараа буцаагаагүй",
+  damaged: "Эвдрэл, гэмтэл",
+  payment: "Төлбөр",
+  conduct: "Харилцаа",
+  other: "Бусад",
 };
 
 const isNowSponsored = (u: AdminUser) => {
@@ -149,7 +174,7 @@ export default function AdminPanel() {
   const queryClient = useQueryClient();
   const { isSuperAdmin, isAdminUnlocked } = useAuth() as any;
   const { updateJobCategory, deleteJob, sponsorJob } = useJobs();
-  const [activeTab, setActiveTab] = useState<"users" | "jobs" | "banners" | "feedback">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "jobs" | "banners" | "disputes" | "feedback">("users");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -246,6 +271,19 @@ export default function AdminPanel() {
     enabled: hasAdminAccess,
   });
 
+  const disputesQuery = useQuery({
+    queryKey: ["admin-rental-disputes"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("rental_disputes")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(300);
+      if (error) throw error;
+      return (data || []) as RentalDispute[];
+    },
+    enabled: hasAdminAccess,
+  });
   // ✅ Mutations (Users)
   const clearSponsorMutation = useMutation({
     mutationFn: async (user: AdminUser) => {
@@ -277,6 +315,46 @@ export default function AdminPanel() {
     onError: (error) => Alert.alert("Алдаа", error instanceof Error ? error.message : "Алдаа гарлаа"),
   });
 
+  const setAccountSuspensionMutation = useMutation({
+    mutationFn: async ({ userId, days, clear }: { userId: string; days?: number; clear?: boolean }) => {
+      const now = new Date();
+      const updates = clear
+        ? { suspended_until: null, suspension_reason: null, suspended_at: null, suspended_by: null }
+        : {
+            suspended_until: new Date(now.getTime() + Math.max(1, Number(days ?? 7)) * 24 * 60 * 60 * 1000).toISOString(),
+            suspension_reason: "Маргаан шалгаж байна",
+            suspended_at: now.toISOString(),
+          };
+      const { error } = await supabase.from("users").update(updates).eq("id", userId);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+    onError: (error) => Alert.alert("Алдаа", error instanceof Error ? error.message : "Account-ын түгжээг өөрчилж чадсангүй"),
+  });
+
+  const updateDisputeMutation = useMutation({
+    mutationFn: async ({ disputeId, status }: { disputeId: string; status: RentalDispute["status"] }) => {
+      const { error } = await supabase.from("rental_disputes").update({ status }).eq("id", disputeId);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-rental-disputes"] }),
+    onError: (error) => Alert.alert("Алдаа", error instanceof Error ? error.message : "Маргааны төлөвийг шинэчилж чадсангүй"),
+  });
+
+  const handleAccountSuspension = (target: AdminUser) => {
+    if (target.is_super_admin) return;
+    if (isUserSuspended(target)) {
+      Alert.alert("Түгжээ тайлах уу?", `${target.name || "Энэ хэрэглэгч"}-ийн түр түгжээг шууд цуцлах уу?`, [
+        { text: "Болих", style: "cancel" },
+        { text: "Тайлах", onPress: () => setAccountSuspensionMutation.mutate({ userId: target.id, clear: true }) },
+      ]);
+      return;
+    }
+    Alert.alert("7 хоног түр түгжих үү?", `${target.name || "Энэ хэрэглэгч"} зар оруулах болон түрээсийн шинэ үйлдэл хийх боломжгүй болно. Бараагаа буцааж өгсөн үйлдэл нээлттэй үлдэнэ.`, [
+      { text: "Болих", style: "cancel" },
+      { text: "7 хоног түгжих", style: "destructive", onPress: () => setAccountSuspensionMutation.mutate({ userId: target.id, days: 7 }) },
+    ]);
+  };
   // ✅ DELETE USER (EDGE FUNCTION) -> public.users + auth.users хоёуланг устгана
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
@@ -425,7 +503,7 @@ export default function AdminPanel() {
         <View style={styles.loginContainer}>
           <Text style={styles.loginTitle}>Хандах эрхгүй</Text>
           <Text style={styles.loginSubtitle}>
-            Админ панел руу орохын тулд Profile дээрээс admin password-оо зөв оруулж unlock хийнэ үү.
+            Админ самбар руу Profile дээрээс өөрийн нууц үгээ баталгаажуулж орно уу.
           </Text>
 
           <TouchableOpacity style={styles.loginButton} onPress={() => router.back()}>
@@ -447,6 +525,7 @@ export default function AdminPanel() {
               jobsQuery.refetch();
               bannersQuery.refetch();
               feedbackQuery.refetch();
+              disputesQuery.refetch();
             }}
             style={styles.refreshButton}
             accessibilityLabel="Шинэчлэх"
@@ -473,6 +552,14 @@ export default function AdminPanel() {
           )}
         </View>
       </View>
+
+      <TouchableOpacity style={[styles.seasonalShortcut, { backgroundColor: colors.accent, borderColor: colors.border }]} onPress={() => router.push("/admin-seasonal" as any)} activeOpacity={0.8}>
+        <CalendarDays size={20} color={colors.headerText} />
+        <View style={styles.seasonalShortcutTextWrap}>
+          <Text style={[styles.seasonalShortcutTitle, { color: colors.text }]}>Seasonal удирдах</Text>
+          <Text style={[styles.seasonalShortcutDescription, { color: colors.textSecondary }]}>Хугацаа болон category / subcategory сонгох</Text>
+        </View>
+      </TouchableOpacity>
 
       {searchFocused && masterSearch.trim() && (
         <View style={styles.searchOverlay}>
@@ -532,6 +619,15 @@ export default function AdminPanel() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
+          style={[styles.tab, activeTab === "disputes" && styles.activeTab]}
+          onPress={() => setActiveTab("disputes")}
+        >
+          <Text style={[styles.tabText, activeTab === "disputes" && styles.activeTabText]}>
+            Маргаан ({disputesQuery.data?.filter((item) => item.status === "open" || item.status === "under_review").length || 0})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.tab, activeTab === "feedback" && styles.activeTab]}
           onPress={() => setActiveTab("feedback")}
         >
@@ -552,6 +648,7 @@ export default function AdminPanel() {
               <>
                 {usersQuery.data?.map((u) => {
                   const sponsoredNow = isNowSponsored(u);
+                  const suspendedNow = isUserSuspended(u);
 
                   return (
                     <View key={u.id} style={styles.card}>
@@ -572,6 +669,7 @@ export default function AdminPanel() {
                       </View>
 
                       <Text style={styles.cardInfo}>📱 {u.phone || "-"}</Text>
+                      {suspendedNow && <Text style={styles.suspendedText}>Түр түгжээтэй · {new Date(u.suspended_until as string).toLocaleString()}</Text>}
 
                       {!u.is_super_admin && (
                         <>
@@ -590,6 +688,13 @@ export default function AdminPanel() {
                             </TouchableOpacity>
                           )}
                         </>
+                      )}
+
+                      {!u.is_super_admin && (
+                        <TouchableOpacity style={[styles.actionButton, suspendedNow ? styles.unlockButton : styles.suspendButton]} onPress={() => handleAccountSuspension(u)} disabled={setAccountSuspensionMutation.isPending}>
+                          {suspendedNow ? <UnlockKeyhole size={16} color="#fff" /> : <LockKeyhole size={16} color="#fff" />}
+                          <Text style={styles.actionButtonText}>{suspendedNow ? "Түгжээ тайлах" : "7 хоног түгжих"}</Text>
+                        </TouchableOpacity>
                       )}
 
                       <TouchableOpacity
@@ -702,8 +807,59 @@ export default function AdminPanel() {
               </>
             )}
           </View>
-        ) : (
+        ) : activeTab === "disputes" ? (
           <View>
+            {disputesQuery.isLoading ? (
+              <ActivityIndicator size="large" color="#007AFF" style={styles.loader} />
+            ) : disputesQuery.error ? (
+              <Text style={styles.errorText}>Алдаа гарлаа: {String((disputesQuery.error as any)?.message ?? disputesQuery.error)}</Text>
+            ) : (
+              <>
+                {(disputesQuery.data || []).map((dispute) => {
+                  const reporter = (usersQuery.data || []).find((item) => item.id === dispute.reporter_id);
+                  const reported = (usersQuery.data || []).find((item) => item.id === dispute.reported_user_id);
+                  const statusText = dispute.status === "open" ? "Шинэ" : dispute.status === "under_review" ? "Шалгаж байна" : dispute.status === "resolved" ? "Шийдсэн" : "Хаасан";
+                  const statusColor = dispute.status === "open" ? "#D64545" : dispute.status === "under_review" ? "#007AFF" : dispute.status === "resolved" ? "#0A9B61" : "#777";
+                  return (
+                    <View key={dispute.id} style={styles.card}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>{disputeReasonLabel[dispute.reason]}</Text>
+                        <Text style={[styles.cardInfo, { color: statusColor, fontWeight: "800", marginTop: 0 }]}>{statusText}</Text>
+                      </View>
+                      <Text style={styles.cardInfo}>Мэдээлсэн: {reporter?.name || "Хэрэглэгч"} · Шалгагдаж буй: {reported?.name || "Хэрэглэгч"}</Text>
+                      <Text style={styles.cardInfo}>Хүсэлт: {dispute.rental_request_id}</Text>
+                      <Text style={[styles.cardInfo, { marginTop: 10, color: "#111", lineHeight: 20 }]}>{dispute.description}</Text>
+                      <Text style={[styles.cardInfo, { fontSize: 12 }]}>{new Date(dispute.created_at).toLocaleString()}</Text>
+                      {(dispute.status === "open" || dispute.status === "under_review") && (
+                        <>
+                          {dispute.status === "open" && (
+                            <TouchableOpacity style={[styles.actionButton, styles.editButton]} onPress={() => updateDisputeMutation.mutate({ disputeId: dispute.id, status: "under_review" })}>
+                              <ShieldAlert size={16} color="#fff" />
+                              <Text style={styles.actionButtonText}>Шалгаж эхлэх</Text>
+                            </TouchableOpacity>
+                          )}
+                          {reported && !reported.is_super_admin && (
+                            <TouchableOpacity style={[styles.actionButton, isUserSuspended(reported) ? styles.unlockButton : styles.suspendButton]} onPress={() => handleAccountSuspension(reported)}>
+                              {isUserSuspended(reported) ? <UnlockKeyhole size={16} color="#fff" /> : <LockKeyhole size={16} color="#fff" />}
+                              <Text style={styles.actionButtonText}>{isUserSuspended(reported) ? "Түгжээ тайлах" : "Шалгагдах хэрэглэгчийг 7 хоног түгжих"}</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity style={[styles.actionButton, styles.unlockButton]} onPress={() => updateDisputeMutation.mutate({ disputeId: dispute.id, status: "resolved" })}>
+                            <Text style={styles.actionButtonText}>Шийдсэн гэж хаах</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.actionButton, styles.unsponsorButton]} onPress={() => updateDisputeMutation.mutate({ disputeId: dispute.id, status: "dismissed" })}>
+                            <Text style={styles.actionButtonText}>Үндэслэлгүй гэж хаах</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  );
+                })}
+                {(disputesQuery.data || []).length === 0 && <Text style={styles.emptyText}>Маргаан бүртгэгдээгүй байна</Text>}
+              </>
+            )}
+          </View>
+        ) : (          <View>
             {feedbackQuery.isLoading ? (
               <ActivityIndicator size="large" color="#007AFF" style={styles.loader} />
             ) : feedbackQuery.error ? (
@@ -778,6 +934,9 @@ export default function AdminPanel() {
                   <Text style={styles.detailLabel}>Sponsored (NOW):</Text>
                   <Text style={styles.detailValue}>{isNowSponsored(selectedUser) ? "Тийм" : "Үгүй"}</Text>
 
+                   <Text style={styles.detailLabel}>Түр түгжээ:</Text>
+                   <Text style={styles.detailValue}>{isUserSuspended(selectedUser) ? `Тийм · ${new Date(selectedUser.suspended_until as string).toLocaleString()}` : "Үгүй"}</Text>
+
                   {!selectedUser.is_super_admin && (
                     <View style={styles.detailActions}>
                       <TouchableOpacity
@@ -804,6 +963,11 @@ export default function AdminPanel() {
                           <Text style={styles.actionButtonText}>Sponsored цуцлах</Text>
                         </TouchableOpacity>
                       )}
+
+                      <TouchableOpacity style={[styles.actionButton, isUserSuspended(selectedUser) ? styles.unlockButton : styles.suspendButton]} onPress={() => handleAccountSuspension(selectedUser)}>
+                        {isUserSuspended(selectedUser) ? <UnlockKeyhole size={16} color="#fff" /> : <LockKeyhole size={16} color="#fff" />}
+                        <Text style={styles.actionButtonText}>{isUserSuspended(selectedUser) ? "Түгжээ тайлах" : "7 хоног түгжих"}</Text>
+                      </TouchableOpacity>
 
                       <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={() => handleDeleteUser(selectedUser)}>
                         <Trash2 size={16} color="#fff" />
@@ -1055,7 +1219,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "transparent",
   },
   activeTab: { borderBottomColor: "#007AFF" },
-  tabText: { fontSize: 14, color: "#666" },
+  tabText: { fontSize: 12, color: "#666", textAlign: "center" },
   activeTabText: { color: "#007AFF", fontWeight: "600" },
 
   content: { flex: 1, padding: 16 },
@@ -1104,6 +1268,9 @@ const styles = StyleSheet.create({
   },
   sponsorButton: { backgroundColor: "#FFB800" },
   unsponsorButton: { backgroundColor: "#999" },
+  suspendButton: { backgroundColor: "#D64545" },
+  unlockButton: { backgroundColor: "#0A9B61" },
+  suspendedText: { color: "#D64545", fontSize: 12, fontWeight: "700", marginTop: 6 },
   editButton: { backgroundColor: "#007AFF" },
   deleteButton: { backgroundColor: "#FF3B30" },
   actionButtonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
@@ -1193,4 +1360,8 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 12, fontWeight: "600", color: "#999", marginTop: 16, marginBottom: 4, textTransform: "uppercase" },
   detailValue: { fontSize: 16, color: "#1a1a1a" },
   detailActions: { marginTop: 24, gap: 12 },
+  seasonalShortcut: { marginHorizontal: 16, marginTop: 12, borderWidth: 1, borderRadius: 12, minHeight: 64, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  seasonalShortcutTextWrap: { flex: 1, gap: 2 },
+  seasonalShortcutTitle: { fontSize: 16, fontWeight: "800" },
+  seasonalShortcutDescription: { fontSize: 13 },
 });

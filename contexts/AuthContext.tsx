@@ -2,10 +2,9 @@ import createContextHook from "@nkzw/create-context-hook";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
+import { authenticateWithDan } from "@/lib/danAuth";
 
 const USER_STORAGE_KEY = "@user_data";
-const ADMIN_UNLOCKED_KEY = "@admin_unlocked";
-const ADMIN_PANEL_PASSWORD = "Tseba0114*";
 
 const normalizePhone = (phone: string) => {
   const digits = String(phone ?? "").replace(/[^\d]/g, "");
@@ -34,9 +33,12 @@ export interface User {
   name?: string;
   photoUri?: string;
   isSuperAdmin?: boolean;
+  suspendedUntil?: string | null;
+  suspensionReason?: string | null;
   sponsoredFrom?: string | null;
   sponsoredUntil?: string | null;
   lastActiveAt?: string | null;
+  danVerifiedAt?: string | null;
   // 🎯 ЗАСВАР: Эрх хадгалах хувьсагчийг нэмж өглөө
   available_post_credits?: number; 
 }
@@ -47,9 +49,12 @@ type DbUserRow = {
   name: string | null;
   photo_uri: string | null;
   is_super_admin: boolean | null;
+  suspended_until: string | null;
+  suspension_reason: string | null;
   sponsored_from: string | null;
   sponsored_until: string | null;
   last_active_at: string | null;
+  dan_verified_at: string | null;
   // 🎯 ЗАСВАР: Эрхийн баганыг нэмж өглөө
   available_post_credits: number | null; 
 };
@@ -61,9 +66,12 @@ function mapProfileRowToUser(data: DbUserRow, fallbackPhone?: string): User {
     name: data.name ?? undefined,
     photoUri: data.photo_uri ?? undefined,
     isSuperAdmin: data.is_super_admin === true,
+    suspendedUntil: data.suspended_until ?? null,
+    suspensionReason: data.suspension_reason ?? null,
     sponsoredFrom: data.sponsored_from ?? null,
     sponsoredUntil: data.sponsored_until ?? null,
     lastActiveAt: data.last_active_at ?? null,
+    danVerifiedAt: data.dan_verified_at ?? null,
     // 🎯 ЗАСВАР: Баазаас ирсэн эрхийг апп руу залгаж өгөв
     available_post_credits: data.available_post_credits ?? 0, 
   };
@@ -84,7 +92,6 @@ export const [AuthContext, useAuth] = createContextHook(() => {
   }, []);
 
   const resetAdminUnlock = useCallback(async () => {
-    await AsyncStorage.setItem(ADMIN_UNLOCKED_KEY, "false");
     if (mountedRef.current) {
       setIsAdminUnlocked(false);
     }
@@ -92,7 +99,6 @@ export const [AuthContext, useAuth] = createContextHook(() => {
 
   const clearLocalAuthState = useCallback(async () => {
     await AsyncStorage.removeItem(USER_STORAGE_KEY);
-    await AsyncStorage.setItem(ADMIN_UNLOCKED_KEY, "false");
 
     if (mountedRef.current) {
       setUser(null);
@@ -110,7 +116,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       const { data, error } = await supabase
         .from("users")
         .select(
-          "id, phone, name, photo_uri, is_super_admin, sponsored_from, sponsored_until, last_active_at, available_post_credits"
+          "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits"
         )
         .eq("id", uid)
         .single<DbUserRow>();
@@ -133,7 +139,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
         const retry = await supabase
           .from("users")
           .select(
-            "id, phone, name, photo_uri, is_super_admin, sponsored_from, sponsored_until, last_active_at, available_post_credits"
+            "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits"
           )
           .eq("id", uid)
           .single<DbUserRow>();
@@ -180,13 +186,10 @@ export const [AuthContext, useAuth] = createContextHook(() => {
 
     (async () => {
       try {
-        const [storedUser, storedAdminUnlocked] = await Promise.all([
-          AsyncStorage.getItem(USER_STORAGE_KEY),
-          AsyncStorage.getItem(ADMIN_UNLOCKED_KEY),
-        ]);
+        const storedUser = await AsyncStorage.getItem(USER_STORAGE_KEY);
 
         if (mountedRef.current) {
-          setIsAdminUnlocked(storedAdminUnlocked === "true");
+          setIsAdminUnlocked(false);
 
           if (storedUser) {
             try {
@@ -211,10 +214,20 @@ export const [AuthContext, useAuth] = createContextHook(() => {
           (session.user.user_metadata as any)?.phone ||
           (session.user.user_metadata as any)?.phone_number;
 
-        await fetchProfile(uid, phoneFromMeta);
-        await touchLastActive();
-      } catch {
-        await clearLocalAuthState();
+        try {
+          await fetchProfile(uid, phoneFromMeta);
+          await touchLastActive();
+        } catch (error) {
+          // Keep cached auth information when a short network/profile failure occurs.
+          // The app will try again on the next auth event or app restart.
+          console.log("AUTH PROFILE RESTORE ERROR:", error);
+          if (!storedUser && mountedRef.current) {
+            setUser({ id: uid, phone: normalizePhone(phoneFromMeta ?? "") });
+          }
+        }
+      } catch (error) {
+        // A network failure must not force a previously signed-in user to log out.
+        console.log("AUTH STARTUP ERROR:", error);
       } finally {
         if (mountedRef.current) {
           setIsLoading(false);
@@ -322,6 +335,27 @@ export const [AuthContext, useAuth] = createContextHook(() => {
     [fetchProfile, touchLastActive]
   );
 
+  const signInWithDan = useCallback(async () => {
+    const result = await authenticateWithDan("sign_in");
+    await fetchProfile(result.userId);
+    await resetAdminUnlock();
+    await touchLastActive();
+    return result;
+  }, [fetchProfile, resetAdminUnlock, touchLastActive]);
+
+  const signUpWithDan = useCallback(async () => {
+    const result = await authenticateWithDan("sign_up");
+    await fetchProfile(result.userId);
+    await resetAdminUnlock();
+    await touchLastActive();
+    return result;
+  }, [fetchProfile, resetAdminUnlock, touchLastActive]);
+  const linkDanIdentity = useCallback(async () => {
+    const result = await authenticateWithDan("link");
+    await fetchProfile(result.userId, user?.phone);
+    await touchLastActive();
+    return result;
+  }, [fetchProfile, touchLastActive, user?.phone]);
   const resetPassword = useCallback(
     async (_phone: string, _newPassword: string) => {
       throw new Error("Одоогийн AuthContext бүтэц нь phone→hidden email/password auth ашиглаж байна. Logged-out хэрэглэгчийн нууц үгийг зөвхөн OTP-оор шууд солихын тулд тусдаа recovery flow эсвэл server function хэрэгтэй.");
@@ -330,7 +364,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
   );
 
   const updateProfile = useCallback(
-    async (d: { name?: string; photoUri?: string }) => {
+    async (d: { phone?: string; photoUri?: string }) => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -341,13 +375,13 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       }
 
       const updates: Record<string, any> = {};
-      if (d.name !== undefined) updates.name = d.name;
+      if (d.phone !== undefined) updates.phone = d.phone.trim() ? normalizePhone(d.phone) : null;
       if (d.photoUri !== undefined) updates.photo_uri = d.photoUri;
 
       const { error } = await supabase.from("users").update(updates).eq("id", uid);
       if (error) throw error;
 
-      await fetchProfile(uid, user?.phone);
+      await fetchProfile(uid, updates.phone ?? user?.phone);
       await touchLastActive();
     },
     [fetchProfile, touchLastActive, user?.phone]
@@ -387,21 +421,26 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       if (!user?.isSuperAdmin) {
         throw new Error("Та админ эрхгүй байна.");
       }
-
-      if (password !== ADMIN_PANEL_PASSWORD) {
-        throw new Error("Admin panel password буруу байна.");
+      if (!user.phone || !password) {
+        throw new Error("Нууц үгээ оруулна уу.");
       }
 
-      await AsyncStorage.setItem(ADMIN_UNLOCKED_KEY, "true");
+      const reauth = await supabase.auth.signInWithPassword({
+        email: phoneToEmail(user.phone),
+        password,
+      });
+      if (reauth.error) {
+        throw new Error("Нууц үг буруу байна.");
+      }
+
       if (mountedRef.current) {
         setIsAdminUnlocked(true);
       }
     },
-    [user?.isSuperAdmin]
+    [user?.isSuperAdmin, user?.phone]
   );
 
   const lockAdmin = useCallback(async () => {
-    await AsyncStorage.setItem(ADMIN_UNLOCKED_KEY, "false");
     if (mountedRef.current) {
       setIsAdminUnlocked(false);
     }
@@ -468,6 +507,9 @@ export const [AuthContext, useAuth] = createContextHook(() => {
     isLoading,
     register,
     login,
+    signInWithDan,
+    signUpWithDan,
+    linkDanIdentity,
     logout,
     resetPassword,
     updateProfile,

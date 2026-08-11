@@ -27,8 +27,16 @@ import { supabase } from "@/lib/supabase";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
 import AppHeader from "@/components/AppHeader"; 
+import ContactPhonePickerModal from "@/components/ContactPhonePickerModal";
+import { loadDefaultContactPhone } from "@/lib/contactPhones";
 
 import { searchMatch } from "@/lib/searchUtils";
+import {
+  getCategoryCatalogImmediately,
+  loadCachedCategoryCatalog,
+  refreshCategoryCatalog,
+  type CatalogCategory,
+} from "@/lib/categoryCatalog";
 
 const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null; // eslint-disable-line @typescript-eslint/no-require-imports
 const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : null; // eslint-disable-line @typescript-eslint/no-require-imports
@@ -102,6 +110,8 @@ export default function PostScreen() {
 
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
+  const [selectedCategoryLabel, setSelectedCategoryLabel] = useState<string | null>(null);
+  const [selectedSubcategoryLabel, setSelectedSubcategoryLabel] = useState<string | null>(null);
   const [categorySearch, setCategorySearch] = useState("");
   const [subcategorySearch, setSubcategorySearch] = useState("");
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -112,59 +122,58 @@ export default function PostScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [initialRegion, setInitialRegion] = useState({ latitude: 47.9184, longitude: 106.9177, latitudeDelta: 0.02, longitudeDelta: 0.02 });
   const [addBanners, setAddBanners] = useState<any[]>([]);
+  const [selectedContactPhone, setSelectedContactPhone] = useState<string | null>(null);
+  const [contactPhoneModalVisible, setContactPhoneModalVisible] = useState(false);
+  const [continuePostAfterPhone, setContinuePostAfterPhone] = useState(false);
 
   const [dynamicData, setDynamicData] = useState<Record<string, any>>({});
   const [dynamicModalVisible, setDynamicModalVisible] = useState(false);
   const [activeDynamicField, setActiveDynamicField] = useState<any>(null);
 
-  const [dbCategories, setDbCategories] = useState<LocalCategory[]>([]);
+  const [dbCategories, setDbCategories] = useState<LocalCategory[]>(() => getCategoryCatalogImmediately().categories);
   const [loadingCategories, setLoadingCategories] = useState(false);
 
   const postCredits = (user as any)?.available_post_credits ?? 0;
 
+  const applyCategoryCatalog = useCallback((snapshot: { categories: CatalogCategory[] }) => {
+    const formattedCats: LocalCategory[] = snapshot.categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      icon: category.icon,
+      form_schema: category.form_schema,
+      subcategories: category.subcategories.map((subcategory) => ({
+        id: subcategory.id,
+        name: subcategory.name,
+        icon: subcategory.icon,
+      })),
+    }));
+
+    // Keep the existing post form grouping: health subcategories live under
+    // "Танин мэдэхүй" in this release.
+    const knowledgeIdx = formattedCats.findIndex((category) => category.name.includes("Танин мэдэхүй"));
+    const healthIdx = formattedCats.findIndex((category) => category.name.includes("Эрүүл мэнд"));
+    if (knowledgeIdx !== -1 && healthIdx !== -1) {
+      formattedCats[knowledgeIdx].subcategories = [
+        ...formattedCats[knowledgeIdx].subcategories,
+        ...formattedCats[healthIdx].subcategories,
+      ];
+      formattedCats.splice(healthIdx, 1);
+    }
+
+    setDbCategories(formattedCats);
+  }, []);
+
   const fetchCategoriesFromDB = useCallback(async () => {
+    setLoadingCategories(dbCategories.length === 0);
     try {
-      setLoadingCategories(true);
-      const { data, error } = await supabase
-        .from('categories')
-        .select(`id, name, icon, form_schema, subcategories ( id, name, icon )`)
-        .order('sort_order', { ascending: true });
-      
-      if (error) throw error;
-      
-      if (data) {
-        let formattedCats: LocalCategory[] = data.map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          icon: c.icon,
-          form_schema: c.form_schema || [],
-          subcategories: Array.isArray(c.subcategories) ? c.subcategories.map((sub: any) => ({
-            id: sub.id,
-            name: sub.name,
-            icon: sub.icon
-          })) : []
-        }));
-
-        // ӨӨРЧЛӨЛТ 1 & 2: Эрүүл мэндийг Танин мэдэхүй рүү оруулах
-        const knowledgeIdx = formattedCats.findIndex(c => c.name.includes("Танин мэдэхүй"));
-        const healthIdx = formattedCats.findIndex(c => c.name.includes("Эрүүл мэнд"));
-
-        if (knowledgeIdx !== -1 && healthIdx !== -1) {
-            formattedCats[knowledgeIdx].subcategories = [
-                ...formattedCats[knowledgeIdx].subcategories,
-                ...formattedCats[healthIdx].subcategories
-            ];
-            formattedCats.splice(healthIdx, 1);
-        }
-
-        setDbCategories(formattedCats);
-      }
-    } catch (err) {
-      console.log("Error fetching categories:", err);
+      applyCategoryCatalog(await loadCachedCategoryCatalog());
+      applyCategoryCatalog(await refreshCategoryCatalog());
+    } catch (error) {
+      console.log("CATEGORY CATALOG REFRESH ERROR:", error);
     } finally {
       setLoadingCategories(false);
     }
-  }, []);
+  }, [applyCategoryCatalog, dbCategories.length]);
 
   useEffect(() => { fetchCategoriesFromDB(); }, [fetchCategoriesFromDB]);
 
@@ -176,10 +185,22 @@ export default function PostScreen() {
   }, []);
 
   useEffect(() => { loadAddBanners(); }, [loadAddBanners]);
+  useEffect(() => {
+    let active = true;
+    if (!user?.id) {
+      setSelectedContactPhone(null);
+      return () => { active = false; };
+    }
+    void loadDefaultContactPhone(user.id)
+      .then((phone) => { if (active) setSelectedContactPhone(phone); })
+      .catch(() => { if (active) setSelectedContactPhone(null); });
+    return () => { active = false; };
+  }, [user?.id]);
+
 
   const resetForm = useCallback(() => {
     setDescription(""); setQuantity("1"); setPrice(""); setPriceType("daily");
-    setCategoryId(null); setSubcategoryId(null); setDynamicData({});
+    setCategoryId(null); setSubcategoryId(null); setSelectedCategoryLabel(null); setSelectedSubcategoryLabel(null); setDynamicData({});
     setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false); setSubcategoryModalVisible(false);
     setSelectedLocation(null); setPickedImages([]); setSubmitting(false); setPickingImages(false);
   }, []);
@@ -209,18 +230,22 @@ export default function PostScreen() {
   };
 
   const selectedCategoryObj = useMemo(() => {
-    if (!categoryId) return null;
-    return dbCategories.find((item) => item.id === categoryId) ?? null;
-  }, [categoryId, dbCategories]);
+    if (!categoryId && !selectedCategoryLabel) return null;
+    return dbCategories.find((item) => item.id === categoryId)
+      ?? dbCategories.find((item) => item.name === selectedCategoryLabel)
+      ?? null;
+  }, [categoryId, selectedCategoryLabel, dbCategories]);
 
-  const selectedCategoryName = selectedCategoryObj?.name ?? null;
+  const selectedCategoryName = selectedCategoryObj?.name ?? selectedCategoryLabel ?? null;
 
   const selectedSubcategoryObj = useMemo(() => {
-    if (!subcategoryId || !selectedCategoryObj?.subcategories?.length) return null;
-    return selectedCategoryObj.subcategories.find((item) => item.id === subcategoryId) ?? null;
-  }, [selectedCategoryObj, subcategoryId]);
+    if ((!subcategoryId && !selectedSubcategoryLabel) || !selectedCategoryObj?.subcategories?.length) return null;
+    return selectedCategoryObj.subcategories.find((item) => item.id === subcategoryId)
+      ?? selectedCategoryObj.subcategories.find((item) => item.name === selectedSubcategoryLabel)
+      ?? null;
+  }, [selectedCategoryObj, subcategoryId, selectedSubcategoryLabel]);
 
-  const selectedSubcategoryName = selectedSubcategoryObj?.name ?? null;
+  const selectedSubcategoryName = selectedSubcategoryObj?.name ?? selectedSubcategoryLabel ?? null;
 
   const visibleCategories = useMemo(() => {
     if (!categorySearch.trim()) return dbCategories;
@@ -295,15 +320,21 @@ export default function PostScreen() {
     }, [user]);
 
   const handleSelectCategory = useCallback((cat: LocalCategory) => {
-    setCategoryId(cat.id); setSubcategoryId(null); setDynamicData({}); 
+    setCategoryId(cat.id); setSelectedCategoryLabel(cat.name);
+    setSubcategoryId(null); setSelectedSubcategoryLabel(null); setDynamicData({});
     setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false);
   }, []);
 
   const handleSelectSubcategory = useCallback((sub: LocalSubcategory) => {
-    setSubcategoryId((prev) => (prev === sub.id ? null : sub.id)); setSubcategorySearch(""); setSubcategoryModalVisible(false);
+    setSubcategoryId((prev) => {
+      const shouldClear = prev === sub.id;
+      setSelectedSubcategoryLabel(shouldClear ? null : sub.name);
+      return shouldClear ? null : sub.id;
+    });
+    setSubcategorySearch(""); setSubcategoryModalVisible(false);
   }, []);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (phoneOverride?: string) => {
     if (submitting) return;
     if (postCredits <= 0) { Alert.alert("Эрх дууссан", "Таны үнэгүй зар оруулах эрх дууссан байна. Профайл хэсгээс эрхээ цэнэглэнэ үү.", [{ text: "Хаах", style: "cancel" }, { text: "Профайл руу", onPress: () => router.push("/profile") }]); return; }
     if (!description.trim()) { Alert.alert("Алдаа", "Зарын мэдээлэл оруулна уу"); return; }
@@ -312,6 +343,13 @@ export default function PostScreen() {
     if (!Number.isFinite(parsedQuantity) || parsedQuantity < 1) { Alert.alert("Алдаа", "Тоо ширхэгийг зөв оруулна уу"); return; }
     const parsedPrice = Number(price.replace(/[^0-9]/g, "")) || 0;
     if (parsedPrice <= 0) { Alert.alert("Алдаа", "Үнийг зөв оруулна уу"); return; }
+    const contactPhone = phoneOverride ?? selectedContactPhone;
+    if (!contactPhone) {
+      setContinuePostAfterPhone(true);
+      setContactPhoneModalVisible(true);
+      return;
+    }
+
 
     const originalCredits = Math.max(0, Number(postCredits));
     const remainingCredits = Math.max(0, originalCredits - 1);
@@ -338,7 +376,7 @@ export default function PostScreen() {
           quantity: parsedQuantity, available_quantity: parsedQuantity, price: parsedPrice, 
           price_type: priceType, dynamic_data: dynamicData 
         } as any,
-        { name: user?.name || user?.phone || "Хэрэглэгч", phone: user?.phone || "", photoUri: (user as any)?.photoUri, sponsoredUntil: (user as any)?.sponsoredUntil ?? null }
+        { name: user?.name || user?.phone || "Хэрэглэгч", phone: contactPhone, photoUri: (user as any)?.photoUri, sponsoredUntil: (user as any)?.sponsoredUntil ?? null }
       );
       jobCreated = true;
 
@@ -412,6 +450,17 @@ export default function PostScreen() {
             <Text style={[styles.helperText, { color: colors.textSecondary }]}>Нэг л ширхэг бараа бол 1 гэж үлдээнэ. Олон ширхэгтэй бол нийт тоогоо оруулна.</Text>
           </View>
 
+
+          <View style={styles.formSection}>
+            <Text style={[styles.label, { color: colors.text }]}>Холбоо барих утас *</Text>
+            <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedContactPhone ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setContinuePostAfterPhone(false); setContactPhoneModalVisible(true); }} disabled={submitting}>
+              <View style={styles.selectButtonTextWrap}>
+                <Text style={[styles.selectButtonTitle, { color: selectedContactPhone ? colors.text : colors.textSecondary }]}>{selectedContactPhone || "Дугаар сонгох"}</Text>
+                <Text style={[styles.selectButtonHint, { color: colors.textSecondary }]}>Энэ дугаар зөвхөн энэ зар дээр харагдана</Text>
+              </View>
+              <Text style={[styles.selectButtonArrow, { color: colors.textSecondary }]}>›</Text>
+            </Pressable>
+          </View>
           <View style={styles.formSection}>
             <View style={styles.imagesHeaderRow}>
               <Text style={[styles.label, { color: colors.text, marginBottom: 0 }]}>Зураг</Text>
@@ -458,7 +507,7 @@ export default function PostScreen() {
                   </View>
                   <Text style={[styles.selectButtonArrow, { color: colors.textSecondary }]}>›</Text>
                 </Pressable>
-                {selectedSubcategoryName ? (<Pressable style={({ pressed }) => [styles.clearSelectionButton, { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.85 : 1 }]} onPress={() => setSubcategoryId(null)} disabled={submitting}><Text style={[styles.clearSelectionText, { color: colors.textSecondary }]}>Дэд категори арилгах</Text></Pressable>) : null}
+                {selectedSubcategoryName ? (<Pressable style={({ pressed }) => [styles.clearSelectionButton, { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSelectedSubcategoryLabel(null); }} disabled={submitting}><Text style={[styles.clearSelectionText, { color: colors.textSecondary }]}>Дэд категори арилгах</Text></Pressable>) : null}
               </View>
             ) : null}
           </View>
@@ -513,7 +562,7 @@ export default function PostScreen() {
             ) : (<View style={[styles.webLocationNote, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.webLocationNoteText, { color: colors.textSecondary }]}>📍 Газрын зураг нь зөвхөн утсан дээр ажиллана</Text></View>)}
           </View>
 
-          <TouchableOpacity style={[styles.submitButton, { backgroundColor: postCredits <= 0 ? colors.border : colors.primary, opacity: submitting ? 0.75 : 1 }]} onPress={handleSubmit} activeOpacity={0.85} disabled={submitting}>
+          <TouchableOpacity style={[styles.submitButton, { backgroundColor: postCredits <= 0 ? colors.border : colors.primary, opacity: submitting ? 0.75 : 1 }]} onPress={() => void handleSubmit()} activeOpacity={0.85} disabled={submitting}>
             {submitting ? (<ActivityIndicator color={colors.buttonText} />) : (<Text style={[styles.submitButtonText, { color: postCredits <= 0 ? colors.textSecondary : colors.buttonText }]}>{postCredits <= 0 ? "Эрх дууссан" : "Зар нэмэх (1 эрх хасагдана)"}</Text>)}
           </TouchableOpacity>
           {postCredits <= 0 && (<Text style={{ textAlign: "center", color: colors.error, marginTop: 12, fontSize: 13, fontWeight: "600" }}>Таны зар оруулах эрх дууссан байна. Профайл руу орж цэнэглэнэ үү.</Text>)}
@@ -551,7 +600,7 @@ export default function PostScreen() {
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Дэд категори сонгох</Text><Pressable onPress={() => setSubcategoryModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
             <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Дэд категори хайх..." placeholderTextColor={colors.textSecondary} value={subcategorySearch} onChangeText={setSubcategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
-            <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSubcategorySearch(""); setSubcategoryModalVisible(false); }} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? colors.buttonText : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}</Pressable>
+            <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSelectedSubcategoryLabel(null); setSubcategorySearch(""); setSubcategoryModalVisible(false); }} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? colors.buttonText : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}</Pressable>
             <FlatList data={visibleSubcategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох дэд категори олдсонгүй</Text>} renderItem={({ item }) => {
                 const selected = subcategoryId === item.id;
                 return (
@@ -592,12 +641,25 @@ export default function PostScreen() {
         </View>
       </Modal>
 
+      <ContactPhonePickerModal
+        visible={contactPhoneModalVisible}
+        userId={user?.id}
+        selectedPhone={selectedContactPhone}
+        onClose={() => { setContactPhoneModalVisible(false); setContinuePostAfterPhone(false); }}
+        onSelect={(phone) => {
+          setSelectedContactPhone(phone);
+          setContactPhoneModalVisible(false);
+          if (continuePostAfterPhone) { setContinuePostAfterPhone(false); void handleSubmit(phone); }
+        }}
+      />
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
   keyboardView: { flex: 1 },
   content: { flex: 1 },
   contentContainer: { paddingTop: 20, paddingHorizontal: 20, paddingBottom: 24 },

@@ -16,13 +16,19 @@ import {
   ArrowLeft,
   X,
   Tag,
+  ShieldCheck,
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import AppHeader from "@/components/AppHeader";
-import { supabase } from "@/lib/supabase";
 import { isSponsoredPromotionActive, recordPromotionMetric } from "@/lib/promotionMetrics";
+import {
+  getCategoryCatalogImmediately,
+  loadCachedCategoryCatalog,
+  refreshCategoryCatalog,
+  type CatalogCategory,
+} from "@/lib/categoryCatalog";
 
 type LocalSubcategory = { id: string; name: string; icon?: string | null; };
 type LocalCategory = { id: string; name: string; icon?: string | null; subcategories: LocalSubcategory[]; };
@@ -44,6 +50,7 @@ type BrowseJob = {
     jobsCompleted?: number;
     photoUri?: string | null;
     id?: string | null;
+    isDanVerified?: boolean;
   };
 };
 
@@ -186,6 +193,7 @@ function normalizeJob(raw: any): BrowseJob {
       jobsCompleted: raw?.posted_by_jobs_completed ?? 0,
       photoUri: raw?.posted_by_photo ?? null,
       id: raw?.posted_by_id ?? null,
+      isDanVerified: Boolean(raw?.posted_by_is_dan_verified),
     },
   };
 }
@@ -257,6 +265,12 @@ function JobCard({
             <Text style={[styles.posterName, { color: colors.textSecondary }]}>
               {job.postedBy?.name ?? "Unknown"}
             </Text>
+            {Boolean(job.postedBy?.isDanVerified) && (
+              <View style={styles.danBadge}>
+                <ShieldCheck size={12} color="#087F4F" strokeWidth={2.8} />
+                <Text style={styles.danBadgeText}>DAN</Text>
+              </View>
+            )}
             <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
             <Text style={[styles.posterDate, { color: colors.textSecondary }]}>
               {formatDate(job.postedDate)}
@@ -289,35 +303,29 @@ export default function BrowseScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  const [dbCategories, setDbCategories] = useState<LocalCategory[]>([]);
+  const [dbCategories, setDbCategories] = useState<LocalCategory[]>(() => getCategoryCatalogImmediately().categories);
   
+  const applyCategoryCatalog = useCallback((snapshot: { categories: CatalogCategory[] }) => {
+    setDbCategories(snapshot.categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      icon: category.icon,
+      subcategories: category.subcategories.map((subcategory) => ({
+        id: subcategory.id,
+        name: subcategory.name,
+        icon: subcategory.icon,
+      })),
+    })));
+  }, []);
+
   const fetchCategoriesFromDB = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('categories')
-        .select(`
-          id, name, icon,
-          subcategories ( id, name, icon )
-        `);
-      if (error) throw error;
-      
-      if (data) {
-        const formattedCats: LocalCategory[] = data.map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          icon: c.icon,
-          subcategories: Array.isArray(c.subcategories) ? c.subcategories.map((sub: any) => ({
-            id: sub.id,
-            name: sub.name,
-            icon: sub.icon
-          })) : []
-        }));
-        setDbCategories(formattedCats);
-      }
-    } catch (err) {
-      console.log("Error fetching categories:", err);
+      applyCategoryCatalog(await loadCachedCategoryCatalog());
+      applyCategoryCatalog(await refreshCategoryCatalog());
+    } catch (error) {
+      console.log("CATEGORY CATALOG REFRESH ERROR:", error);
     }
-  }, []);
+  }, [applyCategoryCatalog]);
 
   useEffect(() => {
     fetchCategoriesFromDB();
@@ -982,6 +990,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
     gap: 6,
   },
+  danBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: "#E8F8EF" },
+  danBadgeText: { color: "#087F4F", fontSize: 10, fontWeight: "800" },
   metaDot: {
     fontSize: 12,
   },

@@ -34,6 +34,7 @@ import {
   Square,
   Share2,
   Settings2,
+  ShieldCheck,
 } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,7 +45,10 @@ import {
   RENTAL_INSURANCE_RATE_PERCENT,
 } from "@/lib/rentalInsurance";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { RENTAL_INSURANCE_ENABLED } from "@/constants/features";
 import AppHeader from "@/components/AppHeader"; 
+import ContactPhonePickerModal from "@/components/ContactPhonePickerModal";
+import { loadDefaultContactPhone } from "@/lib/contactPhones";
 
 function toSafeDate(value: any): Date {
   if (!value) return new Date();
@@ -137,6 +141,9 @@ export default function JobDetailScreen() {
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date(Date.now() + 86400000));
   const [hasTime, setHasTime] = useState(false);
+  const [selectedContactPhone, setSelectedContactPhone] = useState<string | null>(null);
+  const [contactPhoneModalVisible, setContactPhoneModalVisible] = useState(false);
+  const [continueRentAfterPhone, setContinueRentAfterPhone] = useState(false);
   const [startTime, setStartTime] = useState(new Date());
   const [endTime, setEndTime] = useState(new Date());
 
@@ -168,6 +175,19 @@ export default function JobDetailScreen() {
     return priceType === "monthly" ? Math.max(1, Math.ceil(days / 30)) : days;
   }, [startDate, endDate, hasTime, startTime, endTime, priceType]);
   
+
+  useEffect(() => {
+    let active = true;
+    if (!user?.id) {
+      setSelectedContactPhone(null);
+      return () => { active = false; };
+    }
+    void loadDefaultContactPhone(user.id)
+      .then((phone) => { if (active) setSelectedContactPhone(phone); })
+      .catch(() => { if (active) setSelectedContactPhone(null); });
+    return () => { active = false; };
+  }, [user?.id]);
+
   if (!job) {
     return (
       <>
@@ -187,6 +207,7 @@ export default function JobDetailScreen() {
 
   const postedBy: any = job.postedBy ?? {};
   const posterName = postedBy?.name ?? "Хэрэглэгч";
+  const isDanVerified = Boolean(postedBy?.isDanVerified ?? postedBy?.is_dan_verified ?? (job as any)?.posted_by_is_dan_verified);
   const posterPhone = postedBy?.phone ?? "";
   const posterId = postedBy?.phone ?? postedBy?.id ?? "";
   const initial = posterName.charAt(0).toUpperCase() || "?";
@@ -257,7 +278,7 @@ export default function JobDetailScreen() {
     setRentModalVisible(true);
   };
   
-  const handleRentSubmit = () => {
+  const handleRentSubmit = (phoneOverride?: string) => {
     if (!agreeTerms) { Alert.alert("Анхаар", "Та хариуцлагын санамжтай танилцаж, хүлээн зөвшөөрөх ёстой."); return; }
     if (rentSubmitting) return;
     const rentalStart = new Date(startDate);
@@ -271,14 +292,33 @@ export default function JobDetailScreen() {
     }
     if (rentalEnd <= rentalStart) { Alert.alert("Анхаар", "Дуусах огноо эхлэх огнооноос хойш байх ёстой."); return; }
 
+    const contactPhone = phoneOverride ?? selectedContactPhone;
+    if (!contactPhone) {
+      setRentModalVisible(false);
+      setContinueRentAfterPhone(true);
+      setContactPhoneModalVisible(true);
+      return;
+    }
     setRentModalVisible(false);
-    setInsuranceModalVisible(true);
+    if (RENTAL_INSURANCE_ENABLED) {
+      setInsuranceModalVisible(true);
+    } else {
+      void submitRentalRequest(false, contactPhone);
+    }
   };
 
-  const submitRentalRequest = async (withInsurance: boolean) => {
+  const submitRentalRequest = async (withInsurance: boolean, phoneOverride?: string) => {
+    const contactPhone = phoneOverride ?? selectedContactPhone;
+    if (!contactPhone) {
+      setInsuranceModalVisible(false);
+      setContinueRentAfterPhone(true);
+      setContactPhoneModalVisible(true);
+      return;
+    }
+    const shouldUseInsurance = RENTAL_INSURANCE_ENABLED && withInsurance;
     const computedTotalPrice = jobPrice * rentQuantity * calculatedDuration;
     const insurancePremium = calculateRentalInsurancePremium(computedTotalPrice);
-    if (withInsurance && insurancePremium <= 0) {
+    if (shouldUseInsurance && insurancePremium <= 0) {
       Alert.alert("Анхаар", "Даатгалын дүн тооцоологдсонгүй. Түрээсийн үнийг шалгана уу.");
       return;
     }
@@ -318,11 +358,13 @@ export default function JobDetailScreen() {
             start_time: hasTime ? formatTimeLabel(startTime) : null,
             end_time: hasTime ? formatTimeLabel(endTime) : null,
             requester_name: user?.name,
-            requester_phone: user?.phone,
+            requester_phone: contactPhone,
             requester_photo: user?.photoUri,
-            insurance_status: withInsurance ? "not_requested" : "requester_declined",
-            insurance_premium: insurancePremium || null,
-            insurance_rate_percent: RENTAL_INSURANCE_RATE_PERCENT,
+            // Insurance is disabled for this release; retain the columns for a
+            // future insurer integration without exposing the demo flow.
+            insurance_status: shouldUseInsurance ? "not_requested" : RENTAL_INSURANCE_ENABLED ? "requester_declined" : "not_requested",
+            insurance_premium: RENTAL_INSURANCE_ENABLED ? insurancePremium || null : null,
+            insurance_rate_percent: RENTAL_INSURANCE_ENABLED ? RENTAL_INSURANCE_RATE_PERCENT : null,
           }
         ])
         .select()
@@ -330,7 +372,7 @@ export default function JobDetailScreen() {
 
       if (requestError) throw requestError;
 
-      if (requestData && withInsurance) {
+      if (requestData && shouldUseInsurance) {
         const { error: insuranceError } = await supabase.rpc("prepare_rental_insurance_demo_payment", {
           p_request_id: requestData.id,
           p_premium: insurancePremium,
@@ -409,7 +451,10 @@ export default function JobDetailScreen() {
               <View style={[styles.posterAvatar, { backgroundColor: colors.primary }]}><Text style={[styles.posterInitial, { color: colors.buttonText }]}>{initial}</Text></View>
             )}
             <View style={styles.posterInfo}>
-              <Text style={[styles.posterName, { color: colors.text }]}>{posterName}</Text>
+              <View style={styles.posterNameRow}>
+                <Text style={[styles.posterName, { color: colors.text }]} numberOfLines={1}>{posterName}</Text>
+                {isDanVerified && <View style={styles.posterDanBadge}><ShieldCheck size={13} color="#087F4F" strokeWidth={2.8} /><Text style={styles.posterDanBadgeText}>DAN баталгаажсан</Text></View>}
+              </View>
               <Text style={[styles.posterPhone, { color: colors.textSecondary }]}>{posterPhone || "Утасны дугааргүй"}</Text>
             </View>
           </TouchableOpacity>
@@ -656,14 +701,14 @@ export default function JobDetailScreen() {
                 <TouchableOpacity style={[styles.modalCancelButton, { borderColor: colors.border }]} onPress={() => setRentModalVisible(false)} disabled={rentSubmitting}>
                   <Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalSubmitButton, { backgroundColor: agreeTerms ? colors.primary : colors.border }]} onPress={handleRentSubmit} disabled={rentSubmitting || !agreeTerms}>
+                <TouchableOpacity style={[styles.modalSubmitButton, { backgroundColor: agreeTerms ? colors.primary : colors.border }]} onPress={() => handleRentSubmit()} disabled={rentSubmitting || !agreeTerms}>
                   {rentSubmitting ? <ActivityIndicator color={agreeTerms ? buttonTextColor : colors.textSecondary} /> : <Text style={[styles.modalSubmitText, { color: agreeTerms ? buttonTextColor : colors.textSecondary }]}>Хүсэлт илгээх</Text>}
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         </Modal>
-        <Modal visible={insuranceModalVisible} transparent animationType="slide" onRequestClose={() => setInsuranceModalVisible(false)}>
+        <Modal visible={RENTAL_INSURANCE_ENABLED && insuranceModalVisible} transparent animationType="slide" onRequestClose={() => setInsuranceModalVisible(false)}>
           <View style={styles.modalOverlay}>
             <View style={[styles.reviewModal, { backgroundColor: colors.background }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Бараагаа даатгуулах уу?</Text>
@@ -694,6 +739,18 @@ export default function JobDetailScreen() {
           </View>
         </Modal>
       </SafeAreaView>
+        <ContactPhonePickerModal
+          visible={contactPhoneModalVisible}
+          userId={user?.id}
+          selectedPhone={selectedContactPhone}
+          onClose={() => { setContactPhoneModalVisible(false); setContinueRentAfterPhone(false); }}
+          onSelect={(phone) => {
+            setSelectedContactPhone(phone);
+            setContactPhoneModalVisible(false);
+            if (continueRentAfterPhone) { setContinueRentAfterPhone(false); handleRentSubmit(phone); }
+          }}
+        />
+
     </>
   );
 }
@@ -706,7 +763,10 @@ const styles = StyleSheet.create({
   posterAvatar: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", marginRight: 16, backgroundColor: "#EAEAEA" },
   posterInitial: { fontSize: 28, fontWeight: "700" },
   posterInfo: { flex: 1 },
-  posterName: { fontSize: 20, fontWeight: "700", marginBottom: 4 },
+  posterNameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
+  posterName: { fontSize: 20, fontWeight: "700", flexShrink: 1 },
+  posterDanBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, backgroundColor: "#E8F8EF" },
+  posterDanBadgeText: { color: "#087F4F", fontSize: 10, fontWeight: "800" },
   posterPhone: { fontSize: 14 },
   titleSection: { padding: 16, borderRadius: 16, marginBottom: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   shareIconWrap: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },

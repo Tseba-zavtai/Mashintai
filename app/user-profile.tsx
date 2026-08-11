@@ -1,14 +1,14 @@
 // app/user-profile.tsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
 // 🎯 ЗАССАН: ChevronLeft-ийг хасаж, AppHeader-ийг дуудсан
-import { User, Star, Briefcase, MessageSquare } from "lucide-react-native"; 
+import { User, Star, Briefcase, MessageSquare, ShieldCheck } from "lucide-react-native";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import { isSponsoredPromotionActive, recordPromotionMetric } from "@/lib/promotionMetrics"; // 🎯 НЭМСЭН
@@ -23,6 +23,7 @@ export default function UserProfileScreen() {
   const [profileUser, setProfileUser] = useState<any>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [reviews, setReviews] = useState<any[]>([]);
+  const [successfulRentalCount, setSuccessfulRentalCount] = useState(0);
 
   const [rating, setRating] = useState(1);
   const [comment, setComment] = useState("");
@@ -30,6 +31,24 @@ export default function UserProfileScreen() {
   const [reviewedRequestIds, setReviewedRequestIds] = useState<Set<string>>(new Set());
 
   const userBtnTextColor = colors.buttonText;
+  const isDanVerified = Boolean(profileUser?.is_dan_verified ?? profileUser?.dan_verified_at);
+
+  const loadSuccessfulRentalCount = useCallback(async () => {
+    const targetId = profileUser?.id || userId;
+    if (!targetId) {
+      setSuccessfulRentalCount(0);
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("get_mutual_successful_rental_count", { p_user_id: targetId });
+    if (!error) setSuccessfulRentalCount(Math.max(0, Number(data ?? 0)));
+  }, [profileUser?.id, userId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadSuccessfulRentalCount();
+    }, [loadSuccessfulRentalCount]),
+  );
 
   useEffect(() => {
     const fetchUserAndReviews = async () => {
@@ -161,7 +180,13 @@ export default function UserProfileScreen() {
               <View style={styles.profileInfo}>
                 <Text style={[styles.profileName, { color: colors.text }]}>{profileUser?.name || "Хэрэглэгч"}</Text>
                 <Text style={[styles.profilePhone, { color: colors.textSecondary }]}>{profileUser?.phone || userId}</Text>
+                {isDanVerified && <View style={styles.danVerifiedBadge}><ShieldCheck size={12} color="#087F4F" strokeWidth={2.8} /><Text style={styles.danVerifiedBadgeText}>DAN баталгаажсан</Text></View>}
                 <Text style={[styles.profileRatingText, { color: colors.text }]}>★ {profileUser?.user_rating_avg ? profileUser.user_rating_avg.toFixed(1) : "Шинэ"} · {profileUser?.user_review_count || 0} үнэлгээ</Text>
+                {successfulRentalCount > 0 && (
+                  <View style={styles.successBadge}>
+                    <Text style={styles.successBadgeText}>✓ {successfulRentalCount} амжилттай түрээс</Text>
+                  </View>
+                )}
                 <Text style={[styles.profileRentalText, { color: colors.textSecondary }]}>{profileUser?.rental_count || 0} удаа түрээслүүлсэн</Text>
               </View>
             </View>
@@ -262,6 +287,10 @@ const styles = StyleSheet.create({
   profileName: { fontSize: 20, fontWeight: "700", marginBottom: 4 },
   profilePhone: { fontSize: 14, marginBottom: 8 },
   profileRatingText: { fontSize: 13, fontWeight: "800" },
+  danVerifiedBadge: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: "#E8F8EF" },
+  danVerifiedBadgeText: { color: "#087F4F", fontSize: 11, fontWeight: "800" },
+  successBadge: { alignSelf: "flex-start", marginTop: 7, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: "#E8F8EF" },
+  successBadgeText: { color: "#0A8F55", fontSize: 11, fontWeight: "800" },
   profileRentalText: { marginTop: 2, fontSize: 12, fontWeight: "600" },
   pendingReviewBox: { padding: 20, borderRadius: 16, borderWidth: 2, marginBottom: 24, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   pendingReviewTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },

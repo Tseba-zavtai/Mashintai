@@ -4,13 +4,17 @@ import { router, Stack } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { JobsContext } from "@/contexts/JobsContext";
 import { AuthContext, useAuth } from "@/contexts/AuthContext";
-import { ThemeContext } from "@/contexts/ThemeContext";
+import { ThemeContext, useTheme } from "@/contexts/ThemeContext";
+import { AppLockContext } from "@/contexts/AppLockContext";
+import AppLockGate from "@/components/AppLockGate";
+import AccountSuspendedGate from "@/components/AccountSuspendedGate";
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { supabase } from "@/lib/supabase";
+import { StatusBar } from "expo-status-bar";
 
 const queryClient = new QueryClient();
 
@@ -83,8 +87,18 @@ function useNotificationObserver() {
   }, []);
 }
 function RootLayoutNav() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, refetchProfile } = useAuth();
+  const { colors, currentTheme } = useTheme();
   useNotificationObserver();
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && isAuthenticated) {
+        void refetchProfile().catch(() => {});
+      }
+    });
+    return () => subscription.remove();
+  }, [isAuthenticated, refetchProfile]);
 
   useEffect(() => {
     async function setupNotifications() {
@@ -113,7 +127,9 @@ function RootLayoutNav() {
   }, [isAuthenticated, isLoading, user?.id]);
 
   return (
-    <Stack 
+    <>
+      <StatusBar style={currentTheme === "purple" || currentTheme === "navy" ? "light" : "dark"} backgroundColor={colors.headerBackground} animated />
+      <Stack
       screenOptions={{ 
         headerShown: false, 
         animation: "slide_from_right" 
@@ -126,8 +142,12 @@ function RootLayoutNav() {
       <Stack.Screen name="browse" options={{ headerShown: false }} />
       <Stack.Screen name="my-jobs" options={{ headerShown: false }} />
       <Stack.Screen name="help" options={{ headerShown: false }} />
+      <Stack.Screen name="release-notes" options={{ headerShown: false }} />
+      <Stack.Screen name="admin-seasonal" options={{ headerShown: false }} />
+      <Stack.Screen name="seasonal-collection" options={{ headerShown: false }} />
       <Stack.Screen name="location-picker" options={{ headerShown: false, animation: "slide_from_bottom" }} />
-    </Stack>
+      </Stack>
+    </>
   );
 }
 
@@ -137,11 +157,15 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <ThemeContext>
           <AuthContext>
-            <JobsContext>
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <RootLayoutNav />
-              </GestureHandlerRootView>
-            </JobsContext>
+            <AppLockContext>
+              <JobsContext>
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                  <RootLayoutNav />
+                  <AppLockGate />
+                  <AccountSuspendedGate />
+                </GestureHandlerRootView>
+              </JobsContext>
+            </AppLockContext>
           </AuthContext>
         </ThemeContext>
       </QueryClientProvider>

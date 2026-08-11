@@ -20,11 +20,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { ArrowLeft, Eye, EyeOff, LogIn, UserPlus, KeyRound } from "lucide-react-native";
+import { ArrowLeft, Eye, EyeOff, LogIn, UserPlus, KeyRound, ShieldCheck } from "lucide-react-native";
 import { supabase } from "@/lib/supabase"; // 🎯 НЭМСЭН: Supabase холболт
 
-import { sendOtpSms } from "../Services/easycallSms";
-import { generateOtpCode } from "../Services/utils/otp";
 
 type OtpStage = "none" | "sent" | "verified";
 
@@ -37,6 +35,8 @@ export default function AuthScreen() {
   const resetPassword = auth.resetPassword as
     | ((phone: string, newPassword: string) => Promise<void>)
     | undefined;
+  const signInWithDan = auth.signInWithDan as () => Promise<void>;
+  const signUpWithDan = auth.signUpWithDan as () => Promise<void>;
 
   const { colors } = useTheme();
 
@@ -45,8 +45,9 @@ export default function AuthScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const [isSignUp, setIsSignUp] = useState(false);
+  const isSignUp = false;
   const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [showLegacyLogin, setShowLegacyLogin] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -65,7 +66,6 @@ export default function AuthScreen() {
 
   const termsScrollRef = useRef<ScrollView | null>(null);
 
-  const EASYCALL_API_KEY = "iFi4UFCDNUqhMd6i10DsiLuV0LY9DIHS";
 
   // 🎯 ШИНЭ: Үйлчилгээний нөхцөлийг Supabase-ээс татах функц
   const fetchTermsFromDB = useCallback(async () => {
@@ -157,37 +157,14 @@ export default function AuthScreen() {
     return true;
   };
 
+  // Шинэ бүртгэл болон баталгаажуулалт DAN-аар явахаар шилжсэн.
+  // EasyCall key-г client app-д хадгалахгүй.
   const handleSendOtp = async () => {
-    const phone8 = validatePhone8(phone);
-    if (!phone8) return;
-
-    if (!EASYCALL_API_KEY) {
-      Alert.alert("Алдаа", "EasyCall API Key тохируулаагүй байна");
-      return;
-    }
-
-    const otp = generateOtpCode(6);
-
-    setIsLoading(true);
-    try {
-      const resp = await sendOtpSms({
-        apiKey: EASYCALL_API_KEY,
-        phone: phone8,
-        code: otp,
-      });
-
-      console.log("EasyCall response =>", resp);
-
-      setSentOtp(otp);
-      setOtpStage("sent");
-      Alert.alert("Амжилттай", "Баталгаажуулах код илгээлээ");
-    } catch (error: any) {
-      Alert.alert("Алдаа", error?.message || "OTP илгээхөхд алдаа гарлаа");
-    } finally {
-      setIsLoading(false);
-    }
+    Alert.alert(
+      "DAN нэвтрэх",
+      "Шинэ бүртгэл болон нууц үг сэргээх нь DAN-аар нэвтрэх урсгалд шилжсэн байна."
+    );
   };
-
   const handleVerifyOtp = () => {
     if (!sentOtp) {
       Alert.alert("Алдаа", "Эхлээд OTP илгээнэ үү");
@@ -228,6 +205,28 @@ export default function AuthScreen() {
     }
   };
 
+  const handleDanSignIn = async () => {
+    setIsLoading(true);
+    try {
+      await signInWithDan();
+      router.replace("/(tabs)");
+    } catch (error: any) {
+      Alert.alert("DAN нэвтрэх", error?.message || "DAN-аар нэвтрэхэд алдаа гарлаа.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  const handleDanSignUp = async () => {
+    setIsLoading(true);
+    try {
+      await signUpWithDan();
+      router.replace("/(tabs)");
+    } catch (error: any) {
+      Alert.alert("DAN бүртгэл", error?.message || "DAN-аар бүртгүүлэхэд алдаа гарлаа.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const handleResetPassword = async () => {
     if (!resetPassword) {
       Alert.alert("Алдаа", "Нууц үг сэргээх функц одоохондоо холбогдоогүй байна");
@@ -425,6 +424,51 @@ export default function AuthScreen() {
             </View>
 
             <View style={styles.form}>
+              {!isSignUp && !isForgotPassword && !showLegacyLogin && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.button, { backgroundColor: colors.primary }]}
+                    onPress={handleDanSignIn}
+                    disabled={isLoading}
+                    activeOpacity={0.8}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      {isLoading ? <ActivityIndicator color={colors.buttonText} /> : <ShieldCheck size={20} color={colors.buttonText} />}
+                      <Text style={[styles.buttonText, { color: colors.buttonText }]}>DAN-аар нэвтрэх</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <Text style={[styles.danHint, { color: colors.textSecondary }]}>
+                    Шинэ хэрэглэгч DAN-аар баталгаажина. Регистр, иргэний үнэмлэхийн мэдээллийг Tureesly хадгалахгүй.
+                  </Text>
+                  <TouchableOpacity style={styles.danSignUpButton} onPress={handleDanSignUp} disabled={isLoading} activeOpacity={0.75}>
+                    <Text style={[styles.switchButtonText, { color: colors.primary }]}>Бүртгүүлэх</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.legacyLinkButton}
+                    onPress={() => { resetFormState(); setIsForgotPassword(false); setShowLegacyLogin(true); }}
+                    disabled={isLoading}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.legacyLinkText, { color: colors.textSecondary }]}>Өмнөх Tureesly бүртгэлтэй юу?</Text>
+                    <Text style={[styles.legacyLinkHint, { color: colors.primary }]}>Хуучин account-аа DAN-тай холбох</Text>
+                  </TouchableOpacity>
+                </>
+              )}              {(showLegacyLogin || isForgotPassword) && (
+                <>
+                  {showLegacyLogin && !isForgotPassword && (
+                    <>
+                      <TouchableOpacity
+                        style={styles.legacyBackLink}
+                        onPress={() => { resetFormState(); setShowLegacyLogin(false); }}
+                        activeOpacity={0.75}
+                      >
+                        <ArrowLeft size={18} color={colors.textSecondary} />
+                        <Text style={[styles.legacyBackText, { color: colors.textSecondary }]}>DAN нэвтрэх рүү буцах</Text>
+                      </TouchableOpacity>
+                      <Text style={[styles.legacyHeading, { color: colors.text }]}>Өмнөх бүртгэлээр нэвтрэх</Text>
+                      <Text style={[styles.legacyDescription, { color: colors.textSecondary }]}>Эхлээд хуучин account-аараа нэвтэрч, дараа нь Profile → DAN-аар баталгаажуулахыг сонгоно уу.</Text>
+                    </>
+                  )}
               <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: colors.text }]}>Утасны дугаар</Text>
                 <View
@@ -607,52 +651,12 @@ export default function AuthScreen() {
                 <Text style={[styles.buttonText, { color: colors.buttonText }]}>{mainButtonText}</Text>
               </TouchableOpacity>
 
-              {!isForgotPassword && !isSignUp && (
-                <TouchableOpacity
-                  style={styles.forgotButton}
-                  onPress={() => {
-                    setIsForgotPassword(true);
-                    setIsSignUp(false);
-                    resetFormState();
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.forgotButtonText, { color: colors.textSecondary }]}>
-                    Нууц үгээ мартсан уу?
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              <TouchableOpacity
-                style={styles.switchButton}
-                onPress={() => {
-                  if (isForgotPassword) {
-                    setIsForgotPassword(false);
-                    setIsSignUp(false);
-                    resetFormState();
-                    return;
-                  }
-
-                  setIsSignUp((prev) => !prev);
-                  setIsForgotPassword(false);
-                  resetFormState();
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.switchButtonText, { color: colors.text }]}>
-                  {isForgotPassword
-                    ? "Нэвтрэх хуудас руу буцах"
-                    : isSignUp
-                    ? "Бүртгэлтэй юу? Нэвтрэх"
-                    : "Бүртгэлгүй юу? Бүртгүүлэх"}
-                </Text>
-              </TouchableOpacity>
-
               <View style={styles.footer}>
                 <Text style={[styles.footerText, { color: colors.textSecondary }]}>
                   Бүртгэл үүсгэхийн өмнө үйлчилгээний нөхцөлтэй танилцаж, зөвшөөрнө үү.
                 </Text>
-              </View>
+              </View>                </>
+              )}
             </View>
           </View>
         </ScrollView>
@@ -786,6 +790,17 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { fontSize: 16, fontWeight: "700" },
+
+  danHint: { fontSize: 12, lineHeight: 18, textAlign: "center", marginTop: -12 },
+  divider: { height: 1, marginVertical: 4 },
+  danSignUpButton: { paddingVertical: 4, alignItems: "center" },
+  legacyHeading: { fontSize: 18, fontWeight: "700", marginBottom: 6 },
+  legacyLinkButton: { marginTop: 14, alignItems: "center", paddingVertical: 10 },
+  legacyLinkText: { fontSize: 13, fontWeight: "600" },
+  legacyLinkHint: { fontSize: 14, fontWeight: "800", marginTop: 3 },
+  legacyBackLink: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginBottom: 14 },
+  legacyBackText: { fontSize: 14, fontWeight: "700" },
+  legacyDescription: { fontSize: 13, lineHeight: 19, marginBottom: 18 },
 
   footer: { marginTop: 24 },
   footerText: { fontSize: 12, textAlign: "center", lineHeight: 18 },

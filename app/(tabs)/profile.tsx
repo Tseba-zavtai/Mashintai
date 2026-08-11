@@ -26,6 +26,7 @@ import {
   Edit2,
   X,
   Shield,
+  ShieldCheck,
   Palette,
   Eye,
   EyeOff,
@@ -35,23 +36,30 @@ import {
   Briefcase,
 
 } from "lucide-react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import Constants from "expo-constants";
 import { useJobs } from "@/contexts/JobsContext";
-import { useMemo, useEffect, useState } from "react";
+import { useCallback, useMemo, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useAppLock } from "@/contexts/AppLockContext";
 import ThemeSelector from "@/components/ThemeSelector";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import type { Href } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН
+import ContactPhonePickerModal from "@/components/ContactPhonePickerModal";
+import { loadDefaultContactPhone } from "@/lib/contactPhones";
 
 
 const DELETE_USER_URL = "https://wrekrjaitokrqydkwgtg.functions.supabase.co/delete-user";
 const STORAGE_BUCKET = "avatars";
 const AVATAR_MAX_SIZE = 512;
 const AVATAR_COMPRESS_QUALITY = 0.65;
+
+// Password login is kept only for legacy-account migration; do not expose a second lock to new DAN users.
+const SHOW_LEGACY_PASSWORD_CHANGE = false;
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -66,11 +74,16 @@ export default function ProfileScreen() {
     isAdminUnlocked,
     refetchProfile,
     changePassword,
+    linkDanIdentity,
   } = useAuth() as any;
   const { colors } = useTheme();
+  const { isAppLockEnabled, setAppLockEnabled } = useAppLock();
+  const appVersion = Constants.expoConfig?.version ?? "1.0.0";
 
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-  const [editedName, setEditedName] = useState("");
+  const [contactPhoneModalVisible, setContactPhoneModalVisible] = useState(false);
+  const [defaultContactPhone, setDefaultContactPhone] = useState<string | null>(null);
+  const [editedPhone, setEditedPhone] = useState("");
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [isAdminModalVisible, setIsAdminModalVisible] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
@@ -83,18 +96,37 @@ export default function ProfileScreen() {
   const [pwShow, setPwShow] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false); 
+  const [isLinkingDan, setIsLinkingDan] = useState(false);
+  const [isChangingAppLock, setIsChangingAppLock] = useState(false);
 
   const [reviews, setReviews] = useState<any[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(true);
+  const [successfulRentalCount, setSuccessfulRentalCount] = useState(0);
   const [isReviewsModalVisible, setIsReviewsModalVisible] = useState(false);
   
   const creditButtonTextColor = colors.buttonText;
+  const isDanVerified = Boolean(user?.danVerifiedAt);
+
+
+  useEffect(() => {
+    let active = true;
+    if (!user?.id) {
+      setDefaultContactPhone(null);
+      return () => { active = false; };
+    }
+    void loadDefaultContactPhone(user.id)
+      .then((phone) => { if (active) setDefaultContactPhone(phone); })
+      .catch(() => { if (active) setDefaultContactPhone(null); });
+    return () => { active = false; };
+  }, [user?.id]);
 
   const myJobs = useMemo(() => {
     if (!user) return [];
     return (jobs as any[]).filter((job: any) => {
       const postedBy = job?.postedBy ?? {};
-      return String(postedBy.phone ?? postedBy.id ?? "") === String(user.phone ?? user.id ?? "");
+      const ownerKey = postedBy.phone || postedBy.id || "";
+      const currentUserKey = user.phone || user.id || "";
+      return String(ownerKey) === String(currentUserKey);
     });
   }, [jobs, user]);
 
@@ -121,6 +153,22 @@ export default function ProfileScreen() {
   useEffect(() => {
     refetchProfile?.().catch(() => {});
   }, [refetchProfile]);
+
+  const loadSuccessfulRentalCount = useCallback(async () => {
+    if (!user?.id) {
+      setSuccessfulRentalCount(0);
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("get_mutual_successful_rental_count", { p_user_id: user.id });
+    if (!error) setSuccessfulRentalCount(Math.max(0, Number(data ?? 0)));
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadSuccessfulRentalCount();
+    }, [loadSuccessfulRentalCount]),
+  );
 
   useEffect(() => {
     const fetchReviews = async () => {
@@ -197,18 +245,57 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleEditName = () => {
-    setEditedName(user?.name || "");
-    setIsEditModalVisible(true);
+
+  const handleSaveContact = async () => {
+    const phoneDigits = editedPhone.replace(/\D/g, "").slice(0, 8);
+    if (editedPhone.trim() && phoneDigits.length !== 8) {
+      Alert.alert("Алдаа", "Холбоо барих утас 8 оронтой байна.");
+      return;
+    }
+
+    await updateProfile({
+      phone: phoneDigits ? `+976${phoneDigits}` : "",
+    });
+    setIsEditModalVisible(false);
   };
 
-  const handleSaveName = async () => {
-    if (editedName.trim()) {
-      await updateProfile({ name: editedName.trim() });
-      setIsEditModalVisible(false);
+  const handleLinkDanIdentity = async () => {
+    try {
+      setIsLinkingDan(true);
+      await linkDanIdentity();
+      Alert.alert("DAN баталгаажуулалт", "Таны одоогийн бүртгэл DAN иргэний мэдээлэлтэй амжилттай холбогдлоо.");
+    } catch (error: any) {
+      Alert.alert("DAN баталгаажуулалт", error?.message || "DAN холболт хийхэд алдаа гарлаа.");
+    } finally {
+      setIsLinkingDan(false);
     }
   };
-
+  const handleAppLockPress = () => {
+    const enabling = !isAppLockEnabled;
+    Alert.alert(
+      enabling ? "App түгжээ асаах" : "App түгжээ унтраах",
+      enabling
+        ? "Апп background-д орсны дараа Face ID, хурууны хээ эсвэл төхөөрөмжийн PIN-ээр нээгдэнэ."
+        : "Апп нээх төхөөрөмжийн баталгаажуулалт унтарна.",
+      [
+        { text: "Болих", style: "cancel" },
+        {
+          text: enabling ? "Асаах" : "Унтраах",
+          style: enabling ? "default" : "destructive",
+          onPress: async () => {
+            try {
+              setIsChangingAppLock(true);
+              await setAppLockEnabled(enabling);
+            } catch (error: any) {
+              Alert.alert("App түгжээ", error?.message || "Төхөөрөмжийн баталгаажуулалт ажилласангүй.");
+            } finally {
+              setIsChangingAppLock(false);
+            }
+          },
+        },
+      ],
+    );
+  };
   const openAdminPanel = () => {
     if (!isSuperAdmin) return;
     if (isAdminUnlocked) { router.push("/admin"); return; }
@@ -319,11 +406,22 @@ export default function ProfileScreen() {
           </TouchableOpacity>
           <View style={styles.profileInfo}>
             <Text style={[styles.profileName, { color: colors.text }]}>{user?.name || "Хэрэглэгч"}</Text>
-            <Text style={[styles.profilePhone, { color: colors.textSecondary }]}>{user?.phone || "+976 9999 9999"}</Text>
+            <Text style={[styles.profilePhone, { color: colors.textSecondary }]}>{defaultContactPhone || "Холбоо барих дугаар оруулаагүй"}</Text>
+            {isDanVerified && (
+              <View style={styles.danVerifiedBadge}>
+                <ShieldCheck size={12} color="#087F4F" strokeWidth={2.8} />
+                <Text style={styles.danVerifiedBadgeText}>DAN баталгаажсан</Text>
+              </View>
+            )}
             <Text style={[styles.profileRatingText, { color: colors.text }]}>★ {formatRating(myProfileStats.userRatingAvg)} · {myProfileStats.userReviewCount} үнэлгээ</Text>
+            {successfulRentalCount > 0 && (
+              <View style={styles.successBadge}>
+                <Text style={styles.successBadgeText}>✓ {successfulRentalCount} амжилттай түрээс</Text>
+              </View>
+            )}
             <Text style={[styles.profileRentalText, { color: colors.textSecondary }]}>{myProfileStats.rentalCount} удаа түрээслүүлсэн</Text>
           </View>
-          <TouchableOpacity onPress={handleEditName} style={[styles.editButton, { backgroundColor: colors.primary }]}><Edit2 size={20} color={colors.buttonText} /></TouchableOpacity>
+          <TouchableOpacity onPress={() => setContactPhoneModalVisible(true)} style={[styles.editButton, { backgroundColor: colors.primary }]}><Edit2 size={20} color={colors.buttonText} /></TouchableOpacity>
         </View>
 
         <View style={{ marginHorizontal: 20, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
@@ -377,11 +475,39 @@ export default function ProfileScreen() {
               <ChevronRight size={20} color={colors.textSecondary} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} activeOpacity={0.7} onPress={openPasswordModal}>
-              <View style={[styles.menuIconContainer, { backgroundColor: colors.backgroundSecondary }]}><Lock size={20} color={colors.textSecondary} /></View>
-              <Text style={[styles.menuText, { color: colors.text }]}>Нууц үг өөрчлөх</Text>
+            {isDanVerified ? (
+              <View style={[styles.menuItem, { borderBottomColor: colors.border }]} accessibilityRole="text">
+                <View style={[styles.menuIconContainer, { backgroundColor: "rgba(16, 185, 129, 0.12)" }]}><ShieldCheck size={20} color="#10B981" /></View>
+                <View style={styles.menuTextContainer}>
+                  <Text style={[styles.menuText, { color: colors.text }]}>DAN баталгаажсан</Text>
+                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>Таны бүртгэл DAN иргэний мэдээлэлтэй холбогдсон</Text>
+                </View>
+                <ShieldCheck size={20} color="#10B981" />
+              </View>
+            ) : (
+              <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} activeOpacity={0.7} onPress={handleLinkDanIdentity} disabled={isLinkingDan}>
+                <View style={[styles.menuIconContainer, { backgroundColor: "rgba(16, 185, 129, 0.1)" }]}>{isLinkingDan ? <ActivityIndicator size="small" color="#10B981" /> : <Shield size={20} color="#10B981" />}</View>
+                <View style={styles.menuTextContainer}>
+                  <Text style={[styles.menuText, { color: colors.text }]}>DAN-аар баталгаажуулах</Text>
+                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>Нэг удаа холбож, давхар бүртгэлээс хамгаална</Text>
+                </View>
+                <ChevronRight size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} activeOpacity={0.7} onPress={handleAppLockPress} disabled={isChangingAppLock}>
+              <View style={[styles.menuIconContainer, { backgroundColor: colors.backgroundSecondary }]}>{isChangingAppLock ? <ActivityIndicator size="small" color={colors.primary} /> : <Lock size={20} color={colors.textSecondary} />}</View>
+              <View style={styles.menuTextContainer}>
+                <Text style={[styles.menuText, { color: colors.text }]}>App түгжээ</Text>
+                <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>{isAppLockEnabled ? "Face ID / хурууны хээ / PIN идэвхтэй" : "Face ID, хурууны хээ эсвэл PIN ашиглан хамгаалах"}</Text>
+              </View>
               <ChevronRight size={20} color={colors.textSecondary} />
             </TouchableOpacity>
+            {SHOW_LEGACY_PASSWORD_CHANGE && (
+              <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} activeOpacity={0.7} onPress={openPasswordModal}>
+                            <View style={[styles.menuIconContainer, { backgroundColor: colors.backgroundSecondary }]}><Lock size={20} color={colors.textSecondary} /></View>
+                            <Text style={[styles.menuText, { color: colors.text }]}>Нууц үг өөрчлөх</Text>
+                            <ChevronRight size={20} color={colors.textSecondary} />
+                          </TouchableOpacity>
+            )}
 
             <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} activeOpacity={0.7} onPress={() => setShowThemeSelector(true)}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.backgroundSecondary }]}><Palette size={20} color={colors.textSecondary} /></View>
@@ -428,11 +554,14 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={{ alignItems: 'center', marginTop: 24, marginBottom: 10 }}>
-          <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '600' }}>
-            Хувилбар 1.0.0
-          </Text>
-        </View>
+        <TouchableOpacity
+          style={{ alignItems: 'center', marginTop: 24, marginBottom: 10, paddingVertical: 8 }}
+          activeOpacity={0.7}
+          onPress={() => router.push("/release-notes" as any)}
+        >
+          <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '700' }}>Хувилбар {appVersion}</Text>
+          <Text style={{ marginTop: 3, fontSize: 12, color: colors.primary, fontWeight: '600' }}>Шинэчлэлийн мэдээлэл харах</Text>
+        </TouchableOpacity>
         <View style={styles.bottomPadding} />
       </ScrollView>
 
@@ -449,17 +578,44 @@ export default function ProfileScreen() {
 
       <ThemeSelector visible={showThemeSelector} onClose={() => setShowThemeSelector(false)} />
 
+
+      <ContactPhonePickerModal
+        visible={contactPhoneModalVisible}
+        userId={user?.id}
+        selectedPhone={defaultContactPhone}
+        makeSelectionDefault
+        title="Миний холбоо барих дугаарууд"
+        onClose={() => setContactPhoneModalVisible(false)}
+        onSelect={(phone) => {
+          setDefaultContactPhone(phone);
+          setContactPhoneModalVisible(false);
+        }}
+      />
+
       <Modal visible={isEditModalVisible} animationType="slide" transparent onRequestClose={() => setIsEditModalVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsEditModalVisible(false)}>
             <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
               <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
                 <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: colors.text }]}>Нэр өөрчлөх</Text>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>Холбоо барих утас</Text>
                   <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><X size={24} color={colors.text} /></TouchableOpacity>
                 </View>
-                <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={editedName} onChangeText={setEditedName} placeholder="Нэр оруулах" placeholderTextColor={colors.textSecondary} autoFocus />
-                <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary }]} onPress={handleSaveName} activeOpacity={0.8}>
+                <Text style={[styles.editFieldLabel, { color: colors.textSecondary }]}>Холбоо барих утас (сонголтоор)</Text>
+                <View style={[styles.phoneEditRow, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
+                  <Text style={[styles.phoneEditPrefix, { color: colors.textSecondary, borderRightColor: colors.border }]}>+976</Text>
+                  <TextInput
+                    style={[styles.phoneEditInput, { color: colors.text }]}
+                    value={editedPhone}
+                    onChangeText={(value) => setEditedPhone(value.replace(/\D/g, "").slice(0, 8))}
+                    placeholder="9999 9999"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={8}
+                  />
+                </View>
+                <Text style={[styles.editFieldHint, { color: colors.textSecondary }]}>DAN-аас утасны дугаар татдаггүй. Энэ нь таны оруулсан холбоо барих дугаар байна.</Text>
+                <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary }]} onPress={handleSaveContact} activeOpacity={0.8}>
                   <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>Хадгалах</Text>
                 </TouchableOpacity>
               </View>
@@ -467,31 +623,32 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
-
-      <Modal visible={isPwModalVisible} animationType="slide" transparent onRequestClose={() => setIsPwModalVisible(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsPwModalVisible(false)}>
-            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-                <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: colors.text }]}>Нууц үг өөрчлөх</Text>
-                  <TouchableOpacity onPress={() => setIsPwModalVisible(false)}><X size={24} color={colors.text} /></TouchableOpacity>
-                </View>
-                <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={currentPw} onChangeText={setCurrentPw} placeholder="Одоогийн нууц үг" placeholderTextColor={colors.textSecondary} secureTextEntry={!pwShow} />
-                <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={newPw} onChangeText={setNewPw} placeholder="Шинэ нууц үг" placeholderTextColor={colors.textSecondary} secureTextEntry={!pwShow} />
-                <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={newPw2} onChangeText={setNewPw2} placeholder="Шинэ нууц үг (дахин)" placeholderTextColor={colors.textSecondary} secureTextEntry={!pwShow} />
-                <TouchableOpacity style={[styles.eyeBtn, { borderColor: colors.border }]} onPress={() => setPwShow((p) => !p)} activeOpacity={0.8}>
-                  {pwShow ? <EyeOff size={18} color={colors.textSecondary} /> : <Eye size={18} color={colors.textSecondary} />}
-                  <Text style={{ color: colors.text, fontWeight: "700" }}>{pwShow ? "Нууцлах" : "Харах"}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary, opacity: pwBusy ? 0.7 : 1 }]} onPress={handleChangePassword} activeOpacity={0.8} disabled={pwBusy}>
-                  <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>{pwBusy ? "Сольж байна..." : "Хадгалах"}</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </Modal>
+      {SHOW_LEGACY_PASSWORD_CHANGE && (
+        <Modal visible={isPwModalVisible} animationType="slide" transparent onRequestClose={() => setIsPwModalVisible(false)}>
+                <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+                  <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsPwModalVisible(false)}>
+                    <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+                      <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+                        <View style={styles.modalHeader}>
+                          <Text style={[styles.modalTitle, { color: colors.text }]}>Нууц үг өөрчлөх</Text>
+                          <TouchableOpacity onPress={() => setIsPwModalVisible(false)}><X size={24} color={colors.text} /></TouchableOpacity>
+                        </View>
+                        <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={currentPw} onChangeText={setCurrentPw} placeholder="Одоогийн нууц үг" placeholderTextColor={colors.textSecondary} secureTextEntry={!pwShow} />
+                        <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={newPw} onChangeText={setNewPw} placeholder="Шинэ нууц үг" placeholderTextColor={colors.textSecondary} secureTextEntry={!pwShow} />
+                        <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={newPw2} onChangeText={setNewPw2} placeholder="Шинэ нууц үг (дахин)" placeholderTextColor={colors.textSecondary} secureTextEntry={!pwShow} />
+                        <TouchableOpacity style={[styles.eyeBtn, { borderColor: colors.border }]} onPress={() => setPwShow((p) => !p)} activeOpacity={0.8}>
+                          {pwShow ? <EyeOff size={18} color={colors.textSecondary} /> : <Eye size={18} color={colors.textSecondary} />}
+                          <Text style={{ color: colors.text, fontWeight: "700" }}>{pwShow ? "Нууцлах" : "Харах"}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary, opacity: pwBusy ? 0.7 : 1 }]} onPress={handleChangePassword} activeOpacity={0.8} disabled={pwBusy}>
+                          <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>{pwBusy ? "Сольж байна..." : "Хадгалах"}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                </KeyboardAvoidingView>
+              </Modal>
+      )}
 
       <Modal visible={isAdminModalVisible} animationType="slide" transparent onRequestClose={() => setIsAdminModalVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -503,7 +660,7 @@ export default function ProfileScreen() {
                   <TouchableOpacity onPress={() => { setIsAdminModalVisible(false); setAdminPassword(""); }}><X size={24} color={colors.text} /></TouchableOpacity>
                 </View>
                 <Text style={{ fontSize: 13, marginBottom: 12, color: colors.textSecondary }}>Админ панел руу орохын тулд нууц үгээ оруулна уу.</Text>
-                <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={adminPassword} onChangeText={setAdminPassword} placeholder="Admin password" placeholderTextColor={colors.textSecondary} secureTextEntry autoFocus autoCapitalize="none" />
+                <TextInput style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]} value={adminPassword} onChangeText={setAdminPassword} placeholder="Нууц үг" placeholderTextColor={colors.textSecondary} secureTextEntry autoFocus autoCapitalize="none" />
                 <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary, opacity: isUnlockingAdmin ? 0.7 : 1 }]} onPress={handleUnlockAdmin} activeOpacity={0.8} disabled={isUnlockingAdmin}>
                   <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>{isUnlockingAdmin ? "Шалгаж байна..." : "Нээх"}</Text>
                 </TouchableOpacity>
@@ -530,6 +687,10 @@ const styles = StyleSheet.create({
   profileName: { fontSize: 20, fontWeight: "700", marginBottom: 4 },
   profilePhone: { fontSize: 14 },
   profileRatingText: { marginTop: 8, fontSize: 14, fontWeight: "800" },
+  successBadge: { alignSelf: "flex-start", marginTop: 7, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: "#E8F8EF" },
+  successBadgeText: { color: "#0A8F55", fontSize: 11, fontWeight: "800" },
+  danVerifiedBadge: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: "#E8F8EF" },
+  danVerifiedBadgeText: { color: "#087F4F", fontSize: 11, fontWeight: "800" },
   profileRentalText: { marginTop: 2, fontSize: 12, fontWeight: "600" },
   emptyReviewBox: { marginHorizontal: 20, padding: 24, borderRadius: 16, borderWidth: 1, alignItems: "center" },
   reviewCard: { padding: 16, borderRadius: 16, borderWidth: 1 },
@@ -559,6 +720,11 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: "700" },
   input: { borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 16, borderWidth: 1 },
+  editFieldLabel: { fontSize: 13, fontWeight: "700", marginBottom: 6, marginTop: 4 },
+  editFieldHint: { fontSize: 12, lineHeight: 17, marginTop: -4, marginBottom: 10 },
+  phoneEditRow: { height: 52, borderWidth: 1, borderRadius: 12, flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  phoneEditPrefix: { width: 76, textAlign: "center", fontSize: 16, fontWeight: "700", borderRightWidth: 1, paddingVertical: 14 },
+  phoneEditInput: { flex: 1, fontSize: 16, paddingHorizontal: 14, paddingVertical: 12 },
   saveButton: { borderRadius: 12, padding: 16, alignItems: "center" },
   saveButtonText: { fontSize: 16, fontWeight: "700" },
   eyeBtn: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 12, paddingVertical: 12, marginBottom: 14 },

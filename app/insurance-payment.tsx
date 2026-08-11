@@ -16,6 +16,7 @@ import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/lib/supabase";
+import { RENTAL_INSURANCE_ENABLED } from "@/constants/features";
 
 type InsuranceRequest = {
   id: string;
@@ -66,6 +67,10 @@ export default function InsurancePaymentScreen() {
   }, [requestId, router]);
 
   useEffect(() => {
+    if (!RENTAL_INSURANCE_ENABLED) {
+      setLoading(false);
+      return;
+    }
     void loadRequest();
   }, [loadRequest]);
 
@@ -74,6 +79,23 @@ export default function InsurancePaymentScreen() {
   const payerLabel = request?.insurance_payer_role === "owner" ? "Эзэмшигч" : "Түрээслэгч";
   const expectedPendingStatus = request?.insurance_payer_role === "owner" ? "payment_pending_owner" : "payment_pending_requester";
   const isAuthorizedPayer = !!user?.id && request?.insurance_payer_id === user.id && request?.insurance_status === expectedPendingStatus;
+
+  if (!RENTAL_INSURANCE_ENABLED) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["bottom"]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <AppHeader title="Даатгал" />
+        <View style={styles.center}>
+          <ShieldCheck size={34} color={colors.textSecondary} />
+          <Text style={[styles.heroTitle, { color: colors.text }]}>Даатгал түр идэвхгүй байна</Text>
+          <Text style={[styles.muted, { color: colors.textSecondary, textAlign: "center" }]}>Энэ боломж дараагийн шинэчлэлтээр дахин нээгдэнэ.</Text>
+          <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary, width: 220 }]} onPress={() => router.replace("/(tabs)/rental-requests")}>
+            <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>Мэдэгдэл рүү буцах</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const generateInvoice = () => {
     if (!isAuthorizedPayer || submitting) {

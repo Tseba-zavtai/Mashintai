@@ -24,6 +24,27 @@ serve(async (req) => {
 
     const admin = createClient(url, serviceKey);
 
+    const accessToken = auth.slice("Bearer ".length);
+    const { data: authData, error: authError } = await admin.auth.getUser(accessToken);
+    if (authError || !authData.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: callerProfile, error: callerError } = await admin
+      .from("users")
+      .select("is_super_admin")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+
+    if (callerError || callerProfile?.is_super_admin !== true) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const limitRaw = body["limit"];
     const limit = Math.min(Number(limitRaw ?? 500), 1000);

@@ -34,6 +34,7 @@ import {
   RefreshCw,
   ClipboardList,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react-native";
 import {
   SafeAreaView,
@@ -45,12 +46,24 @@ import { useRouter } from "expo-router";
 import { useTheme } from "@/contexts/ThemeContext";
 import ThemeSelector from "@/components/ThemeSelector";
 import { supabase } from "@/lib/supabase";
+import { SeasonalIcon } from "@/lib/seasonalIcons";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
 import { searchMatch } from "@/lib/searchUtils";
 import { BUMP_PRIORITY_DECAY_PER_HOUR, BUMP_PRIORITY_MAX_SCORE } from "@/constants/monetization";
 import { recordPromotionMetric } from "@/lib/promotionMetrics";
 import SkeletonCard from "@/components/SkeletonCard";
+import {
+  getCategoryCatalogImmediately,
+  loadCachedCategoryCatalog,
+  refreshCategoryCatalog,
+  type CatalogCategory,
+} from "@/lib/categoryCatalog";
+
+import {
+  fetchActiveSeasonalCollections,
+  type SeasonalCollection,
+} from "@/lib/seasonalCollections";
 
 const CURRENT_VERSION = "1.0.0";
 
@@ -254,7 +267,15 @@ function JobCard({
         </TouchableOpacity>
         
         <View style={styles.feedHeaderInfo}>
-          <Text style={[styles.feedPosterName, { color: colors.text }]}>{name}</Text>
+          <View style={styles.feedPosterRow}>
+            <Text style={[styles.feedPosterName, { color: colors.text }]} numberOfLines={1}>{name}</Text>
+            {Boolean(postedBy?.isDanVerified) && (
+              <View style={styles.feedDanBadge}>
+                <ShieldCheck size={12} color="#087F4F" strokeWidth={2.8} />
+                <Text style={styles.feedDanBadgeText}>DAN</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.feedMetaRow}>
             <Text style={[styles.feedDate, { color: colors.textSecondary }]}>{formatDate(postedAtDate)}</Text>
             {isSponsored && <Text style={[styles.feedSponsoredText, { color: colors.primary }]}> • Sponsored</Text>}
@@ -304,6 +325,7 @@ function JobCard({
 
 export default function HomeScreen() {
   const { jobs, loadJobs, isLoading, searchJobs, clearSearch, savedJobIds, toggleSaveJob } = useJobs() as any;
+  const router = useRouter();
   const { colors, currentTheme } = useTheme();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
@@ -317,10 +339,20 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   
-  const [dbCategories, setDbCategories] = useState<DbCategoryRow[]>([]);
-  const [dbSubcategories, setDbSubcategories] = useState<DbSubcategoryRow[]>([]);
+  const [dbCategories, setDbCategories] = useState<DbCategoryRow[]>(() => getCategoryCatalogImmediately().categories);
+  const [dbSubcategories, setDbSubcategories] = useState<DbSubcategoryRow[]>(() => getCategoryCatalogImmediately().categories.flatMap((category) => category.subcategories));
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [openCategoryIds, setOpenCategoryIds] = useState<Record<string, boolean>>({});
+  const categoryNameByIdRef = useRef<Record<string, string>>(
+    Object.fromEntries(getCategoryCatalogImmediately().categories.map((category) => [category.id, category.name])),
+  );
+  const subcategoryNameByIdRef = useRef<Record<string, string>>(
+    Object.fromEntries(
+      getCategoryCatalogImmediately().categories.flatMap((category) =>
+        category.subcategories.map((subcategory) => [subcategory.id, subcategory.name]),
+      ),
+    ),
+  );
   
   const [searchText, setSearchText] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -341,6 +373,15 @@ export default function HomeScreen() {
 
   const [homeBanners, setHomeBanners] = useState<any[]>([]);
   const loadHomeBanners = useCallback(async () => { try { const b = await fetchBanners("home_feed", 3); setHomeBanners(b ?? []); } catch { setHomeBanners([]); } }, []);
+  const [seasonalCollections, setSeasonalCollections] = useState<SeasonalCollection[]>([]);
+  const loadSeasonalCollections = useCallback(async () => {
+    try {
+      setSeasonalCollections(await fetchActiveSeasonalCollections());
+    } catch (error) {
+      console.log("SEASONAL COLLECTIONS LOAD ERROR:", error);
+      setSeasonalCollections([]);
+    }
+  }, []);
   
   // 🎯 ЗАССАН: Баазаас хувилбар болон постер уншихдаа "Хугацаа" шалгадаг болгов
   const checkVersionAndAnnouncements = useCallback(async () => {
@@ -391,15 +432,50 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const fetchCategories = useCallback(async () => {
-    setCategoriesLoading(true);
-    try {
-      const { data, error } = await supabase.from("categories").select("id,name,icon,sort_order").order("sort_order", { ascending: true });
-      if (error) throw error; setDbCategories((data as DbCategoryRow[]) ?? []);
-      const { data: subs, error: subErr } = await supabase.from("subcategories").select("id,name,icon,category_id,sort_order").order("sort_order", { ascending: true });
-      if (subErr) throw subErr; setDbSubcategories((subs as DbSubcategoryRow[]) ?? []);
-    } catch { setDbCategories([]); setDbSubcategories([]); } finally { setCategoriesLoading(false); }
+  const applyCategoryCatalog = useCallback((snapshot: { categories: CatalogCategory[] }) => {
+    const nextCategoryNameById = Object.fromEntries(
+      snapshot.categories.map((category) => [category.id, category.name]),
+    );
+    const nextSubcategoryNameById = Object.fromEntries(
+      snapshot.categories.flatMap((category) =>
+        category.subcategories.map((subcategory) => [subcategory.id, subcategory.name]),
+      ),
+    );
+
+    // A category may be chosen from the bundled catalog before the server reply.
+    // Keep that choice by matching its name to the database ID when it arrives.
+    setSelectedCategoryIds((current) =>
+      current.map((id) => {
+        const previousName = categoryNameByIdRef.current[id];
+        return snapshot.categories.find((category) => category.name === previousName)?.id ?? id;
+      }),
+    );
+    setSelectedSubcategoryIds((current) =>
+      current.map((id) => {
+        const previousName = subcategoryNameByIdRef.current[id];
+        return snapshot.categories
+          .flatMap((category) => category.subcategories)
+          .find((subcategory) => subcategory.name === previousName)?.id ?? id;
+      }),
+    );
+
+    categoryNameByIdRef.current = nextCategoryNameById;
+    subcategoryNameByIdRef.current = nextSubcategoryNameById;
+    setDbCategories(snapshot.categories);
+    setDbSubcategories(snapshot.categories.flatMap((category) => category.subcategories));
   }, []);
+
+  const fetchCategories = useCallback(async () => {
+    setCategoriesLoading(dbCategories.length === 0);
+    try {
+      // Show bundled/cache data immediately, then update only when the server
+      // catalog itself changed. Count-only checks can miss renamed categories.
+      applyCategoryCatalog(await loadCachedCategoryCatalog());
+      applyCategoryCatalog(await refreshCategoryCatalog());
+    } catch (error) {
+      console.log("CATEGORY CATALOG REFRESH ERROR:", error);
+    } finally { setCategoriesLoading(false); }
+  }, [applyCategoryCatalog, dbCategories.length]);
   
   useEffect(() => { 
     fetchCategories(); 
@@ -407,6 +483,7 @@ export default function HomeScreen() {
   }, [fetchCategories, checkVersionAndAnnouncements]);
 
   useEffect(() => { loadHomeBanners(); }, [loadHomeBanners]);
+  useEffect(() => { void loadSeasonalCollections(); }, [loadSeasonalCollections]);
   useEffect(() => { if (!lastUpdatedAt && jobs.length > 0) setLastUpdatedAt(new Date()); }, [jobs, lastUpdatedAt]);
   
   const onRefresh = useCallback(async () => {
@@ -417,11 +494,12 @@ export default function HomeScreen() {
         q ? searchJobsRef.current ? searchJobsRef.current(q) : Promise.resolve() : loadJobs(), 
         fetchCategories(), 
         loadHomeBanners(),
+        loadSeasonalCollections(),
         checkVersionAndAnnouncements() 
       ]);
       setLastUpdatedAt(new Date());
     } catch {} finally { setRefreshing(false); }
-  }, [loadJobs, fetchCategories, searchText, loadHomeBanners, checkVersionAndAnnouncements]);
+  }, [loadJobs, fetchCategories, searchText, loadHomeBanners, loadSeasonalCollections, checkVersionAndAnnouncements]);
   
   const normalizedJobs: NormalizedJob[] = useMemo(() => (jobs as any[]).map(normalizeJob), [jobs]);
   
@@ -471,6 +549,35 @@ export default function HomeScreen() {
       });
   }, [normalizedJobs, selectedFilter, selectedCategoryIds, selectedSubcategoryIds, categoryById, subcategoryById]);
 
+  const shouldShowSeasonalCollections = seasonalCollections.length > 0
+    && selectedFilter === "all"
+    && selectedCategoryIds.length === 0
+    && selectedSubcategoryIds.length === 0
+    && !searchText.trim();
+
+  const renderSeasonalCard = (collection: SeasonalCollection, variant: "single" | "scroll" = "scroll") => (
+    <TouchableOpacity
+      key={collection.id}
+      style={[
+        styles.seasonalCard,
+        variant === "single" && styles.seasonalCardSingle,
+        { backgroundColor: colors.accent },
+      ]}
+      activeOpacity={0.84}
+      onPress={() => router.push({ pathname: "/seasonal-collection", params: { id: collection.id } } as any)}
+    >
+      <View style={[styles.seasonalIcon, variant === "single" && styles.seasonalIconSingle, { backgroundColor: colors.card }]}>
+        <SeasonalIcon iconKey={collection.iconKey} size={variant === "single" ? 24 : 20} color={colors.headerText} />
+      </View>
+      <View style={variant === "single" ? styles.seasonalContentSingle : undefined}>
+        <Text style={[styles.seasonalTitle, { color: colors.text }]} numberOfLines={variant === "single" ? 1 : 2}>{collection.title}</Text>
+        <Text style={[styles.seasonalSubtitle, { color: colors.textSecondary }]} numberOfLines={variant === "single" ? 1 : 2}>
+          {collection.subtitle || "Энэ сарын онцлох сонголтууд"}
+        </Text>
+        <Text style={[styles.seasonalOpenText, { color: colors.headerText }]}>Заруудыг харах →</Text>
+      </View>
+    </TouchableOpacity>
+  );
   const toggleOpen = (id: string) => { setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] })); };
   const toggleMain = (catId: string) => { setSelectedCategoryIds((prev) => { const on = prev.includes(catId); const next = on ? prev.filter((x) => x !== catId) : [...prev, catId]; if (on) { const subs = (subByCategoryId[catId] ?? []).map((s) => s.id); setSelectedSubcategoryIds((current) => current.filter((id) => !subs.includes(id))); } return next; }); };
   const toggleSub = (catId: string, subId: string) => { setSelectedCategoryIds((prev) => prev.includes(catId) ? prev : [...prev, catId]); setSelectedSubcategoryIds((prev) => { const on = prev.includes(subId); return on ? prev.filter((x) => x !== subId) : [...prev, subId]; }); };
@@ -535,6 +642,23 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+        {shouldShowSeasonalCollections && (
+          <View style={styles.seasonalSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Танд яг одоо хэрэгтэй</Text>
+            </View>
+            {seasonalCollections.length === 1 ? (
+              <View style={styles.seasonalSingleContent}>
+                {renderSeasonalCard(seasonalCollections[0], "single")}
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seasonalScrollContent}>
+                {seasonalCollections.map((collection) => renderSeasonalCard(collection))}
+              </ScrollView>
+            )}
+          </View>
+        )}
+
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Шинэ зарууд</Text>
           <TouchableOpacity onPress={async () => { setSelectedFilter("all"); setSelectedCategoryIds([]); setSelectedSubcategoryIds([]); await clearTopSearch(); }} activeOpacity={0.75}><Text style={[styles.seeAll, { color: colors.text }]}>Бүгдийг харах</Text></TouchableOpacity>
@@ -648,7 +772,7 @@ export default function HomeScreen() {
               <TextInput style={[styles.modalSearchInput, { backgroundColor: colors.backgroundSecondary, color: colors.text }]} placeholder="Категори / дэд хайх..." placeholderTextColor={colors.textSecondary} value={categorySearch} onChangeText={setCategorySearch} />
               {(selectedCategoryIds.length > 0 || selectedSubcategoryIds.length > 0) && (<TouchableOpacity style={[styles.clearButton, { backgroundColor: colors.accent }]} onPress={() => { setSelectedCategoryIds([]); setSelectedSubcategoryIds([]); setCategorySearch(""); setShowCategoryModal(false); }}><Text style={[styles.clearButtonText, { color: colors.text }]}>Бүгдийг харах</Text></TouchableOpacity>)}
               <ScrollView style={styles.categoryList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                {categoriesLoading ? (
+                {categoriesLoading && dbCategories.length === 0 ? (
                   <View style={{ paddingVertical: 24, alignItems: "center", justifyContent: "center" }}><ActivityIndicator /><Text style={{ marginTop: 10, color: colors.textSecondary }}>Категори татаж байна...</Text></View>
                 ) : dbCategories.length === 0 ? (
                   <View style={{ paddingVertical: 24, alignItems: "center", justifyContent: "center" }}><Text style={{ color: colors.textSecondary, textAlign: "center" }}>Категори олдсонгүй.</Text></View>
@@ -721,13 +845,27 @@ const styles = StyleSheet.create({
   contentContainer: { paddingTop: 16 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: "700" },
+  seasonalSection: { marginBottom: 18 },
+  seasonalScrollContent: { paddingHorizontal: 20, gap: 12, paddingRight: 32 },
+  seasonalSingleContent: { paddingHorizontal: 20 },
+  seasonalCard: { width: 244, minHeight: 128, borderRadius: 16, padding: 15, justifyContent: "flex-end" },
+  seasonalCardSingle: { width: "100%", minHeight: 108, flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 12 },
+  seasonalIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", marginBottom: 9 },
+  seasonalIconSingle: { width: 46, height: 46, borderRadius: 23, marginBottom: 0 },
+  seasonalContentSingle: { flex: 1 },
+  seasonalTitle: { fontSize: 17, fontWeight: "800" },
+  seasonalSubtitle: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  seasonalOpenText: { fontSize: 13, fontWeight: "800", marginTop: 7 },
   seeAll: { fontSize: 14, fontWeight: "600" },
   jobCard: { marginHorizontal: 20, marginBottom: 12, borderRadius: 16, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   feedHeader: { flexDirection: "row", alignItems: "center", padding: 16, paddingBottom: 10, gap: 12 },
   feedAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E9E9E9", alignItems: "center", justifyContent: "center", overflow: "hidden" },
   posterInitial: { fontSize: 18, fontWeight: "700" },
-  feedHeaderInfo: { flex: 1, justifyContent: "center" },
-  feedPosterName: { fontSize: 16, fontWeight: "700", marginBottom: 2 },
+  feedHeaderInfo: { flex: 1, justifyContent: "center", minWidth: 0 },
+  feedPosterRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
+  feedPosterName: { fontSize: 16, fontWeight: "700", flexShrink: 1 },
+  feedDanBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: "#E8F8EF" },
+  feedDanBadgeText: { color: "#087F4F", fontSize: 10, fontWeight: "800" },
   feedMetaRow: { flexDirection: "row", alignItems: "center" },
   feedDate: { fontSize: 13 },
   feedSponsoredText: { fontSize: 13, fontWeight: "700" },

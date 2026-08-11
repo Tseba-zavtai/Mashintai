@@ -402,3 +402,12 @@ verify_jwt = false
 
 [functions.send-rental-request-push]
 verify_jwt = true
+
+[functions.dan-auth-start]
+verify_jwt = false
+
+[functions.dan-oauth-callback]
+verify_jwt = false
+
+[functions.dan-auth-complete]
+verify_jwt = false
