@@ -555,30 +555,34 @@ export default function HomeScreen() {
     && selectedSubcategoryIds.length === 0
     && !searchText.trim();
 
+  const seasonalUsesPeachSurface = currentTheme === "purple" || currentTheme === "navy";
+  const seasonalSurfaceColor = seasonalUsesPeachSurface ? "#FFE3DD" : "#6E0AB0";
+  const seasonalContentColor = seasonalUsesPeachSurface ? "#6E0AB0" : "#FFE3DD";
+  const seasonalSubtitleColor = seasonalUsesPeachSurface ? "#6B7280" : "#FFF3F0";
+
   const renderSeasonalCard = (collection: SeasonalCollection, variant: "single" | "scroll" = "scroll") => (
     <TouchableOpacity
       key={collection.id}
       style={[
         styles.seasonalCard,
         variant === "single" && styles.seasonalCardSingle,
-        { backgroundColor: colors.accent },
+        { backgroundColor: seasonalSurfaceColor },
       ]}
       activeOpacity={0.84}
       onPress={() => router.push({ pathname: "/seasonal-collection", params: { id: collection.id } } as any)}
     >
-      <View style={[styles.seasonalIcon, variant === "single" && styles.seasonalIconSingle, { backgroundColor: colors.card }]}>
-        <SeasonalIcon iconKey={collection.iconKey} size={variant === "single" ? 24 : 20} color={colors.headerText} />
+      <View style={[styles.seasonalIcon, variant === "single" && styles.seasonalIconSingle, { backgroundColor: "#FFFFFF" }]}>
+        <SeasonalIcon iconKey={collection.iconKey} size={variant === "single" ? 24 : 20} color={seasonalContentColor} />
       </View>
       <View style={variant === "single" ? styles.seasonalContentSingle : undefined}>
-        <Text style={[styles.seasonalTitle, { color: colors.text }]} numberOfLines={variant === "single" ? 1 : 2}>{collection.title}</Text>
-        <Text style={[styles.seasonalSubtitle, { color: colors.textSecondary }]} numberOfLines={variant === "single" ? 1 : 2}>
+        <Text style={[styles.seasonalTitle, { color: seasonalContentColor }]} numberOfLines={variant === "single" ? 1 : 2}>{collection.title}</Text>
+        <Text style={[styles.seasonalSubtitle, { color: seasonalSubtitleColor }]} numberOfLines={variant === "single" ? 1 : 2}>
           {collection.subtitle || "Энэ сарын онцлох сонголтууд"}
         </Text>
-        <Text style={[styles.seasonalOpenText, { color: colors.headerText }]}>Заруудыг харах →</Text>
+        <Text style={[styles.seasonalOpenText, { color: seasonalContentColor }]}>Заруудыг харах →</Text>
       </View>
     </TouchableOpacity>
-  );
-  const toggleOpen = (id: string) => { setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] })); };
+  );  const toggleOpen = (id: string) => { setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] })); };
   const toggleMain = (catId: string) => { setSelectedCategoryIds((prev) => { const on = prev.includes(catId); const next = on ? prev.filter((x) => x !== catId) : [...prev, catId]; if (on) { const subs = (subByCategoryId[catId] ?? []).map((s) => s.id); setSelectedSubcategoryIds((current) => current.filter((id) => !subs.includes(id))); } return next; }); };
   const toggleSub = (catId: string, subId: string) => { setSelectedCategoryIds((prev) => prev.includes(catId) ? prev : [...prev, catId]); setSelectedSubcategoryIds((prev) => { const on = prev.includes(subId); return on ? prev.filter((x) => x !== subId) : [...prev, subId]; }); };
   

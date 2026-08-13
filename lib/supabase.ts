@@ -115,6 +115,35 @@ export const supabase: SupabaseClient = createClient(
     },
   }
 );
+/**
+ * Checks a legacy administrator password without replacing the current
+ * application session, such as an active DAN session.
+ */
+export async function verifyPasswordWithoutChangingSession(
+  email: string,
+  password: string
+) {
+  const verifier = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      fetch: fetchWithTimeout as any,
+      headers: {
+        "X-Client-Info": "tureesly-admin-password-check",
+      },
+    },
+  });
+
+  try {
+    const { error } = await verifier.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  } finally {
+    await verifier.auth.signOut({ scope: "local" }).catch(() => {});
+  }
+}
 
 /**
  * Optional auth debug log

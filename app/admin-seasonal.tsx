@@ -105,7 +105,11 @@ function DateTimeField({ label, value, onChange, colors }: { label: string; valu
 }
 
 export default function AdminSeasonalScreen() {
-  const { colors } = useTheme();
+  const { colors, currentTheme } = useTheme();
+  const seasonalUsesPeachSurface = currentTheme === "purple" || currentTheme === "navy";
+  const seasonalSurfaceColor = seasonalUsesPeachSurface ? "#FFE3DD" : "#6E0AB0";
+  const seasonalContentColor = seasonalUsesPeachSurface ? "#6E0AB0" : "#FFE3DD";
+  const seasonalSubtitleColor = seasonalUsesPeachSurface ? "#6B7280" : "#FFF3F0";
   const { isSuperAdmin, isAdminUnlocked } = useAuth() as any;
   const hasAdminAccess = Boolean(isSuperAdmin && isAdminUnlocked);
 
@@ -347,11 +351,13 @@ export default function AdminSeasonalScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.introCard, { backgroundColor: colors.accent, borderColor: colors.border }]}> 
-          <Text style={[styles.introTitle, { color: colors.text }]}>Хугацаатай онцлох цуглуулга</Text>
-          <Text style={[styles.introText, { color: colors.textSecondary }]}>Энд сонгосон зарыг seasonal дотор давхар харуулна. Зарын өөрийн үндсэн ангилал өөрчлөгдөхгүй.</Text>
+        <View style={[styles.introCard, { backgroundColor: seasonalSurfaceColor, borderColor: seasonalSurfaceColor }]}>
+          <View style={styles.introTitleRow}>
+            <View style={styles.introIconCircle}><SeasonalIcon iconKey="sparkles" size={22} color={seasonalContentColor} /></View>
+            <Text style={[styles.introTitle, { color: seasonalContentColor }]}>Хугацаатай онцлох цуглуулга</Text>
+          </View>
+          <Text style={[styles.introText, { color: seasonalSubtitleColor }]}>Энд сонгосон зарыг seasonal дотор давхар харуулна. Зарын өөрийн үндсэн ангилал өөрчлөгдөхгүй.</Text>
         </View>
-
         <TouchableOpacity style={[styles.newButton, { backgroundColor: colors.primary }]} onPress={openNewEditor} activeOpacity={0.82}>
           <Plus size={20} color={colors.buttonText} />
           <Text style={[styles.newButtonText, { color: colors.buttonText }]}>Шинэ seasonal тохируулах</Text>
@@ -375,6 +381,9 @@ export default function AdminSeasonalScreen() {
             return (
               <View key={collection.id} style={[styles.collectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={styles.collectionHeader}>
+                  <View style={[styles.collectionIconCircle, { backgroundColor: seasonalSurfaceColor }]}>
+                    <SeasonalIcon iconKey={normalizeSeasonalIconKey(collection.icon_key)} size={22} color={seasonalContentColor} />
+                  </View>
                   <View style={styles.collectionTitleWrap}>
                     <Text style={[styles.collectionTitle, { color: colors.text }]}>{collection.title}</Text>
                     {!!collection.subtitle && <Text style={[styles.collectionSubtitle, { color: colors.textSecondary }]}>{collection.subtitle}</Text>}
@@ -383,13 +392,12 @@ export default function AdminSeasonalScreen() {
                     {collection.is_visible ? <Eye size={14} color="#15803D" /> : <EyeOff size={14} color={colors.textSecondary} />}
                     <Text style={[styles.visibilityText, { color: collection.is_visible ? "#15803D" : colors.textSecondary }]}>{collection.is_visible ? "Идэвхтэй" : "Нуусан"}</Text>
                   </View>
-                </View>
-                <Text style={[styles.collectionMeta, { color: colors.textSecondary }]}>{formatRange(collection.starts_at, collection.ends_at)}</Text>
+                </View>                <Text style={[styles.collectionMeta, { color: colors.textSecondary }]}>{formatRange(collection.starts_at, collection.ends_at)}</Text>
                 <Text style={[styles.collectionMeta, { color: colors.textSecondary }]}>{ruleCount} category / subcategory сонгосон</Text>
                 <View style={styles.collectionActions}>
                   <TouchableOpacity style={[styles.editButton, { backgroundColor: colors.accent }]} onPress={() => openEditEditor(collection)}>
-                    <Edit3 size={17} color={colors.buttonText} />
-                    <Text style={[styles.editButtonText, { color: colors.buttonText }]}>Засах</Text>
+                    <Edit3 size={17} color="#6E0AB0" />
+                    <Text style={[styles.editButtonText, { color: "#6E0AB0" }]}>Засах</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.deleteButton} onPress={() => deleteCollection(collection)}>
                     <Trash2 size={17} color={colors.error} />
@@ -404,7 +412,7 @@ export default function AdminSeasonalScreen() {
 
       <Modal visible={editorVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEditorVisible(false)}>
         <SafeAreaView style={[styles.editorScreen, { backgroundColor: colors.background }]}>
-          <View style={[styles.editorHeader, { borderBottomColor: colors.border }]}> 
+          <View style={[styles.editorHeader, { borderBottomColor: colors.border }]}>
             <TouchableOpacity style={styles.backButton} onPress={() => setEditorVisible(false)}>
               <ChevronLeft size={24} color={colors.text} />
               <Text style={[styles.backButtonText, { color: colors.text }]}>Буцах</Text>
@@ -536,7 +544,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { padding: 16, gap: 14, paddingBottom: 36 },
   headerAction: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  introCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 6 },
+  introCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8 },
+  introTitleRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  introIconCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
   introTitle: { fontSize: 17, fontWeight: "800" },
   introText: { fontSize: 14, lineHeight: 20 },
   newButton: { minHeight: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
@@ -550,6 +560,7 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 14, lineHeight: 20 },
   collectionCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8 },
   collectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 },
+  collectionIconCircle: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
   collectionTitleWrap: { flex: 1, gap: 4 },
   collectionTitle: { fontSize: 17, fontWeight: "800" },
   collectionSubtitle: { fontSize: 13, lineHeight: 18 },

@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,92 +19,60 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { ArrowLeft, Eye, EyeOff, LogIn, UserPlus, KeyRound, ShieldCheck } from "lucide-react-native";
+import { ArrowLeft, Eye, EyeOff, LogIn, KeyRound, ShieldCheck } from "lucide-react-native";
 import { supabase } from "@/lib/supabase"; // 🎯 НЭМСЭН: Supabase холболт
 
 
-type OtpStage = "none" | "sent" | "verified";
+type DanAuthResult = { needsOnboarding?: boolean };
 
 export default function AuthScreen() {
   const router = useRouter();
-
   const auth = useAuth() as any;
   const login = auth.login as (phone: string, password: string) => Promise<void>;
-  const register = auth.register as (phone: string, password: string) => Promise<void>;
-  const resetPassword = auth.resetPassword as
-    | ((phone: string, newPassword: string) => Promise<void>)
-    | undefined;
-  const signInWithDan = auth.signInWithDan as () => Promise<void>;
-  const signUpWithDan = auth.signUpWithDan as () => Promise<void>;
-
+  const signInWithDan = auth.signInWithDan as () => Promise<DanAuthResult>;
+  const signUpWithDan = auth.signUpWithDan as () => Promise<DanAuthResult>;
+  const logout = auth.logout as () => Promise<void>;
   const { colors } = useTheme();
 
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  const isSignUp = false;
   const [isForgotPassword, setIsForgotPassword] = useState(false);
-  const [showLegacyLogin, setShowLegacyLogin] = useState(false);
-
+  const [danResetVerified, setDanResetVerified] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  const [otpStage, setOtpStage] = useState<OtpStage>("none");
-  const [otpInput, setOtpInput] = useState("");
-  const [sentOtp, setSentOtp] = useState<string | null>(null);
-
-  const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [termsScrolledToEnd, setTermsScrolledToEnd] = useState(false);
-
-  // 🎯 ШИНЭ: Үйлчилгээний нөхцөл унших state-үүд
   const [termsText, setTermsText] = useState<string>("");
-  const [loadingTerms, setLoadingTerms] = useState<boolean>(false);
-
+  const [loadingTerms, setLoadingTerms] = useState(false);
   const termsScrollRef = useRef<ScrollView | null>(null);
 
-
-  // 🎯 ШИНЭ: Үйлчилгээний нөхцөлийг Supabase-ээс татах функц
   const fetchTermsFromDB = useCallback(async () => {
     try {
       setLoadingTerms(true);
       const { data, error } = await supabase
-        .from('legal_docs')
-        .select('content')
-        .eq('doc_type', 'terms')
+        .from("legal_docs")
+        .select("content")
+        .eq("doc_type", "terms")
         .single();
 
       if (error) throw error;
-      if (data) {
-        setTermsText(data.content);
-      }
-    } catch (err) {
-      console.log("Error fetching terms in auth screen:", err);
+      setTermsText(data?.content ?? "");
+    } catch (error) {
+      console.log("Error fetching terms in auth screen:", error);
       setTermsText("Үйлчилгээний нөхцөл уншихад алдаа гарлаа. Та интернэт холболтоо шалгана уу.");
     } finally {
       setLoadingTerms(false);
     }
   }, []);
 
-  // 🎯 ШИНЭ: Дэлгэц асах үед баазаас Үйлчилгээний нөхцөлийг урьдчилж татаж бэлдэнэ
   useEffect(() => {
-    fetchTermsFromDB();
+    void fetchTermsFromDB();
   }, [fetchTermsFromDB]);
 
   const normalizePhone8 = (raw: string) => raw.replace(/\D/g, "").slice(0, 8);
-
   const formatPhoneForAuth = (rawPhone: string) => `+976${normalizePhone8(rawPhone)}`;
-
-  const resetOtpState = () => {
-    setOtpStage("none");
-    setOtpInput("");
-    setSentOtp(null);
-    setTermsAccepted(false);
-    setShowTerms(false);
-    setTermsScrolledToEnd(false);
-  };
 
   const resetFormState = () => {
     setPhone("");
@@ -113,84 +80,43 @@ export default function AuthScreen() {
     setConfirmPassword("");
     setShowPassword(false);
     setShowConfirmPassword(false);
-    resetOtpState();
+    setDanResetVerified(false);
   };
 
   const validatePhone8 = (rawPhone: string) => {
-    const p = normalizePhone8(rawPhone);
-    const phoneRegex = /^\d{8}$/;
-
-    if (!p) {
-      Alert.alert("Алдаа", "Утасны дугаар оруулна уу");
+    const normalized = normalizePhone8(rawPhone);
+    if (!normalized) {
+      Alert.alert("Алдаа", "Утасны дугаар оруулна уу.");
       return null;
     }
-
-    if (!phoneRegex.test(p)) {
-      Alert.alert("Алдаа", "8 оронтой дугаар оруулна уу");
+    if (!/^\d{8}$/.test(normalized)) {
+      Alert.alert("Алдаа", "8 оронтой утасны дугаар оруулна уу.");
       return null;
     }
-
-    return p;
+    return normalized;
   };
 
-  const validatePasswordFields = () => {
+  const validateNewPassword = () => {
     if (!password.trim()) {
-      Alert.alert("Алдаа", isForgotPassword ? "Шинэ нууц үг оруулна уу" : "Нууц үг оруулна уу");
+      Alert.alert("Алдаа", "Шинэ нууц үг оруулна уу.");
       return false;
     }
-
-    if (!confirmPassword.trim()) {
-      Alert.alert("Алдаа", "Нууц үг давтан оруулна уу");
-      return false;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert("Алдаа", "Нууц үг таарахгүй байна");
-      return false;
-    }
-
     if (password.length < 6) {
-      Alert.alert("Алдаа", "Нууц үг 6-аас дээш тэмдэгт байх ёстой");
+      Alert.alert("Алдаа", "Нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой.");
       return false;
     }
-
+    if (password !== confirmPassword) {
+      Alert.alert("Алдаа", "Нууц үг таарахгүй байна.");
+      return false;
+    }
     return true;
-  };
-
-  // Шинэ бүртгэл болон баталгаажуулалт DAN-аар явахаар шилжсэн.
-  // EasyCall key-г client app-д хадгалахгүй.
-  const handleSendOtp = async () => {
-    Alert.alert(
-      "DAN нэвтрэх",
-      "Шинэ бүртгэл болон нууц үг сэргээх нь DAN-аар нэвтрэх урсгалд шилжсэн байна."
-    );
-  };
-  const handleVerifyOtp = () => {
-    if (!sentOtp) {
-      Alert.alert("Алдаа", "Эхлээд OTP илгээнэ үү");
-      setOtpStage("none");
-      return;
-    }
-
-    if (otpInput.trim().length !== 6) {
-      Alert.alert("Алдаа", "6 оронтой OTP оруулна уу");
-      return;
-    }
-
-    if (otpInput.trim() === sentOtp) {
-      setOtpStage("verified");
-      Alert.alert("Amjilttai", "OTP баталгаажлаа ✅");
-    } else {
-      Alert.alert("Алдаа", "OTP буруу байна");
-    }
   };
 
   const handleLogin = async () => {
     const phone8 = validatePhone8(phone);
     if (!phone8) return;
-
     if (!password.trim()) {
-      Alert.alert("Алдаа", "Нууц үг оруулна уу");
+      Alert.alert("Алдаа", "Нууц үг оруулна уу.");
       return;
     }
 
@@ -199,64 +125,63 @@ export default function AuthScreen() {
       await login(formatPhoneForAuth(phone8), password);
       router.replace("/(tabs)");
     } catch (error: any) {
-      Alert.alert("Алдаа", error?.message || "Нэвтрэхэд алдаа гарлаа");
+      Alert.alert("Нэвтрэх боломжгүй", error?.message || "Дахин оролдоно уу.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDanSignIn = async () => {
+  const startDanSignUp = async () => {
     setIsLoading(true);
     try {
-      await signInWithDan();
-      router.replace("/(tabs)");
-    } catch (error: any) {
-      Alert.alert("DAN нэвтрэх", error?.message || "DAN-аар нэвтрэхэд алдаа гарлаа.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  const handleDanSignUp = async () => {
-    setIsLoading(true);
-    try {
-      await signUpWithDan();
-      router.replace("/(tabs)");
+      const result = await signUpWithDan();
+      router.replace((result.needsOnboarding ? "/dan-onboarding" : "/(tabs)") as any);
     } catch (error: any) {
       Alert.alert("DAN бүртгэл", error?.message || "DAN-аар бүртгүүлэхэд алдаа гарлаа.");
     } finally {
       setIsLoading(false);
     }
   };
-  const handleResetPassword = async () => {
-    if (!resetPassword) {
-      Alert.alert("Алдаа", "Нууц үг сэргээх функц одоохондоо холбогдоогүй байна");
-      return;
+
+  const handleDanPasswordResetVerification = async () => {
+    setIsLoading(true);
+    try {
+      const result = await signInWithDan();
+      if (result.needsOnboarding) {
+        router.replace("/dan-onboarding" as any);
+        return;
+      }
+
+      setPassword("");
+      setConfirmPassword("");
+      setDanResetVerified(true);
+    } catch (error: any) {
+      Alert.alert("DAN баталгаажуулалт", error?.message || "DAN-аар баталгаажуулахад алдаа гарлаа.");
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    const phone8 = validatePhone8(phone);
-    if (!phone8) return;
-
-    if (otpStage !== "verified") {
-      Alert.alert("Алдаа", "Эхлээд OTP баталгаажуулна уу");
-      return;
-    }
-
-    if (!validatePasswordFields()) return;
+  const handleDanPasswordReset = async () => {
+    if (!danResetVerified || !validateNewPassword()) return;
 
     setIsLoading(true);
     try {
-      await resetPassword(formatPhoneForAuth(phone8), password);
-      Alert.alert("Амжилттай", "Нууц үг амжилттай солигдлоо. Нэвтэрнэ үү", [
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+
+      Alert.alert("Амжилттай", "Нууц үг амжилттай солигдлоо.", [
         {
-          text: "За",
+          text: "Үргэлжлүүлэх",
           onPress: () => {
             setIsForgotPassword(false);
             resetFormState();
+            router.replace("/(tabs)");
           },
         },
       ]);
     } catch (error: any) {
-      Alert.alert("Алдаа", error?.message || "Нууц үг сэргээхэд алдаа гарлаа");
+      Alert.alert("Алдаа", error?.message || "Нууц үг солиход алдаа гарлаа.");
     } finally {
       setIsLoading(false);
     }
@@ -265,115 +190,96 @@ export default function AuthScreen() {
   const openTerms = () => {
     setTermsScrolledToEnd(false);
     setShowTerms(true);
-
-    setTimeout(() => {
-      termsScrollRef.current?.scrollTo({ y: 0, animated: false });
-    }, 50);
+    setTimeout(() => termsScrollRef.current?.scrollTo({ y: 0, animated: false }), 50);
   };
 
-  const handleSignUp = async () => {
-    if (otpStage !== "verified") {
-      Alert.alert("Алдаа", "Эхлээд OTP баталгаажуулна уу");
-      return;
-    }
-
-    if (!termsAccepted) {
-      Alert.alert("Алдаа", "Үйлчилгээний нөхцөлийг зөвшөөрнө үү");
-      return;
-    }
-
-    const phone8 = validatePhone8(phone);
-    if (!phone8) return;
-
-    if (!validatePasswordFields()) return;
-
-    setIsLoading(true);
-    try {
-      await register(formatPhoneForAuth(phone8), password);
-      router.replace("/(tabs)");
-    } catch (error: any) {
-      Alert.alert("Алдаа", error?.message || "Бүртгүүлэхэд алдаа гарлаа");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const mainButtonText = isLoading
-    ? "Түр хүлээнэ үү..."
-    : isForgotPassword
-    ? otpStage === "none"
-      ? "Код илгээх"
-      : otpStage === "sent"
-      ? "Баталгаажуулах"
-      : "Нууц үг солих"
-    : isSignUp
-    ? otpStage === "none"
-      ? "Код илгээх"
-      : otpStage === "sent"
-      ? "Баталгаажуулах"
-      : "Бүртгүүлэх"
-    : "Нэвтрэх";
-
-  const handleMainPress = () => {
-    if (isForgotPassword) {
-      if (otpStage === "none") {
-        handleSendOtp();
-        return;
-      }
-
-      if (otpStage === "sent") {
-        handleVerifyOtp();
-        return;
-      }
-
-      handleResetPassword();
-      return;
-    }
-
-    if (!isSignUp) {
-      handleLogin();
-      return;
-    }
-
-    if (otpStage === "none") {
-      handleSendOtp();
-      return;
-    }
-
-    if (otpStage === "sent") {
-      handleVerifyOtp();
-      return;
-    }
-
-    handleSignUp();
-  };
-
-  const showOtpInput = (isSignUp || isForgotPassword) && otpStage === "sent";
-  const showPasswordFields = !isSignUp && !isForgotPassword
-    ? true
-    : (isSignUp || isForgotPassword) && otpStage === "verified";
-
-  const showConfirmPasswordField = (isForgotPassword || isSignUp) && otpStage === "verified";
-
-  const isSignupFinalStep = isSignUp && otpStage === "verified" && !isForgotPassword;
-  const isMainDisabled = isLoading || (isSignupFinalStep && !termsAccepted);
-
-  const onTermsScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    const paddingToBottom = 24;
-    const reachedBottom =
-      contentOffset.y + layoutMeasurement.height >= contentSize.height - paddingToBottom;
-
-    if (reachedBottom && !termsScrolledToEnd) {
+  const onTermsScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    if (contentOffset.y + layoutMeasurement.height >= contentSize.height - 24) {
       setTermsScrolledToEnd(true);
     }
   };
 
+  const openForgotPassword = () => {
+    resetFormState();
+    setIsForgotPassword(true);
+  };
+
+  const closeForgotPassword = () => {
+    const shouldSignOut = danResetVerified;
+    setIsForgotPassword(false);
+    resetFormState();
+    if (shouldSignOut) void logout();
+  };
+
+  const renderPhoneInput = () => (
+    <View style={styles.inputContainer}>
+      <Text style={[styles.label, { color: colors.text }]}>Утасны дугаар</Text>
+      <View
+        style={[
+          styles.phoneInputWrapper,
+          { backgroundColor: colors.background, borderColor: colors.border },
+        ]}
+      >
+        <View
+          style={[
+            styles.phonePrefix,
+            { backgroundColor: colors.backgroundSecondary, borderRightColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.phonePrefixText, { color: colors.text }]}>+976</Text>
+        </View>
+        <TextInput
+          style={[styles.phoneInput, { color: colors.text }]}
+          placeholder="9999 9999"
+          placeholderTextColor={colors.textSecondary}
+          value={phone}
+          onChangeText={(text) => setPhone(normalizePhone8(text))}
+          keyboardType="number-pad"
+          maxLength={8}
+          textContentType="telephoneNumber"
+        />
+      </View>
+    </View>
+  );
+
+  const renderPasswordInput = (confirm = false) => (
+    <View style={styles.inputContainer}>
+      <Text style={[styles.label, { color: colors.text }]}>
+        {confirm ? "Шинэ нууц үг давтах" : isForgotPassword ? "Шинэ нууц үг" : "Нууц үг"}
+      </Text>
+      <View style={styles.passwordWrapper}>
+        <TextInput
+          style={[
+            styles.input,
+            styles.passwordInput,
+            { backgroundColor: colors.background, borderColor: colors.border, color: colors.text },
+          ]}
+          placeholder={confirm ? "Шинэ нууц үг давтан оруулах" : isForgotPassword ? "Шинэ нууц үг оруулах" : "Нууц үг"}
+          placeholderTextColor={colors.textSecondary}
+          value={confirm ? confirmPassword : password}
+          onChangeText={confirm ? setConfirmPassword : setPassword}
+          secureTextEntry={confirm ? !showConfirmPassword : !showPassword}
+          textContentType={confirm ? "newPassword" : isForgotPassword ? "newPassword" : "password"}
+          autoCapitalize="none"
+        />
+        <TouchableOpacity
+          style={styles.eyeButton}
+          onPress={() => confirm ? setShowConfirmPassword((value) => !value) : setShowPassword((value) => !value)}
+          activeOpacity={0.7}
+        >
+          {(confirm ? showConfirmPassword : showPassword) ? (
+            <Eye size={20} color={colors.textSecondary} />
+          ) : (
+            <EyeOff size={20} color={colors.textSecondary} />
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
-      edges={["top"]}
-    >
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.backgroundSecondary }]} edges={["top"]}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -387,11 +293,7 @@ export default function AuthScreen() {
           bounces={false}
         >
           <View style={styles.content}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => router.push("/(tabs)")}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity style={styles.backButton} onPress={() => isForgotPassword ? closeForgotPassword() : router.back()} activeOpacity={0.7}>
               <ArrowLeft size={24} color={colors.text} strokeWidth={2} />
             </TouchableOpacity>
 
@@ -399,263 +301,99 @@ export default function AuthScreen() {
               <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
                 {isForgotPassword ? (
                   <KeyRound size={48} color={colors.buttonText} strokeWidth={2} />
-                ) : isSignUp ? (
-                  <UserPlus size={48} color={colors.buttonText} strokeWidth={2} />
                 ) : (
                   <LogIn size={48} color={colors.buttonText} strokeWidth={2} />
                 )}
               </View>
-
               <Text style={[styles.title, { color: colors.text }]}>
-                {isForgotPassword ? "Нууц үг сэргээх" : isSignUp ? "Бүртгүүлэх" : "Тавтай морилно уу"}
+                {isForgotPassword ? "Нууц үг сэргээх" : "Тавтай морилно уу"}
               </Text>
-
               <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
                 {isForgotPassword
-                  ? otpStage === "verified"
-                    ? "OTP баталгаажсан. Шинэ нууц үгээ оруулна уу"
-                    : "Утасны дугаараа оруулаад OTP авна уу"
-                  : isSignUp
-                  ? otpStage === "verified"
-                    ? "OTP баталгаажсан. Нууц үгээ үүсгэнэ үү"
-                    : "Утасны дугаараа оруулаад OTP авна уу"
-                  : "Үргэлжлүүлэхийн тулд нэвтэрнэ үү"}
+                  ? danResetVerified
+                    ? "DAN баталгаажсан. Шинэ нууц үгээ тохируулна уу."
+                    : "DAN-аар өөрийгөө баталгаажуулаад нууц үгээ шинэчилнэ үү."
+                  : "Утасны дугаар, нууц үгээрээ нэвтэрнэ үү."}
               </Text>
             </View>
 
             <View style={styles.form}>
-              {!isSignUp && !isForgotPassword && !showLegacyLogin && (
+              {!isForgotPassword ? (
                 <>
+                  {renderPhoneInput()}
+                  {renderPasswordInput()}
+
                   <TouchableOpacity
                     style={[styles.button, { backgroundColor: colors.primary }]}
-                    onPress={handleDanSignIn}
+                    onPress={() => void handleLogin()}
                     disabled={isLoading}
                     activeOpacity={0.8}
                   >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      {isLoading ? <ActivityIndicator color={colors.buttonText} /> : <ShieldCheck size={20} color={colors.buttonText} />}
-                      <Text style={[styles.buttonText, { color: colors.buttonText }]}>DAN-аар нэвтрэх</Text>
-                    </View>
+                    {isLoading ? <ActivityIndicator color={colors.buttonText} /> : <Text style={[styles.buttonText, { color: colors.buttonText }]}>Нэвтрэх</Text>}
                   </TouchableOpacity>
-                  <Text style={[styles.danHint, { color: colors.textSecondary }]}>
-                    Шинэ хэрэглэгч DAN-аар баталгаажина. Регистр, иргэний үнэмлэхийн мэдээллийг Tureesly хадгалахгүй.
-                  </Text>
-                  <TouchableOpacity style={styles.danSignUpButton} onPress={handleDanSignUp} disabled={isLoading} activeOpacity={0.75}>
-                    <Text style={[styles.switchButtonText, { color: colors.primary }]}>Бүртгүүлэх</Text>
+
+                  <TouchableOpacity style={styles.forgotButton} onPress={openForgotPassword} activeOpacity={0.75}>
+                    <Text style={[styles.forgotButtonText, { color: colors.primary }]}>Нууц үг мартсан уу?</Text>
                   </TouchableOpacity>
+
+                  <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                  <View style={{ alignItems: "center", gap: 8 }}>
+                    <Text style={[styles.legacyLinkText, { color: colors.textSecondary }]}>Шинэ хэрэглэгч үү?</Text>
+                    <TouchableOpacity style={styles.danSignUpButton} onPress={openTerms} disabled={isLoading} activeOpacity={0.75}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <ShieldCheck size={19} color={colors.primary} />
+                        <Text style={[styles.switchButtonText, { color: colors.primary }]}>DAN-аар бүртгүүлэх</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <Text style={[styles.danHint, { color: colors.textSecondary }]}>Эхлээд үйлчилгээний нөхцөлтэй танилцаж, дараа нь DAN-аар иргэний мэдээллээ баталгаажуулна.</Text>
+                  </View>
+
                   <TouchableOpacity
                     style={styles.legacyLinkButton}
-                    onPress={() => { resetFormState(); setIsForgotPassword(false); setShowLegacyLogin(true); }}
-                    disabled={isLoading}
+                    onPress={() => Alert.alert(
+                      "Хуучин account-аа DAN-тай холбох",
+                      "Эхлээд утасны дугаар, нууц үгээрээ нэвтэрнэ үү. Дараа нь Profile → DAN-аар баталгаажуулах хэсгээс нэг удаа холбоно."
+                    )}
                     activeOpacity={0.75}
                   >
                     <Text style={[styles.legacyLinkText, { color: colors.textSecondary }]}>Өмнөх Tureesly бүртгэлтэй юу?</Text>
                     <Text style={[styles.legacyLinkHint, { color: colors.primary }]}>Хуучин account-аа DAN-тай холбох</Text>
                   </TouchableOpacity>
                 </>
-              )}              {(showLegacyLogin || isForgotPassword) && (
+              ) : (
                 <>
-                  {showLegacyLogin && !isForgotPassword && (
+                  {!danResetVerified ? (
+                    <TouchableOpacity
+                      style={[styles.button, { backgroundColor: colors.primary }]}
+                      onPress={() => void handleDanPasswordResetVerification()}
+                      disabled={isLoading}
+                      activeOpacity={0.8}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        {isLoading ? <ActivityIndicator color={colors.buttonText} /> : <ShieldCheck size={20} color={colors.buttonText} />}
+                        <Text style={[styles.buttonText, { color: colors.buttonText }]}>DAN-аар баталгаажуулах</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
                     <>
+                      {renderPasswordInput()}
+                      {renderPasswordInput(true)}
                       <TouchableOpacity
-                        style={styles.legacyBackLink}
-                        onPress={() => { resetFormState(); setShowLegacyLogin(false); }}
-                        activeOpacity={0.75}
+                        style={[styles.button, { backgroundColor: colors.primary }]}
+                        onPress={() => void handleDanPasswordReset()}
+                        disabled={isLoading}
+                        activeOpacity={0.8}
                       >
-                        <ArrowLeft size={18} color={colors.textSecondary} />
-                        <Text style={[styles.legacyBackText, { color: colors.textSecondary }]}>DAN нэвтрэх рүү буцах</Text>
+                        {isLoading ? <ActivityIndicator color={colors.buttonText} /> : <Text style={[styles.buttonText, { color: colors.buttonText }]}>Нууц үг шинэчлэх</Text>}
                       </TouchableOpacity>
-                      <Text style={[styles.legacyHeading, { color: colors.text }]}>Өмнөх бүртгэлээр нэвтрэх</Text>
-                      <Text style={[styles.legacyDescription, { color: colors.textSecondary }]}>Эхлээд хуучин account-аараа нэвтэрч, дараа нь Profile → DAN-аар баталгаажуулахыг сонгоно уу.</Text>
                     </>
                   )}
-              <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text }]}>Утасны дугаар</Text>
-                <View
-                  style={[
-                    styles.phoneInputWrapper,
-                    { backgroundColor: colors.background, borderColor: colors.border },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.phonePrefix,
-                      {
-                        backgroundColor: colors.backgroundSecondary,
-                        borderRightColor: colors.border,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.phonePrefixText, { color: colors.text }]}>+976</Text>
-                  </View>
 
-                  <TextInput
-                    style={[styles.phoneInput, { color: colors.text }]}
-                    placeholder="9999 9999"
-                    placeholderTextColor={colors.textSecondary}
-                    value={phone}
-                    onChangeText={(text) => setPhone(normalizePhone8(text))}
-                    keyboardType="number-pad"
-                    maxLength={8}
-                  />
-                </View>
-              </View>
-
-              {showOtpInput && (
-                <View style={styles.inputContainer}>
-                  <Text style={[styles.label, { color: colors.text }]}>OTP код</Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: colors.background,
-                        borderColor: colors.border,
-                        color: colors.text,
-                      },
-                    ]}
-                    placeholder="6 оронтой код"
-                    placeholderTextColor={colors.textSecondary}
-                    value={otpInput}
-                    onChangeText={(t) => setOtpInput(t.replace(/\D/g, "").slice(0, 6))}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                  />
-                </View>
-              )}
-
-              {showPasswordFields && (
-                <View style={styles.inputContainer}>
-                  <Text style={[styles.label, { color: colors.text }]}>
-                    {isForgotPassword ? "Шинэ нууц үг" : "Нууц үг"}
-                  </Text>
-
-                  <View style={styles.passwordWrapper}>
-                    <TextInput
-                      style={[
-                        styles.input,
-                        styles.passwordInput,
-                        {
-                          backgroundColor: colors.background,
-                          borderColor: colors.border,
-                          color: colors.text,
-                        },
-                      ]}
-                      placeholder={
-                        isForgotPassword
-                          ? "Шинэ нууц үг оруулах"
-                          : isSignUp
-                          ? "Нууц үг оруулах"
-                          : "Нууц үг"
-                      }
-                      placeholderTextColor={colors.textSecondary}
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry={!showPassword}
-                    />
-
-                    <TouchableOpacity
-                      style={styles.eyeButton}
-                      onPress={() => setShowPassword((prev) => !prev)}
-                      activeOpacity={0.7}
-                    >
-                      {showPassword ? (
-                        <Eye size={20} color={colors.textSecondary} />
-                      ) : (
-                        <EyeOff size={20} color={colors.textSecondary} />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {showConfirmPasswordField && (
-                <View style={styles.inputContainer}>
-                  <Text style={[styles.label, { color: colors.text }]}>
-                    {isForgotPassword ? "Шинэ нууц үг давтах" : "Нууц үг давтах"}
-                  </Text>
-
-                  <View style={styles.passwordWrapper}>
-                    <TextInput
-                      style={[
-                        styles.input,
-                        styles.passwordInput,
-                        {
-                          backgroundColor: colors.background,
-                          borderColor: colors.border,
-                          color: colors.text,
-                        },
-                      ]}
-                      placeholder={
-                        isForgotPassword
-                          ? "Шинэ нууц үг давтан оруулах"
-                          : "Нууц үг давтан оруулах"
-                      }
-                      placeholderTextColor={colors.textSecondary}
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      secureTextEntry={!showConfirmPassword}
-                    />
-
-                    <TouchableOpacity
-                      style={styles.eyeButton}
-                      onPress={() => setShowConfirmPassword((prev) => !prev)}
-                      activeOpacity={0.7}
-                    >
-                      {showConfirmPassword ? (
-                        <Eye size={20} color={colors.textSecondary} />
-                      ) : (
-                        <EyeOff size={20} color={colors.textSecondary} />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {isSignupFinalStep && (
-                <View style={styles.termsRow}>
-                  <Pressable
-                    onPress={openTerms}
-                    style={[
-                      styles.checkbox,
-                      {
-                        borderColor: termsAccepted ? colors.primary : colors.border,
-                        backgroundColor: termsAccepted ? colors.primary : "transparent",
-                      },
-                    ]}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: termsAccepted }}
-                  >
-                    {termsAccepted && <Text style={[styles.checkMark, { color: colors.buttonText }]}>✓</Text>}
-                  </Pressable>
-
-                  <Text style={[styles.termsText, { color: colors.textSecondary }]}>
-                    Би{" "}
-                    <Text style={[styles.termsLink, { color: colors.text }]} onPress={openTerms}>
-                      үйлчилгээний нөхцөл
-                    </Text>
-                    -ийг уншиж зөвшөөрч байна
-                  </Text>
-                </View>
-              )}
-
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  { backgroundColor: colors.primary },
-                  isMainDisabled && styles.buttonDisabled,
-                ]}
-                onPress={handleMainPress}
-                disabled={isMainDisabled}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.buttonText, { color: colors.buttonText }]}>{mainButtonText}</Text>
-              </TouchableOpacity>
-
-              <View style={styles.footer}>
-                <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-                  Бүртгэл үүсгэхийн өмнө үйлчилгээний нөхцөлтэй танилцаж, зөвшөөрнө үү.
-                </Text>
-              </View>                </>
+                  <TouchableOpacity style={styles.forgotButton} onPress={closeForgotPassword} disabled={isLoading} activeOpacity={0.75}>
+                    <Text style={[styles.forgotButtonText, { color: colors.textSecondary }]}>Нэвтрэх рүү буцах</Text>
+                  </TouchableOpacity>
+                </>
               )}
             </View>
           </View>
@@ -663,10 +401,7 @@ export default function AuthScreen() {
       </KeyboardAvoidingView>
 
       <Modal visible={showTerms} animationType="slide" onRequestClose={() => setShowTerms(false)}>
-        <SafeAreaView
-          style={[styles.termsModal, { backgroundColor: colors.backgroundSecondary }]}
-          edges={["top", "bottom"]}
-        >
+        <SafeAreaView style={[styles.termsModal, { backgroundColor: colors.backgroundSecondary }]} edges={["top", "bottom"]}>
           <View style={styles.termsHeader}>
             <Text style={[styles.termsTitle, { color: colors.text }]}>Үйлчилгээний нөхцөл</Text>
             <TouchableOpacity onPress={() => setShowTerms(false)} activeOpacity={0.7}>
@@ -700,14 +435,14 @@ export default function AuthScreen() {
             ]}
             onPress={() => {
               if (!termsScrolledToEnd || loadingTerms) return;
-              setTermsAccepted(true);
               setShowTerms(false);
+              setTimeout(() => void startDanSignUp(), 0);
             }}
             disabled={!termsScrolledToEnd || loadingTerms}
             activeOpacity={0.85}
           >
             <Text style={[styles.termsAcceptText, { color: colors.buttonText }]}>
-              {termsScrolledToEnd ? "Зөвшөөрөх" : "Доош нь гүйлгээд үргэлжлүүлнэ үү"}
+              {termsScrolledToEnd ? "Зөвшөөрөөд DAN-аар үргэлжлүүлэх" : "Доош нь гүйлгээд үргэлжлүүлнэ үү"}
             </Text>
           </TouchableOpacity>
         </SafeAreaView>
@@ -715,7 +450,6 @@ export default function AuthScreen() {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
   keyboardView: { flex: 1 },

@@ -15,8 +15,11 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { supabase } from "@/lib/supabase";
 import { StatusBar } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
 
 const queryClient = new QueryClient();
+
+void SystemUI.setBackgroundColorAsync("#FFE3DD").catch(() => {});
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -136,6 +139,7 @@ function RootLayoutNav() {
       }}
     >
       <Stack.Screen name="auth" options={{ headerShown: false }} />
+      <Stack.Screen name="dan-onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="payment" options={{ headerShown: false }} />
       <Stack.Screen name="review" options={{ headerShown: false }} />

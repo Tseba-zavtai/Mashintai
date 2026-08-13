@@ -6,12 +6,13 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "tureesly",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FFE3DD",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FFE3DD"
     },
     "ios": {
       "supportsTablet": false,
@@ -71,6 +72,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFE3DD",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 280,
+          "resizeMode": "contain"
+        }
+      ],
+      [
         "expo-local-authentication",
         {
           "faceIDPermission": "Tureesly-г нээхэд Face ID ашиглана."
@@ -94,7 +104,8 @@
       "expo-notifications",
       "@react-native-community/datetimepicker",
       "expo-video",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-system-ui"
     ],
     "experiments": {
       "typedRoutes": true

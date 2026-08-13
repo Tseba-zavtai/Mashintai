@@ -1,8 +1,8 @@
 import createContextHook from "@nkzw/create-context-hook";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { supabase } from "@/lib/supabase";
-import { authenticateWithDan } from "@/lib/danAuth";
+import { supabase, verifyPasswordWithoutChangingSession } from "@/lib/supabase";
+import { authenticateWithDan, finishDanSignUp } from "@/lib/danAuth";
 
 const USER_STORAGE_KEY = "@user_data";
 
@@ -39,6 +39,7 @@ export interface User {
   sponsoredUntil?: string | null;
   lastActiveAt?: string | null;
   danVerifiedAt?: string | null;
+  danOnboardingCompletedAt?: string | null;
   // 🎯 ЗАСВАР: Эрх хадгалах хувьсагчийг нэмж өглөө
   available_post_credits?: number; 
 }
@@ -55,6 +56,7 @@ type DbUserRow = {
   sponsored_until: string | null;
   last_active_at: string | null;
   dan_verified_at: string | null;
+  dan_onboarding_completed_at: string | null;
   // 🎯 ЗАСВАР: Эрхийн баганыг нэмж өглөө
   available_post_credits: number | null; 
 };
@@ -72,6 +74,7 @@ function mapProfileRowToUser(data: DbUserRow, fallbackPhone?: string): User {
     sponsoredUntil: data.sponsored_until ?? null,
     lastActiveAt: data.last_active_at ?? null,
     danVerifiedAt: data.dan_verified_at ?? null,
+    danOnboardingCompletedAt: data.dan_onboarding_completed_at ?? null,
     // 🎯 ЗАСВАР: Баазаас ирсэн эрхийг апп руу залгаж өгөв
     available_post_credits: data.available_post_credits ?? 0, 
   };
@@ -116,7 +119,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       const { data, error } = await supabase
         .from("users")
         .select(
-          "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits"
+          "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits, dan_onboarding_completed_at"
         )
         .eq("id", uid)
         .single<DbUserRow>();
@@ -139,7 +142,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
         const retry = await supabase
           .from("users")
           .select(
-            "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits"
+            "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits, dan_onboarding_completed_at"
           )
           .eq("id", uid)
           .single<DbUserRow>();
@@ -337,19 +340,29 @@ export const [AuthContext, useAuth] = createContextHook(() => {
 
   const signInWithDan = useCallback(async () => {
     const result = await authenticateWithDan("sign_in");
-    await fetchProfile(result.userId);
+    const profile = await fetchProfile(result.userId);
     await resetAdminUnlock();
     await touchLastActive();
-    return result;
+    return { ...result, needsOnboarding: !profile.phone || !profile.danOnboardingCompletedAt };
   }, [fetchProfile, resetAdminUnlock, touchLastActive]);
 
   const signUpWithDan = useCallback(async () => {
-    const result = await authenticateWithDan("sign_up");
-    await fetchProfile(result.userId);
+    const result = await authenticateWithDan("sign_up", { termsAccepted: true });
+    const profile = await fetchProfile(result.userId);
     await resetAdminUnlock();
     await touchLastActive();
-    return result;
+    return { ...result, needsOnboarding: !profile.phone || !profile.danOnboardingCompletedAt };
   }, [fetchProfile, resetAdminUnlock, touchLastActive]);
+
+  const completeDanSignup = useCallback(async (phone: string, password: string) => {
+    await finishDanSignUp(phone, password);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("Нэвтрэх session олдсонгүй.");
+    await fetchProfile(session.user.id, phone);
+    await touchLastActive();
+  }, [fetchProfile, touchLastActive]);
   const linkDanIdentity = useCallback(async () => {
     const result = await authenticateWithDan("link");
     await fetchProfile(result.userId, user?.phone);
@@ -425,14 +438,11 @@ export const [AuthContext, useAuth] = createContextHook(() => {
         throw new Error("Нууц үгээ оруулна уу.");
       }
 
-      const reauth = await supabase.auth.signInWithPassword({
-        email: phoneToEmail(user.phone),
-        password,
-      });
-      if (reauth.error) {
+      try {
+        await verifyPasswordWithoutChangingSession(phoneToEmail(user.phone), password);
+      } catch {
         throw new Error("Нууц үг буруу байна.");
       }
-
       if (mountedRef.current) {
         setIsAdminUnlocked(true);
       }
@@ -509,6 +519,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
     login,
     signInWithDan,
     signUpWithDan,
+    completeDanSignup,
     linkDanIdentity,
     logout,
     resetPassword,

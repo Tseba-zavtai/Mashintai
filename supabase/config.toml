@@ -411,3 +411,6 @@ verify_jwt = false
 
 [functions.dan-auth-complete]
 verify_jwt = false
+
+[functions.dan-auth-finish-signup]
+verify_jwt = true

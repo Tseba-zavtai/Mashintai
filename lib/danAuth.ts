@@ -10,6 +10,11 @@ type StartResponse = {
   authorize_url?: string;
 };
 
+type FinishSignupResponse = {
+  ok?: boolean;
+  error?: string;
+};
+
 type CompleteResponse = {
   token_hash?: string;
   type?: "magiclink";
@@ -30,10 +35,10 @@ function callbackParam(url: string, key: string) {
  * DAN browser session-г эхлүүлж, амжилттай дууссаны дараа стандарт Supabase session үүсгэнэ.
  * Client ID / Secret болон регистрийн дугаар энэ код руу огт орж ирдэггүй.
  */
-export async function authenticateWithDan(mode: DanMode) {
+export async function authenticateWithDan(mode: DanMode, options?: { termsAccepted?: boolean }) {
   const { data: startData, error: startError } = await supabase.functions.invoke<StartResponse>(
     "dan-auth-start",
-    { body: { mode } },
+    { body: { mode, termsAccepted: options?.termsAccepted === true } },
   );
 
   if (startError || !startData?.authorize_url) {
@@ -59,6 +64,9 @@ export async function authenticateWithDan(mode: DanMode) {
   if (errorCode) {
     if (errorCode === "identity_already_linked") {
       throw new Error("Энэ DAN иргэн өөр хэрэглэгчийн бүртгэлтэй холбогдсон байна.");
+    }
+    if (errorCode === "identity_already_registered") {
+      throw new Error("Энэ DAN иргэн өмнө нь бүртгүүлсэн байна. Утасны дугаар, нууц үгээрээ нэвтэрнэ үү.");
     }
     if (errorCode === "identity_not_linked") {
       throw new Error("Энэ DAN иргэн Tureesly account-тай хараахан холбогдоогүй байна. Өмнөх account-аараа нэвтэрч Profile → DAN-аар баталгаажуулахыг сонгоно уу.");
@@ -93,4 +101,19 @@ export async function authenticateWithDan(mode: DanMode) {
     userId: verified.user.id,
     linked: callbackParam(browserResult.url, "linked") === "1",
   };
+}
+export async function finishDanSignUp(phone: string, password: string) {
+  const { data, error } = await supabase.functions.invoke<FinishSignupResponse>(
+    "dan-auth-finish-signup",
+    { body: { phone, password } },
+  );
+
+  if (error || !data?.ok) {
+    const code = data?.error;
+    if (code === "invalid_phone") throw new Error("8 оронтой утасны дугаар оруулна уу.");
+    if (code === "weak_password") throw new Error("Нууц үг 6-аас дээш тэмдэгттэй байна.");
+    if (code === "phone_already_in_use") throw new Error("Энэ утасны дугаар өөр Tureesly бүртгэл дээр ашиглагдаж байна.");
+    if (code === "terms_acceptance_required") throw new Error("Үйлчилгээний нөхцөлийг эхлээд зөвшөөрнө үү.");
+    throw new Error(errorMessage(error, "Бүртгэлийн мэдээллийг хадгалж чадсангүй."));
+  }
 }

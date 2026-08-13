@@ -170,7 +170,11 @@ function DateRow({
 
 export default function AdminPanel() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, currentTheme } = useTheme();
+  const seasonalUsesPeachSurface = currentTheme === "purple" || currentTheme === "navy";
+  const seasonalSurfaceColor = seasonalUsesPeachSurface ? "#FFE3DD" : "#6E0AB0";
+  const seasonalContentColor = seasonalUsesPeachSurface ? "#6E0AB0" : "#FFE3DD";
+  const seasonalSubtitleColor = seasonalUsesPeachSurface ? "#6B7280" : "#FFF3F0";
   const queryClient = useQueryClient();
   const { isSuperAdmin, isAdminUnlocked } = useAuth() as any;
   const { updateJobCategory, deleteJob, sponsorJob } = useJobs();
@@ -553,14 +557,15 @@ export default function AdminPanel() {
         </View>
       </View>
 
-      <TouchableOpacity style={[styles.seasonalShortcut, { backgroundColor: colors.accent, borderColor: colors.border }]} onPress={() => router.push("/admin-seasonal" as any)} activeOpacity={0.8}>
-        <CalendarDays size={20} color={colors.headerText} />
+      <TouchableOpacity style={[styles.seasonalShortcut, { backgroundColor: seasonalSurfaceColor, borderColor: seasonalSurfaceColor }]} onPress={() => router.push("/admin-seasonal" as any)} activeOpacity={0.8}>
+        <View style={[styles.seasonalShortcutIcon, { backgroundColor: "#FFFFFF" }]}>
+          <CalendarDays size={20} color={seasonalContentColor} />
+        </View>
         <View style={styles.seasonalShortcutTextWrap}>
-          <Text style={[styles.seasonalShortcutTitle, { color: colors.text }]}>Seasonal удирдах</Text>
-          <Text style={[styles.seasonalShortcutDescription, { color: colors.textSecondary }]}>Хугацаа болон category / subcategory сонгох</Text>
+          <Text style={[styles.seasonalShortcutTitle, { color: seasonalContentColor }]}>Seasonal удирдах</Text>
+          <Text style={[styles.seasonalShortcutDescription, { color: seasonalSubtitleColor }]}>Хугацаа болон category / subcategory сонгох</Text>
         </View>
       </TouchableOpacity>
-
       {searchFocused && masterSearch.trim() && (
         <View style={styles.searchOverlay}>
           <TouchableOpacity
@@ -1361,6 +1366,7 @@ const styles = StyleSheet.create({
   detailValue: { fontSize: 16, color: "#1a1a1a" },
   detailActions: { marginTop: 24, gap: 12 },
   seasonalShortcut: { marginHorizontal: 16, marginTop: 12, borderWidth: 1, borderRadius: 12, minHeight: 64, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  seasonalShortcutIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   seasonalShortcutTextWrap: { flex: 1, gap: 2 },
   seasonalShortcutTitle: { fontSize: 16, fontWeight: "800" },
   seasonalShortcutDescription: { fontSize: 13 },

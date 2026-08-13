@@ -10,7 +10,7 @@ import {
   sha256,
 } from "../_shared/dan.ts";
 
-type StartBody = { mode?: "sign_in" | "sign_up" | "link" };
+type StartBody = { mode?: "sign_in" | "sign_up" | "link"; termsAccepted?: boolean; };
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -25,6 +25,10 @@ serve(async (req: Request) => {
     const config = getDanConfig();
     const body = (await req.json().catch(() => ({}))) as StartBody;
     const mode = body.mode === "link" ? "link" : body.mode === "sign_up" ? "sign_up" : "sign_in";
+    if (mode === "sign_up" && body.termsAccepted !== true) {
+      return json({ error: "terms_acceptance_required" }, 400);
+    }
+
     const linkUserId = mode === "link"
       ? await getAuthenticatedUserId(req, config)
       : null;
@@ -42,6 +46,7 @@ serve(async (req: Request) => {
       state_hash: stateHash,
       mode,
       link_user_id: linkUserId,
+      terms_accepted_at: mode === "sign_up" ? new Date().toISOString() : null,
       expires_at: expiresAt,
     });
 

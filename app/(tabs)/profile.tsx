@@ -88,6 +88,7 @@ export default function ProfileScreen() {
   const [isAdminModalVisible, setIsAdminModalVisible] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [isUnlockingAdmin, setIsUnlockingAdmin] = useState(false);
+  const [adminOpenPending, setAdminOpenPending] = useState(false);
   const [isPwModalVisible, setIsPwModalVisible] = useState(false);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -303,15 +304,21 @@ export default function ProfileScreen() {
     setIsAdminModalVisible(true);
   };
 
+  useEffect(() => {
+    if (!adminOpenPending || !isAdminUnlocked) return;
+    setAdminOpenPending(false);
+    setIsAdminModalVisible(false);
+    setAdminPassword("");
+    router.push("/admin");
+  }, [adminOpenPending, isAdminUnlocked, router]);
+
   const handleUnlockAdmin = async () => {
     try {
       setIsUnlockingAdmin(true);
       await unlockAdmin(adminPassword.trim());
-      setIsAdminModalVisible(false);
-      setAdminPassword("");
-      router.push("/admin");
-    } catch {
-      Alert.alert("Алдаа", "Пасворд буруу байна");
+      setAdminOpenPending(true);
+    } catch (error: any) {
+      Alert.alert("Алдаа", error?.message || "Пасворд буруу байна");
     } finally {
       setIsUnlockingAdmin(false);
     }

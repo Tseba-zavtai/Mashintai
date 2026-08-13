@@ -14,6 +14,7 @@ import {
 type AuthState = {
   mode: "sign_in" | "sign_up" | "link";
   link_user_id: string | null;
+  terms_accepted_at: string | null;
 };
 
 serve(async (req: Request) => {
@@ -39,7 +40,7 @@ serve(async (req: Request) => {
       .eq("state_hash", stateHash)
       .is("consumed_at", null)
       .gt("expires_at", now)
-      .select("mode, link_user_id")
+      .select("mode, link_user_id, terms_accepted_at")
       .maybeSingle<AuthState>();
 
     if (stateError || !state) {
@@ -59,6 +60,12 @@ serve(async (req: Request) => {
     if (identityLookupError) throw new Error("Unable to look up DAN identity.");
 
     let userId = existingIdentity?.user_id ?? null;
+
+    // Бүртгүүлэх болон нэвтрэх нь тусдаа үйлдэл. Өмнө нь DAN account
+    // үүсгэсэн иргэн дахин бүртгүүлэхгүй, "DAN-аар нэвтрэх"-ийг ашиглана.
+    if (state.mode === "sign_up" && userId) {
+      return redirectToApp({ error: "identity_already_registered" });
+    }
 
     if (state.mode === "link") {
       if (!state.link_user_id) throw new Error("Link target is missing.");
@@ -105,6 +112,7 @@ serve(async (req: Request) => {
           // The full legal name remains private; only its shortened DAN-derived form is public.
           name: citizen.publicName ?? "DAN хэрэглэгч",
           phone: null,
+          terms_accepted_at: state.terms_accepted_at,
         },
         { onConflict: "id", ignoreDuplicates: true },
       );
