@@ -437,7 +437,7 @@ export default function ProfileScreen() {
             <Text style={{ fontSize: 18, fontWeight: "900", marginTop: 2, color: "#6E0AB0" }}>{user?.available_post_credits ?? 0} эрх үлдсэн</Text>
           </View>
           <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.primary }} onPress={() => router.push({ pathname: "/sponsor-payment", params: { targetType: "credit" } })} activeOpacity={0.8}>
-            <Text style={{ color: creditButtonTextColor, fontWeight: "800", fontSize: 13 }}>Эрх авах (3,000₮)</Text>
+            <Text style={{ color: creditButtonTextColor, fontWeight: "800", fontSize: 13 }}>Эрх авах (5,000₮)</Text>
           </TouchableOpacity>
         </View>
 

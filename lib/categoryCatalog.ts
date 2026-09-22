@@ -2,7 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { JOB_CATEGORIES, JOB_SUBCATEGORIES } from "@/mocks/jobs";
 import { supabase } from "@/lib/supabase";
 
-const STORAGE_KEY = "@tureesly_category_catalog_v1";
+// Bump this when the catalog structure changes so an old offline cache does not reappear.
+const STORAGE_KEY = "@tureesly_category_catalog_v2";
 const FALLBACK_ID_PREFIX = "bundled-category-";
 
 export type CatalogSubcategory = {
@@ -23,7 +24,7 @@ export type CatalogCategory = {
 };
 
 export type CategoryCatalogSnapshot = {
-  version: 1;
+  version: 2;
   signature: string;
   savedAt: string;
   categories: CatalogCategory[];
@@ -104,7 +105,7 @@ function makeSignature(categories: CatalogCategory[]) {
 
 function createSnapshot(categories: CatalogCategory[]): CategoryCatalogSnapshot {
   return {
-    version: 1,
+    version: 2,
     signature: makeSignature(categories),
     savedAt: new Date().toISOString(),
     categories,
@@ -113,7 +114,7 @@ function createSnapshot(categories: CatalogCategory[]): CategoryCatalogSnapshot 
 
 function isSnapshot(value: unknown): value is CategoryCatalogSnapshot {
   const snapshot = value as CategoryCatalogSnapshot | null;
-  return !!snapshot && snapshot.version === 1 && Array.isArray(snapshot.categories) && typeof snapshot.signature === "string";
+  return !!snapshot && snapshot.version === 2 && Array.isArray(snapshot.categories) && typeof snapshot.signature === "string";
 }
 
 const BUNDLED_SNAPSHOT = createSnapshot(buildBundledCatalog());

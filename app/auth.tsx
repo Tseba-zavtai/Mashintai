@@ -212,6 +212,17 @@ export default function AuthScreen() {
     if (shouldSignOut) void logout();
   };
 
+  const handleBackPress = () => {
+    if (isForgotPassword) {
+      closeForgotPassword();
+      return;
+    }
+
+    // This screen can be opened from a tab without a navigation history.
+    // Always return guests to the public home feed instead of leaving them here.
+    router.replace("/(tabs)");
+  };
+
   const renderPhoneInput = () => (
     <View style={styles.inputContainer}>
       <Text style={[styles.label, { color: colors.text }]}>Утасны дугаар</Text>
@@ -293,7 +304,12 @@ export default function AuthScreen() {
           bounces={false}
         >
           <View style={styles.content}>
-            <TouchableOpacity style={styles.backButton} onPress={() => isForgotPassword ? closeForgotPassword() : router.back()} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={handleBackPress}
+              activeOpacity={0.7}
+              accessibilityLabel={isForgotPassword ? "Нэвтрэх рүү буцах" : "Нүүр рүү буцах"}
+            >
               <ArrowLeft size={24} color={colors.text} strokeWidth={2} />
             </TouchableOpacity>
 

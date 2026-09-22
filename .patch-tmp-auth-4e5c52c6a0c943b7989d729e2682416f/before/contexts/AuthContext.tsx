@@ -40,10 +40,8 @@ export interface User {
   lastActiveAt?: string | null;
   danVerifiedAt?: string | null;
   danOnboardingCompletedAt?: string | null;
-  // Free monthly credits and purchased credits are tracked separately.
-  available_post_credits?: number;
-  freePostCredits?: number;
-  paidPostCredits?: number;
+  // 🎯 ЗАСВАР: Эрх хадгалах хувьсагчийг нэмж өглөө
+  available_post_credits?: number; 
 }
 
 type DbUserRow = {
@@ -59,21 +57,11 @@ type DbUserRow = {
   last_active_at: string | null;
   dan_verified_at: string | null;
   dan_onboarding_completed_at: string | null;
-  // The split fields are optional during the database migration rollout.
-  available_post_credits: number | null;
-  free_post_credits?: number | null;
-  paid_post_credits?: number | null;
+  // 🎯 ЗАСВАР: Эрхийн баганыг нэмж өглөө
+  available_post_credits: number | null; 
 };
 
-function asCreditBalance(value: number | null | undefined) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : null;
-}
-
 function mapProfileRowToUser(data: DbUserRow, fallbackPhone?: string): User {
-  const freePostCredits = asCreditBalance(data.free_post_credits);
-  const paidPostCredits = asCreditBalance(data.paid_post_credits);
-  const legacyTotal = asCreditBalance(data.available_post_credits);
   return {
     id: data.id,
     phone: data.phone ?? fallbackPhone ?? "",
@@ -87,10 +75,8 @@ function mapProfileRowToUser(data: DbUserRow, fallbackPhone?: string): User {
     lastActiveAt: data.last_active_at ?? null,
     danVerifiedAt: data.dan_verified_at ?? null,
     danOnboardingCompletedAt: data.dan_onboarding_completed_at ?? null,
-    // Keep the total field for old app versions during the rollout.
-    available_post_credits: legacyTotal ?? ((freePostCredits ?? 0) + (paidPostCredits ?? 0)),
-    freePostCredits: freePostCredits ?? undefined,
-    paidPostCredits: paidPostCredits ?? undefined,
+    // 🎯 ЗАСВАР: Баазаас ирсэн эрхийг апп руу залгаж өгөв
+    available_post_credits: data.available_post_credits ?? 0, 
   };
 }
 
@@ -129,40 +115,21 @@ export const [AuthContext, useAuth] = createContextHook(() => {
         ? normalizePhone(fallbackPhone)
         : undefined;
 
-      // Reset only the monthly free allowance when a new month begins. Paid
-      // credits are tracked separately and never get overwritten by this call.
+      // Refresh the monthly two free listing credits when a new month begins.
       // Missing RPC on an older backend must not block sign-in.
-      const monthlyCreditResult = await supabase.rpc("refresh_post_credit_balance");
+      const monthlyCreditResult = await supabase.rpc("grant_monthly_post_credits_if_due");
       if (monthlyCreditResult.error && monthlyCreditResult.error.code !== "PGRST202") {
         console.warn("MONTHLY POST CREDIT REFRESH ERROR:", monthlyCreditResult.error.message);
       }
-      const loadProfile = async () => {
-        const modernSelect = "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits, free_post_credits, paid_post_credits, dan_onboarding_completed_at";
-        const legacySelect = "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits, dan_onboarding_completed_at";
-        const modern = await supabase
-          .from("users")
-          .select(modernSelect)
-          .eq("id", uid)
-          .single<DbUserRow>();
+      // 🎯 ЗАСВАР: available_post_credits баганыг татаж авах query-д нэмэв
+      const { data, error } = await supabase
+        .from("users")
+        .select(
+          "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits, dan_onboarding_completed_at"
+        )
+        .eq("id", uid)
+        .single<DbUserRow>();
 
-        // A build can be opened before its database migration has been run.
-        // In that case retain the previous one-balance behavior instead of
-        // blocking sign-in with an unknown-column error.
-        if (
-          modern.error &&
-          (modern.error.code === "42703" || /free_post_credits|paid_post_credits/i.test(modern.error.message ?? ""))
-        ) {
-          return supabase
-            .from("users")
-            .select(legacySelect)
-            .eq("id", uid)
-            .single<DbUserRow>();
-        }
-
-        return modern;
-      };
-
-      const { data, error } = await loadProfile();
       if (error || !data) {
         if (normalizedFallbackPhone) {
           const upsertRes = await supabase.from("users").upsert(
@@ -180,7 +147,13 @@ export const [AuthContext, useAuth] = createContextHook(() => {
           }
         }
 
-        const retry = await loadProfile();
+        const retry = await supabase
+          .from("users")
+          .select(
+            "id, phone, name, photo_uri, is_super_admin, suspended_until, suspension_reason, sponsored_from, sponsored_until, last_active_at, dan_verified_at, available_post_credits, dan_onboarding_completed_at"
+          )
+          .eq("id", uid)
+          .single<DbUserRow>();
 
         if (retry.error || !retry.data) {
           throw retry.error ?? new Error("Хэрэглэгчийн мэдээлэл олдсонгүй.");

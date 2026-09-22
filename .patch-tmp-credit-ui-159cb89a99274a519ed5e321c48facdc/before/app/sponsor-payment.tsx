@@ -26,12 +26,11 @@ type SponsorPlan = {
   name: string;
   price: number;
   durationDays: number;
-  credits?: number;
   description: string;
 };
 
 const ALL_PLANS: SponsorPlan[] = [
-  { id: "credit", name: "Зар оруулах 1 эрх", price: 3000, durationDays: 0, credits: 1, description: "Та 3,000₮-өөр 1 удаагийн зар оруулах эрх авна." },
+  { id: "credit", name: "Зар оруулах 3 эрх", price: 5000, durationDays: 0, description: "Та 5,000₮-өөр зарын эрхээ цэнэглэж, дахин 3 шинэ зар байршуулах боломжтой болно." },
   { id: "bump", name: "Зараа дээш гаргах", price: 1000, durationDays: 0, description: "Та нийтэлсэн зараа заруудын хамгийн эхэнд гаргах боломжтой." },
   { id: "daily", name: "1 хоног", price: 4500, durationDays: 1, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 1 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
   { id: "weekly", name: "7 хоног", price: 21000, durationDays: 7, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 7 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
@@ -102,19 +101,9 @@ export default function SponsorPaymentScreen() {
       setMockReceipt(receipt);
 
       if (selectedPlanData.id === "credit") {
-        const creditGrant = await supabase.rpc("grant_test_purchased_post_credit", { p_payment_id: receipt.payment_id });
-        if (creditGrant.error && creditGrant.error.code !== "PGRST202") throw creditGrant.error;
-
-        if (creditGrant.error) {
-          // Temporary compatibility for a database that has not received the
-          // split-credit migration yet.
-          const currentCredits = user?.available_post_credits ?? 0;
-          const { error } = await supabase
-            .from("users")
-            .update({ available_post_credits: currentCredits + (selectedPlanData.credits ?? 1) })
-            .eq("id", user?.id);
-          if (error) throw error;
-        }
+        const currentCredits = user?.available_post_credits ?? 0;
+        const { error } = await supabase.from("users").update({ available_post_credits: currentCredits + 3 }).eq("id", user?.id);
+        if (error) throw error;
         if (refetchProfile) await refetchProfile();
       } 
       else if (selectedPlanData.id === "bump" && jobId) {
@@ -250,7 +239,7 @@ export default function SponsorPaymentScreen() {
                            <Text style={styles.qpayLogoText}>Q<Text style={{color: '#00B45A'}}>Pay</Text></Text>
                         </View>
                         <Text style={[styles.qpayTitle, { color: colors.text }]}>QPay Mongolia</Text>
-                        <Text style={[styles.qpaySub, { color: colors.textSecondary }]}>Туршилтын төлбөр — бодит QPay биш</Text>
+                        <Text style={[styles.qpaySub, { color: colors.textSecondary }]}>Банкны апп-аар төлөх</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -300,7 +289,7 @@ export default function SponsorPaymentScreen() {
             <CheckCircle size={64} color="#34C759" />
             <Text style={[styles.successTitle, { color: colors.text }]}>Төлбөр амжилттай!</Text>
             <Text style={[styles.successText, { color: colors.textSecondary }]}>
-               {targetType === "credit" ? `Таны зарын эрх амжилттай ${selectedPlanData?.credits ?? 1}-ээр нэмэгдлээ.` : "Үйлчилгээ амжилттай идэвхжлээ."}
+               {targetType === "credit" ? "Таны зарын эрх амжилттай 3-аар нэмэгдлээ." : "Үйлчилгээ амжилттай идэвхжлээ."}
             </Text>
             {mockReceipt && (
               <View style={[styles.mockReceiptCard, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>

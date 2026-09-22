@@ -29,12 +29,11 @@ import {
   Search,
   X,
   Palette,
-  Tag,
   Heart,
   RefreshCw,
   ClipboardList,
   Sparkles,
-  ShieldCheck,
+  Star,
 } from "lucide-react-native";
 import {
   SafeAreaView,
@@ -50,7 +49,7 @@ import { SeasonalIcon } from "@/lib/seasonalIcons";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
 import { searchMatch } from "@/lib/searchUtils";
-import { BUMP_PRIORITY_DECAY_PER_HOUR, BUMP_PRIORITY_MAX_SCORE } from "@/constants/monetization";
+import { BUMP_PRIORITY_DURATION_HOURS } from "@/constants/monetization";
 import { recordPromotionMetric } from "@/lib/promotionMetrics";
 import SkeletonCard from "@/components/SkeletonCard";
 import {
@@ -66,6 +65,7 @@ import {
 } from "@/lib/seasonalCollections";
 
 const CURRENT_VERSION = "1.0.0";
+const BRAND_PURPLE = "#6E0AB0";
 
 type FilterType = "all" | "rent" | "need";
 type DbCategoryRow = { id: string; name: string; icon?: string | null; sort_order: number | null; };
@@ -82,6 +82,7 @@ type NormalizedJob = Job & {
   sponsoredUntil?: Date | null; 
   postedBy?: any; 
   postedDate?: Date;
+  hasPostedDate?: boolean;
   location?: any; 
   image_url?: string | null; 
   image_urls?: string[]; 
@@ -147,30 +148,35 @@ function getBumpedAtDate(raw: any): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function getJobRankingScore(job: any): number {
-  const now = Date.now();
-  const postedTs = job?.postedDate?.getTime?.() ?? toSafeDate(job?.created_at ?? job?.updated_at).getTime();
-  const bumpedTs = job?.bumpedAt?.getTime?.() ?? getBumpedAtDate(job)?.getTime?.() ?? 0;
-  const sponsoredUntilTs = job?.sponsoredUntil?.getTime?.() ?? 0;
-  const isSponsored = !!job?.isSponsored && sponsoredUntilTs > now;
-  const itemRating = asNumberOrNull(job?.itemRatingAvg ?? job?.item_rating_avg) ?? 0;
-  const userRating = asNumberOrNull(job?.postedBy?.userRatingAvg ?? job?.user_rating_avg) ?? 0;
-  const rentalCount = asNumberOrNull(job?.rentalCount ?? job?.rental_count) ?? 0;
+function getJobPostedTimestamp(job: any): number {
+  const timestamp = job?.postedDate?.getTime?.() ?? toSafeDate(job?.created_at ?? job?.updated_at).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
 
-  let score = 0;
-  if (isSponsored) {
-    score += 1_000_000;
-    if (itemRating >= 4) score += 60_000;
-    else if (itemRating >= 3) score += 35_000;
-    else if (itemRating > 0) score += 12_000;
-    else score += 45_000;
+function getHomeListingTier(job: any): 0 | 1 | 2 {
+  const now = Date.now();
+  const sponsoredUntilTs = job?.sponsoredUntil?.getTime?.() ?? getSponsoredUntilDate(job)?.getTime?.() ?? 0;
+  if (Boolean(job?.isSponsored) && sponsoredUntilTs > now) return 2;
+
+  const bumpedTs = job?.bumpedAt?.getTime?.() ?? getBumpedAtDate(job)?.getTime?.() ?? 0;
+  const bumpAgeMs = now - bumpedTs;
+  if (bumpedTs > 0 && bumpAgeMs >= 0 && bumpAgeMs < BUMP_PRIORITY_DURATION_HOURS * 60 * 60 * 1000) return 1;
+
+  return 0;
+}
+
+function compareHomeListings(a: any, b: any): number {
+  const tierDiff = getHomeListingTier(b) - getHomeListingTier(a);
+  if (tierDiff !== 0) return tierDiff;
+
+  const tier = getHomeListingTier(a);
+  if (tier === 1) {
+    const aBumped = a?.bumpedAt?.getTime?.() ?? getBumpedAtDate(a)?.getTime?.() ?? 0;
+    const bBumped = b?.bumpedAt?.getTime?.() ?? getBumpedAtDate(b)?.getTime?.() ?? 0;
+    if (aBumped !== bBumped) return bBumped - aBumped;
   }
-  if (bumpedTs > 0) {
-    const ageHours = Math.max(0, (now - bumpedTs) / 36e5);
-    score += Math.max(0, BUMP_PRIORITY_MAX_SCORE - ageHours * BUMP_PRIORITY_DECAY_PER_HOUR);
-  }
-  score += itemRating * 4_000 + userRating * 2_000 + Math.min(rentalCount, 100) * 80 + postedTs / 1_000_000_000;
-  return score;
+
+  return getJobPostedTimestamp(b) - getJobPostedTimestamp(a);
 }
 
 function normalizeJob(raw: any): NormalizedJob {
@@ -192,11 +198,12 @@ function normalizeJob(raw: any): NormalizedJob {
   const itemRatingAvg = asNumberOrNull(raw?.itemRatingAvg ?? raw?.item_rating_avg);
   const itemReviewCount = asNumberOrNull(raw?.itemReviewCount ?? raw?.item_review_count) ?? 0;
   const rentalCount = asNumberOrNull(raw?.rentalCount ?? raw?.rental_count) ?? itemReviewCount;
+  const hasPostedDate = raw?.hasPostedDate ?? Boolean(postedDate);
   
   return {
     ...raw, category_id: raw?.category_id ?? null, subcategory_id: raw?.subcategory_id ?? null,
     isSponsored: computedIsSponsored, sponsoredUntil, postType: raw?.postType ?? raw?.post_type ?? "job",
-    isActive: raw?.isActive ?? raw?.is_active ?? true, postedBy, postedDate: toSafeDate(postedDate),
+    isActive: raw?.isActive ?? raw?.is_active ?? true, postedBy, postedDate: toSafeDate(postedDate), hasPostedDate,
     category: raw?.category ?? null, subcategory: raw?.subcategory ?? raw?.subcategory_name ?? raw?.subcategories?.name ?? null,
     location, image_url: imageUrls[0] ?? null, image_urls: imageUrls, itemRatingAvg, itemReviewCount,
     rentalCount, bumpedAt, bumpCount: asNumberOrNull(raw?.bumpCount ?? raw?.bump_count) ?? 0,
@@ -216,29 +223,31 @@ function JobCard({
 }) {
   const router = useRouter();
   const { colors } = useTheme();
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [mediaWidth, setMediaWidth] = useState(0);
 
   const j = normalizeJob(job);
-  const postedBy = j.postedBy;
-  const name = postedBy?.name ?? "Хэрэглэгч";
-  const initial = (name[0] ?? "?").toUpperCase();
-  const photoUri = postedBy?.photoUri ?? null;
   const imageUrls: string[] = Array.isArray(j.image_urls) ? j.image_urls : [];
-  const isSponsored = !!j.isSponsored;
-
-  const handleAvatarPress = () => {
-    const userId = postedBy?.phone ?? postedBy?.id;
-    if (!userId) return;
-    router.push(`/user-profile?userId=${encodeURIComponent(String(userId))}`);
-  };
-
+  const isSponsored = getHomeListingTier(j) === 2;
+  const listingLabel = String(j.subcategory ?? j.category ?? "").trim() || "Түрээсийн зар";
+  const rawPrice = Number(String((j as any).price ?? "").replace(/,/g, ""));
+  const hasPrice = Number.isFinite(rawPrice) && rawPrice > 0;
+  const priceType = (j as any).price_type ?? (j as any).priceType;
+  const priceUnit = priceType === "hourly" ? "цаг" : priceType === "monthly" ? "сар" : "өдөр";
+  const priceLabel = hasPrice ? `${Math.round(rawPrice).toLocaleString("en-US")}₮ / ${priceUnit}` : "Үнэ тохирно";
+  const rating = asNumberOrNull(j.itemRatingAvg);
+  const reviewCount = asNumberOrNull(j.itemReviewCount) ?? 0;
+  const hasRating = Boolean(rating && rating > 0 && reviewCount > 0);
+  const iconEmoji = getCategoryIcon(j.category ?? "");
+  const postedAtDate = j.hasPostedDate ? (j.postedDate ?? null) : null;
 
   const handleCardPress = () => {
     if (isSponsored) void recordPromotionMetric("sponsored_job", j.id, "click");
     router.push(`/job-detail?id=${j.id}`);
   };
-  
-  const formatDate = (date: Date) => {
-    if (!date) return "Огноо алга";
+
+  const formatDate = (date: Date | null) => {
+    if (!date) return "";
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
     const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
@@ -246,83 +255,83 @@ function JobCard({
     if (diffInDays === 1) return "Өчигдөр";
     return `${diffInDays} өдрийн өмнө`;
   };
-  
+
   if (j?.isActive === false) return null;
-  
-  const iconEmoji = getCategoryIcon(j.category ?? "");
 
-  const postedAtDate: Date = j.postedDate ?? toSafeDate((j as any).created_at ?? (j as any).updated_at);
-  
+  const handleMediaLayout = (width: number) => {
+    if (width > 0 && Math.abs(width - mediaWidth) > 0.5) setMediaWidth(width);
+  };
+
   return (
-    <TouchableOpacity style={[styles.jobCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={handleCardPress}>
-      <View style={styles.feedHeader}>
-        <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.7}>
-          {photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.feedAvatar} transition={200} />
-          ) : (
-            <View style={[styles.feedAvatar, { backgroundColor: colors.accent }]}>
-               <Text style={[styles.posterInitial, { color: colors.headerText }]}>{initial}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        
-        <View style={styles.feedHeaderInfo}>
-          <View style={styles.feedPosterRow}>
-            <Text style={[styles.feedPosterName, { color: colors.text }]} numberOfLines={1}>{name}</Text>
-            {Boolean(postedBy?.isDanVerified) && (
-              <View style={styles.feedDanBadge}>
-                <ShieldCheck size={12} color="#087F4F" strokeWidth={2.8} />
-                <Text style={styles.feedDanBadgeText}>DAN</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.feedMetaRow}>
-            <Text style={[styles.feedDate, { color: colors.textSecondary }]}>{formatDate(postedAtDate)}</Text>
-            {isSponsored && <Text style={[styles.feedSponsoredText, { color: colors.primary }]}> • Sponsored</Text>}
-          </View>
-        </View>
-
-        <TouchableOpacity 
-          style={{ padding: 4 }} 
-          onPress={(e) => { e.stopPropagation(); onToggleSave(j.id); }}
-        >
-          <Heart size={24} color={isSaved ? "#FF4B4B" : colors.textSecondary} fill={isSaved ? "#FF4B4B" : "transparent"} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.feedTextContent}>
-        {j.category && j.category !== "Зар" && j.category !== "Категори" && (
-           <Text style={[styles.feedMainTitle, { color: colors.text }]}>{j.title || j.category}</Text>
-        )}
-        {j.description && <Text style={[styles.feedMainDescription, { color: colors.text }]} numberOfLines={4}>{j.description}</Text>}
-      </View>
-
-      {imageUrls.length > 0 && (
-        <View style={styles.jobImagesWrap}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.jobImagesScrollContent}>
-            {imageUrls.slice(0, 5).map((uri, index) => (
-              <Image key={`${j.id}-img-${index}`} source={{ uri }} style={styles.jobPreviewImage} contentFit="cover" transition={300} />
+    <TouchableOpacity style={[styles.gridJobCard, { backgroundColor: colors.card }]} activeOpacity={0.84} onPress={handleCardPress}>
+      <View style={[styles.gridMedia, { backgroundColor: colors.backgroundSecondary }]} onLayout={(event) => handleMediaLayout(event.nativeEvent.layout.width)}>
+        {imageUrls.length > 0 ? (
+          <ScrollView
+            style={styles.gridImageScroller}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(event) => {
+              const width = event.nativeEvent.layoutMeasurement.width;
+              if (width > 0) setActiveImageIndex(Math.max(0, Math.min(imageUrls.length - 1, Math.round(event.nativeEvent.contentOffset.x / width))));
+            }}
+          >
+            {imageUrls.map((uri, index) => (
+              <Image
+                key={`${j.id}-img-${index}`}
+                source={{ uri }}
+                style={[styles.gridImage, { width: mediaWidth || 160 }]}
+                contentFit="cover"
+                transition={200}
+              />
             ))}
           </ScrollView>
-        </View>
-      )}
+        ) : (
+          <View style={[styles.gridImage, styles.gridImageFallback, { backgroundColor: colors.accent }]}>
+            <Text style={styles.gridPlaceholderIcon}>{iconEmoji}</Text>
+          </View>
+        )}
 
-      <View style={styles.feedFooter}>
-        <View style={[styles.feedTagBadge, { backgroundColor: colors.backgroundSecondary }]}>
-          <Text style={{ fontSize: 14 }}>{iconEmoji}</Text>
-          <Text style={[styles.feedTagText, { color: colors.textSecondary }]} numberOfLines={1}>{j.category ?? "Категори"}</Text>
-        </View>
-        {j.subcategory ? (
-          <View style={[styles.feedTagBadge, { backgroundColor: colors.backgroundSecondary }]}>
-            <Tag size={14} color={colors.textSecondary} />
-            <Text style={[styles.feedTagText, { color: colors.textSecondary }]} numberOfLines={1}>{j.subcategory}</Text>
+        {isSponsored ? (
+          <View style={[styles.gridSponsoredBadge, { backgroundColor: colors.primary }]}>
+            <Text style={[styles.gridSponsoredText, { color: colors.buttonText }]}>Онцлох</Text>
           </View>
         ) : null}
+
+        <TouchableOpacity
+          style={styles.gridHeartButton}
+          onPress={(event) => { event.stopPropagation(); onToggleSave(j.id); }}
+          hitSlop={6}
+          activeOpacity={0.75}
+        >
+          <Heart size={21} color={isSaved ? "#FF4B4B" : BRAND_PURPLE} fill={isSaved ? "#FF4B4B" : "transparent"} strokeWidth={2.4} />
+        </TouchableOpacity>
+      </View>
+
+      {imageUrls.length > 1 ? (
+        <View style={styles.gridPagination} pointerEvents="none">
+          {imageUrls.map((_, index) => (
+            <View key={`${j.id}-dot-${index}`} style={[styles.gridPaginationDot, { backgroundColor: index === activeImageIndex ? BRAND_PURPLE : colors.border }]} />
+          ))}
+        </View>
+      ) : null}
+
+      <View style={styles.gridCardContent}>
+        <Text style={[styles.gridListingLabel, { color: colors.text }]} numberOfLines={2}>{listingLabel}</Text>
+        <View style={styles.gridMetaRow}>
+          {hasRating ? (
+            <View style={styles.gridRatingWrap}>
+              <Star size={12} color={BRAND_PURPLE} fill={BRAND_PURPLE} strokeWidth={2.4} />
+              <Text style={[styles.gridRatingText, { color: colors.textSecondary }]}>{rating!.toFixed(1)} ({reviewCount})</Text>
+            </View>
+          ) : <View />}
+          {!!formatDate(postedAtDate) && <Text style={[styles.gridDate, { color: colors.textSecondary }]} numberOfLines={1}>{formatDate(postedAtDate)}</Text>}
+        </View>
+        <Text style={[styles.gridPrice, { color: BRAND_PURPLE }]} numberOfLines={1}>{priceLabel}</Text>
       </View>
     </TouchableOpacity>
   );
 }
-
 export default function HomeScreen() {
   const { jobs, loadJobs, isLoading, searchJobs, clearSearch, savedJobIds, toggleSaveJob } = useJobs() as any;
   const router = useRouter();
@@ -337,7 +346,6 @@ export default function HomeScreen() {
   const [categorySearch, setCategorySearch] = useState("");
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   
   const [dbCategories, setDbCategories] = useState<DbCategoryRow[]>(() => getCategoryCatalogImmediately().categories);
   const [dbSubcategories, setDbSubcategories] = useState<DbSubcategoryRow[]>(() => getCategoryCatalogImmediately().categories.flatMap((category) => category.subcategories));
@@ -484,20 +492,19 @@ export default function HomeScreen() {
 
   useEffect(() => { loadHomeBanners(); }, [loadHomeBanners]);
   useEffect(() => { void loadSeasonalCollections(); }, [loadSeasonalCollections]);
-  useEffect(() => { if (!lastUpdatedAt && jobs.length > 0) setLastUpdatedAt(new Date()); }, [jobs, lastUpdatedAt]);
   
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       const q = searchText.trim();
       await Promise.all([
-        q ? searchJobsRef.current ? searchJobsRef.current(q) : Promise.resolve() : loadJobs(), 
+        q ? searchJobsRef.current ? searchJobsRef.current(q) : Promise.resolve() : loadJobs(),
         fetchCategories(), 
         loadHomeBanners(),
         loadSeasonalCollections(),
-        checkVersionAndAnnouncements() 
+        checkVersionAndAnnouncements()
       ]);
-      setLastUpdatedAt(new Date());
+
     } catch {} finally { setRefreshing(false); }
   }, [loadJobs, fetchCategories, searchText, loadHomeBanners, loadSeasonalCollections, checkVersionAndAnnouncements]);
   
@@ -540,15 +547,21 @@ export default function HomeScreen() {
         }
         return matches;
       })
-      .sort((a, b) => {
-        const scoreDiff = getJobRankingScore(b) - getJobRankingScore(a);
-        if (scoreDiff !== 0) return scoreDiff;
-        const aPosted = a?.postedDate?.getTime?.() ?? 0;
-        const bPosted = b?.postedDate?.getTime?.() ?? 0;
-        return bPosted - aPosted;
-      });
+      .sort(compareHomeListings)
   }, [normalizedJobs, selectedFilter, selectedCategoryIds, selectedSubcategoryIds, categoryById, subcategoryById]);
 
+  const homeListingRows = useMemo(() => {
+    const rows: { jobs: NormalizedJob[]; shouldShowBanner: boolean }[] = [];
+    for (let index = 0; index < filteredJobs.length; index += 2) {
+      const rowJobs = filteredJobs.slice(index, index + 2);
+      const visibleListingCount = index + rowJobs.length;
+      rows.push({
+        jobs: rowJobs,
+        shouldShowBanner: visibleListingCount >= 6 && (visibleListingCount - 6) % 20 === 0,
+      });
+    }
+    return rows;
+  }, [filteredJobs]);
   const shouldShowSeasonalCollections = seasonalCollections.length > 0
     && selectedFilter === "all"
     && selectedCategoryIds.length === 0
@@ -600,13 +613,13 @@ export default function HomeScreen() {
       const q = searchText.trim();
       try {
         if (!q) { if (clearSearchRef.current) await clearSearchRef.current(); } else { if (searchJobsRef.current) await searchJobsRef.current(q); }
-        setLastUpdatedAt(new Date());
+
       } catch {}
     }, 350);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchText]);
   
-  const clearTopSearch = useCallback(async () => { setSearchText(""); try { if (clearSearchRef.current) await clearSearchRef.current(); setLastUpdatedAt(new Date()); } catch {} }, []);
+  const clearTopSearch = useCallback(async () => { setSearchText(""); try { if (clearSearchRef.current) await clearSearchRef.current(); } catch {} }, []);
   
   const handleRetryLoad = () => {
     setSafeIsLoading(true);
@@ -670,13 +683,20 @@ export default function HomeScreen() {
 
         {safeIsLoading && !refreshing && (
           <View>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
+            <View style={styles.listingGridRow}>
+              <SkeletonCard compact />
+              <SkeletonCard compact />
+            </View>
+            <View style={styles.listingGridRow}>
+              <SkeletonCard compact />
+              <SkeletonCard compact />
+            </View>
+            <View style={styles.listingGridRow}>
+              <SkeletonCard compact />
+              <SkeletonCard compact />
+            </View>
           </View>
         )}
-
-        {lastUpdatedAt && <Text style={{ paddingHorizontal: 20, marginBottom: 10, opacity: 0.6, color: colors.textSecondary }}>Сүүлийн шинэчлэлт: {lastUpdatedAt.toLocaleTimeString()}</Text>}
 
         {!safeIsLoading && filteredJobs.length === 0 ? (
           <View style={styles.emptyWrap}>
@@ -693,16 +713,25 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          filteredJobs.map((job, idx) => {
-            const oneBased = idx + 1;
-            const shouldShowBanner = oneBased >= 6 && (oneBased - 6) % 20 === 0;
-            return (
-              <React.Fragment key={job.id}>
-                <JobCard job={job as Job} getCategoryIcon={getCategoryIcon} isSaved={savedJobIds.includes(job.id)} onToggleSave={toggleSaveJob} />
-                {shouldShowBanner && homeBanners.length > 0 ? (<View style={{ marginTop: 8, marginBottom: 12 }}><BannerCarousel banners={homeBanners} /></View>) : null}
-              </React.Fragment>
-            );
-          })
+          homeListingRows.map((row, rowIndex) => (
+            <React.Fragment key={row.jobs.map((job) => job.id).join("-") || `row-${rowIndex}`}>
+              <View style={styles.listingGridRow}>
+                {row.jobs.map((job) => (
+                  <JobCard
+                    key={job.id}
+                    job={job as Job}
+                    getCategoryIcon={getCategoryIcon}
+                    isSaved={savedJobIds.includes(job.id)}
+                    onToggleSave={toggleSaveJob}
+                  />
+                ))}
+                {row.jobs.length === 1 ? <View style={styles.gridSpacer} /> : null}
+              </View>
+              {row.shouldShowBanner && homeBanners.length > 0 ? (
+                <View style={styles.homeBannerWrap}><BannerCarousel banners={homeBanners} /></View>
+              ) : null}
+            </React.Fragment>
+          ))
         )}
         <View style={styles.bottomPadding} />
       </ScrollView>
@@ -861,27 +890,27 @@ const styles = StyleSheet.create({
   seasonalSubtitle: { fontSize: 13, lineHeight: 18, marginTop: 4 },
   seasonalOpenText: { fontSize: 13, fontWeight: "800", marginTop: 7 },
   seeAll: { fontSize: 14, fontWeight: "600" },
-  jobCard: { marginHorizontal: 20, marginBottom: 12, borderRadius: 16, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  feedHeader: { flexDirection: "row", alignItems: "center", padding: 16, paddingBottom: 10, gap: 12 },
-  feedAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E9E9E9", alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  posterInitial: { fontSize: 18, fontWeight: "700" },
-  feedHeaderInfo: { flex: 1, justifyContent: "center", minWidth: 0 },
-  feedPosterRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
-  feedPosterName: { fontSize: 16, fontWeight: "700", flexShrink: 1 },
-  feedDanBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: "#E8F8EF" },
-  feedDanBadgeText: { color: "#087F4F", fontSize: 10, fontWeight: "800" },
-  feedMetaRow: { flexDirection: "row", alignItems: "center" },
-  feedDate: { fontSize: 13 },
-  feedSponsoredText: { fontSize: 13, fontWeight: "700" },
-  feedTextContent: { paddingHorizontal: 16, paddingBottom: 12 },
-  feedMainTitle: { fontSize: 16, fontWeight: "800", marginBottom: 6 },
-  feedMainDescription: { fontSize: 15, lineHeight: 22 },
-  feedFooter: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 16, paddingTop: 4, gap: 8, flexWrap: "wrap" },
-  feedTagBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, gap: 6 },
-  feedTagText: { fontSize: 13, fontWeight: "600" },
-  jobImagesWrap: { paddingHorizontal: 16, paddingBottom: 12 },
-  jobImagesScrollContent: { paddingRight: 4, gap: 8 },
-  jobPreviewImage: { width: 150, height: 110, borderRadius: 12, backgroundColor: "#E9E9E9" },
+  listingGridRow: { flexDirection: "row", alignItems: "stretch", gap: 12, paddingHorizontal: 20, marginBottom: 12 },
+  gridJobCard: { flex: 1, minWidth: 0, borderRadius: 16, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  gridSpacer: { flex: 1 },
+  gridMedia: { width: "100%", aspectRatio: 1, position: "relative", overflow: "hidden" },
+  gridImageScroller: { width: "100%", height: "100%" },
+  gridImage: { height: "100%", backgroundColor: "#E9E9E9" },
+  gridImageFallback: { width: "100%", alignItems: "center", justifyContent: "center" },
+  gridPlaceholderIcon: { fontSize: 34 },
+  gridSponsoredBadge: { position: "absolute", top: 8, left: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  gridSponsoredText: { fontSize: 10, fontWeight: "800" },
+  gridHeartButton: { position: "absolute", top: 7, right: 7, width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.94)", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2 },
+  gridPagination: { minHeight: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingTop: 4 },
+  gridPaginationDot: { width: 5, height: 5, borderRadius: 3 },
+  gridCardContent: { paddingHorizontal: 10, paddingTop: 3, paddingBottom: 11 },
+  gridListingLabel: { minHeight: 36, fontSize: 14, lineHeight: 18, fontWeight: "800" },
+  gridMetaRow: { minHeight: 20, marginTop: 4, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 },
+  gridRatingWrap: { flexDirection: "row", alignItems: "center", gap: 3, minWidth: 0 },
+  gridRatingText: { fontSize: 11, fontWeight: "600" },
+  gridDate: { flexShrink: 1, fontSize: 11, textAlign: "right" },
+  gridPrice: { marginTop: 4, fontSize: 15, lineHeight: 20, fontWeight: "800" },
+  homeBannerWrap: { marginHorizontal: 20, marginBottom: 12 },
   emptyWrap: { paddingHorizontal: 24, paddingVertical: 40, alignItems: "center", justifyContent: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "700", marginBottom: 8 },
   emptyText: { fontSize: 14, textAlign: "center", lineHeight: 20 },

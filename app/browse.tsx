@@ -32,6 +32,13 @@ import {
 
 type LocalSubcategory = { id: string; name: string; icon?: string | null; };
 type LocalCategory = { id: string; name: string; icon?: string | null; subcategories: LocalSubcategory[]; };
+const FUEL_TYPES = ["Бензин", "Дизель", "Hybrid", "Цахилгаан", "Газ", "Хосолмол", "Түлш хэрэглэдэггүй"] as const;
+const RENTAL_DURATIONS = [
+  { value: "hourly", label: "Цагийн" },
+  { value: "daily", label: "Өдрийн" },
+  { value: "monthly", label: "Сарын" },
+  { value: "long_term", label: "Урт хугацааны" },
+] as const;
 
 type BrowseJob = {
   id: string;
@@ -44,6 +51,8 @@ type BrowseJob = {
   postedDate: Date | string;
   isSponsored?: boolean;
   postType?: string | null;
+  fuel_type?: string | null;
+  rental_duration?: string | null;
   postedBy: {
     name: string;
     phone: string;
@@ -187,6 +196,8 @@ function normalizeJob(raw: any): BrowseJob {
     postedDate: raw?.postedDate ?? raw?.created_at ?? raw?.updated_at ?? new Date(),
     isSponsored: !!(raw?.isSponsored ?? raw?.is_sponsored ?? false),
     postType: raw?.postType ?? raw?.post_type ?? null,
+    fuel_type: raw?.fuel_type ?? raw?.fuelType ?? null,
+    rental_duration: raw?.rental_duration ?? raw?.rentalDuration ?? null,
     postedBy: raw?.postedBy ?? {
       name: raw?.posted_by_name ?? "Unknown",
       phone: raw?.posted_by_phone ?? "",
@@ -302,6 +313,8 @@ export default function BrowseScreen() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedFuelType, setSelectedFuelType] = useState<string | null>(null);
+  const [selectedRentalDuration, setSelectedRentalDuration] = useState<string | null>(null);
 
   const [dbCategories, setDbCategories] = useState<LocalCategory[]>(() => getCategoryCatalogImmediately().categories);
   
@@ -464,17 +477,19 @@ export default function BrowseScreen() {
 
         const matchesCategory =
           !selectedCategory || (job.category ?? "") === selectedCategory;
+        const matchesFuel = !selectedFuelType || job.fuel_type === selectedFuelType;
+        const matchesRentalDuration = !selectedRentalDuration || job.rental_duration === selectedRentalDuration;
 
-        return matchesSearch && matchesCategory;
+        return matchesSearch && matchesCategory && matchesFuel && matchesRentalDuration;
       })
       .sort((a, b) => {
         if (a.isSponsored && !b.isSponsored) return -1;
         if (!a.isSponsored && b.isSponsored) return 1;
         return toSafeDate(b.postedDate).getTime() - toSafeDate(a.postedDate).getTime();
       });
-  }, [normalizedJobs, isSearchFocused, searchQuery, selectedCategory]);
+  }, [normalizedJobs, isSearchFocused, searchQuery, selectedCategory, selectedFuelType, selectedRentalDuration]);
 
-  const activeFiltersCount = selectedCategory ? 1 : 0;
+  const activeFiltersCount = Number(Boolean(selectedCategory)) + Number(Boolean(selectedFuelType)) + Number(Boolean(selectedRentalDuration));
 
   const handleSearchResultPress = (result: SearchResultItem) => {
     if (result.type === "category") {
@@ -771,7 +786,7 @@ export default function BrowseScreen() {
                     borderColor: colors.primary,
                   },
                 ]}
-                onPress={() => setSelectedCategory(null)}
+                onPress={() => { setSelectedCategory(null); setSelectedFuelType(null); setSelectedRentalDuration(null); }}
               >
                 <Text style={[styles.filterChipText, { color: !selectedCategory ? colors.buttonText : colors.text }]}>Бүгд</Text>
               </TouchableOpacity>
@@ -790,7 +805,11 @@ export default function BrowseScreen() {
                       borderColor: colors.primary,
                     },
                   ]}
-                  onPress={() => setSelectedCategory(category.name)}
+                  onPress={() => {
+                    setSelectedCategory(category.name);
+                    if (category.name !== "Тээврийн хэрэгсэл") setSelectedFuelType(null);
+                    if (category.name !== "Үл хөдлөх") setSelectedRentalDuration(null);
+                  }}
                 >
                   <Text style={[styles.filterChipText, { color: selectedCategory === category.name ? colors.buttonText : colors.text }]}>
                     {category.icon ? `${category.icon} ` : ''}{category.name}
@@ -799,6 +818,32 @@ export default function BrowseScreen() {
               ))}
             </ScrollView>
           </View>
+
+          {selectedCategory === "Тээврийн хэрэгсэл" && (
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterLabel, { color: colors.text }]}>Түлшний төрөл</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+                <TouchableOpacity style={[styles.filterChip, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }, !selectedFuelType && { backgroundColor: colors.primary, borderColor: colors.primary }]} onPress={() => setSelectedFuelType(null)}><Text style={[styles.filterChipText, { color: !selectedFuelType ? colors.buttonText : colors.text }]}>Бүгд</Text></TouchableOpacity>
+                {FUEL_TYPES.map((fuel) => {
+                  const selected = selectedFuelType === fuel;
+                  return <TouchableOpacity key={fuel} style={[styles.filterChip, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }, selected && { backgroundColor: colors.primary, borderColor: colors.primary }]} onPress={() => setSelectedFuelType(selected ? null : fuel)}><Text style={[styles.filterChipText, { color: selected ? colors.buttonText : colors.text }]}>{fuel}</Text></TouchableOpacity>;
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {selectedCategory === "Үл хөдлөх" && (
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterLabel, { color: colors.text }]}>Түрээсийн хугацаа</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+                <TouchableOpacity style={[styles.filterChip, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }, !selectedRentalDuration && { backgroundColor: colors.primary, borderColor: colors.primary }]} onPress={() => setSelectedRentalDuration(null)}><Text style={[styles.filterChipText, { color: !selectedRentalDuration ? colors.buttonText : colors.text }]}>Бүгд</Text></TouchableOpacity>
+                {RENTAL_DURATIONS.map(({ value, label }) => {
+                  const selected = selectedRentalDuration === value;
+                  return <TouchableOpacity key={value} style={[styles.filterChip, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }, selected && { backgroundColor: colors.primary, borderColor: colors.primary }]} onPress={() => setSelectedRentalDuration(selected ? null : value)}><Text style={[styles.filterChipText, { color: selected ? colors.buttonText : colors.text }]}>{label}</Text></TouchableOpacity>;
+                })}
+              </ScrollView>
+            </View>
+          )}
         </View>
       )}
 

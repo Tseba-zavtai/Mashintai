@@ -10,7 +10,7 @@
     "backgroundColor": "#FFE3DD",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/logos/Logo-dark.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFE3DD"
     },
@@ -75,8 +75,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FFE3DD",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 280,
+          "image": "./assets/logos/Logo-dark.png",
+          "imageWidth": 300,
           "resizeMode": "contain"
         }
       ],

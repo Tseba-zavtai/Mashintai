@@ -155,6 +155,9 @@ export default function JobDetailScreen() {
   const dynamicData = normalizeDynamicData((job as any)?.dynamic_data ?? (job as any)?.dynamicData);
   const priceType = normalizePriceType((job as any)?.price_type ?? (job as any)?.priceType);
   const priceTypeLabel = priceType === "hourly" ? "цаг" : priceType === "monthly" ? "сар" : "өдөр";
+  const fuelType = String((job as any)?.fuel_type ?? (job as any)?.fuelType ?? "").trim();
+  const rentalDurationRaw = String((job as any)?.rental_duration ?? (job as any)?.rentalDuration ?? "").trim();
+  const rentalDurationLabel = ({ hourly: "Цагийн", daily: "Өдрийн", monthly: "Сарын", long_term: "Урт хугацааны" } as Record<string, string>)[rentalDurationRaw] ?? rentalDurationRaw;
 
   const calculatedDuration = useMemo(() => {
     const start = new Date(startDate);
@@ -472,6 +475,8 @@ export default function JobDetailScreen() {
               </Text>
             </View>
             <View style={styles.badgesRow}>
+              {fuelType ? <View style={[styles.listingMetaBadge, { backgroundColor: colors.backgroundSecondary }]}><Text style={[styles.listingMetaBadgeText, { color: colors.textSecondary }]}>Түлш: {fuelType}</Text></View> : null}
+              {rentalDurationLabel ? <View style={[styles.listingMetaBadge, { backgroundColor: colors.backgroundSecondary }]}><Text style={[styles.listingMetaBadgeText, { color: colors.textSecondary }]}>Хугацаа: {rentalDurationLabel}</Text></View> : null}
               {job.isSponsored ? (<View style={[styles.sponsoredBadge, { backgroundColor: currentTheme === "navy" ? "#2A2A2A" : "#FFF5CC" }]}><Text style={[styles.sponsoredBadgeText, { color: currentTheme === "navy" ? "#F8E75D" : "#8A6500" }]}>Sponsored</Text></View>) : null}
             </View>
           </View>
@@ -775,6 +780,8 @@ const styles = StyleSheet.create({
   jobPrice: { fontSize: 22, fontWeight: "800" },
   priceUnit: { fontSize: 14, fontWeight: "500" },
   badgesRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  listingMetaBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  listingMetaBadgeText: { fontSize: 12, fontWeight: "700" },
   sponsoredBadge: { alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   sponsoredBadgeText: { fontSize: 12, fontWeight: "700" },
   imagesSection: { padding: 16, borderRadius: 16, marginBottom: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },

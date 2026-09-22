@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -11,6 +11,7 @@ import {
   View,
   Image,
   ActivityIndicator,
+  InteractionManager,
   Modal,
   Pressable,
   FlatList,
@@ -48,21 +49,40 @@ type PickedImage = { uri: string; name: string; mimeType: string; };
 type LocalSubcategory = { id: string; name: string; icon?: string | null; };
 type LocalCategory = { id: string; name: string; icon?: string | null; form_schema?: any[]; subcategories: LocalSubcategory[]; };
 type PriceType = "hourly" | "daily" | "monthly";
+type RentalDuration = "hourly" | "daily" | "monthly" | "long_term";
 
 const PRICE_TYPES: { value: PriceType; label: string }[] = [
   { value: "hourly", label: "Цагийн" },
   { value: "daily", label: "Өдрийн" },
   { value: "monthly", label: "Сарын" },
 ];
+const RENTAL_DURATIONS: { value: RentalDuration; label: string }[] = [
+  { value: "hourly", label: "Цагийн" },
+  { value: "daily", label: "Өдрийн" },
+  { value: "monthly", label: "Сарын" },
+  { value: "long_term", label: "Урт хугацааны" },
+];
+const FUEL_TYPES = ["Бензин", "Дизель", "Hybrid", "Цахилгаан", "Газ", "Хосолмол", "Түлш хэрэглэдэггүй"] as const;
+// Үнийн дотоод утгыг бүхэл тоогоор хадгална. Харин оруулах үед нь
+// уншихад хялбар байлгахын тулд мянгатын таслалаар харуулна.
+function formatWholePrice(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  return Number(digits).toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
 function isClothingCategory(name?: string | null) {
   const normalized = (name ?? "").toLocaleLowerCase().replace(/[\s,]/g, "");
   return normalized.startsWith("хувцасхэрэг");
 }
+function isTransportCategory(name?: string | null) { return name === "Тээврийн хэрэгсэл"; }
+function isRealEstateCategory(name?: string | null) { return name === "Үл хөдлөх"; }
 
 const MAX_IMAGES = 5;
 const STORAGE_BUCKET = "post-images";
-const IMAGE_MAX_WIDTH = 1000; 
-const IMAGE_COMPRESS_QUALITY = 0.4; 
+// Listing images only need to be crisp on a phone screen. Keeping this
+// intentionally modest makes multi-image posting noticeably faster on LTE.
+const IMAGE_MAX_WIDTH = 900;
+const IMAGE_COMPRESS_QUALITY = 0.35;
 
 async function compressPickedImage(asset: any, index: number): Promise<PickedImage> {
   const width = Number(asset?.width ?? 0);
@@ -107,6 +127,8 @@ export default function PostScreen() {
   const [quantity, setQuantity] = useState("1");
   const [price, setPrice] = useState("");
   const [priceType, setPriceType] = useState<PriceType>("daily");
+  const [fuelType, setFuelType] = useState<(typeof FUEL_TYPES)[number] | null>(null);
+  const [rentalDuration, setRentalDuration] = useState<RentalDuration | null>(null);
 
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
@@ -132,6 +154,9 @@ export default function PostScreen() {
 
   const [dbCategories, setDbCategories] = useState<LocalCategory[]>(() => getCategoryCatalogImmediately().categories);
   const [loadingCategories, setLoadingCategories] = useState(false);
+  const formScrollRef = useRef<ScrollView>(null);
+  const lastFormScrollOffsetRef = useRef(0);
+  const selectionScrollOffsetRef = useRef(0);
 
   const postCredits = (user as any)?.available_post_credits ?? 0;
 
@@ -148,17 +173,6 @@ export default function PostScreen() {
       })),
     }));
 
-    // Keep the existing post form grouping: health subcategories live under
-    // "Танин мэдэхүй" in this release.
-    const knowledgeIdx = formattedCats.findIndex((category) => category.name.includes("Танин мэдэхүй"));
-    const healthIdx = formattedCats.findIndex((category) => category.name.includes("Эрүүл мэнд"));
-    if (knowledgeIdx !== -1 && healthIdx !== -1) {
-      formattedCats[knowledgeIdx].subcategories = [
-        ...formattedCats[knowledgeIdx].subcategories,
-        ...formattedCats[healthIdx].subcategories,
-      ];
-      formattedCats.splice(healthIdx, 1);
-    }
 
     setDbCategories(formattedCats);
   }, []);
@@ -199,7 +213,7 @@ export default function PostScreen() {
 
 
   const resetForm = useCallback(() => {
-    setDescription(""); setQuantity("1"); setPrice(""); setPriceType("daily");
+    setDescription(""); setQuantity("1"); setPrice(""); setPriceType("daily"); setFuelType(null); setRentalDuration(null);
     setCategoryId(null); setSubcategoryId(null); setSelectedCategoryLabel(null); setSelectedSubcategoryLabel(null); setDynamicData({});
     setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false); setSubcategoryModalVisible(false);
     setSelectedLocation(null); setPickedImages([]); setSubmitting(false); setPickingImages(false);
@@ -237,6 +251,8 @@ export default function PostScreen() {
   }, [categoryId, selectedCategoryLabel, dbCategories]);
 
   const selectedCategoryName = selectedCategoryObj?.name ?? selectedCategoryLabel ?? null;
+  const isTransportListing = isTransportCategory(selectedCategoryName);
+  const isRealEstateListing = isRealEstateCategory(selectedCategoryName);
 
   const selectedSubcategoryObj = useMemo(() => {
     if ((!subcategoryId && !selectedSubcategoryLabel) || !selectedCategoryObj?.subcategories?.length) return null;
@@ -262,6 +278,19 @@ export default function PostScreen() {
     setPickedImages((prev) => prev.filter((img) => img.uri !== uri));
   }, []);
 
+  const rememberFormScrollPosition = useCallback(() => {
+    selectionScrollOffsetRef.current = lastFormScrollOffsetRef.current;
+  }, []);
+
+  const restoreFormScrollPosition = useCallback(() => {
+    const offset = selectionScrollOffsetRef.current;
+    InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
+        formScrollRef.current?.scrollTo({ y: offset, animated: false });
+      });
+    });
+  }, []);
+
   const handlePickImages = useCallback(async () => {
     if (Platform.OS === "web") { Alert.alert("Мэдээлэл", "Зураг сонгох хэсгийг одоогоор апп дээр ашиглана уу"); return; }
     if (pickedImages.length >= MAX_IMAGES) { Alert.alert("Анхаар", `Та хамгийн ихдээ ${MAX_IMAGES} зураг сонгох боломжтой`); return; }
@@ -271,7 +300,9 @@ export default function PostScreen() {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (permission.status !== "granted") { Alert.alert("Зөвшөөрөл хэрэгтэй", "Зураг сонгохын тулд gallery access зөвшөөрнө үү"); return; }
       const remaining = MAX_IMAGES - pickedImages.length;
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection: true, selectionLimit: remaining, quality: 0.85 });
+      // The image is resized and encoded once below. Avoid an extra native
+      // re-encode in the picker before that work starts.
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection: true, selectionLimit: remaining, quality: 1 });
       if (result.canceled) return;
       const nextImages: PickedImage[] = await Promise.all((result.assets ?? []).map((asset, index) => compressPickedImage(asset, index)));
       setPickedImages((prev) => {
@@ -321,9 +352,10 @@ export default function PostScreen() {
 
   const handleSelectCategory = useCallback((cat: LocalCategory) => {
     setCategoryId(cat.id); setSelectedCategoryLabel(cat.name);
-    setSubcategoryId(null); setSelectedSubcategoryLabel(null); setDynamicData({});
+    setSubcategoryId(null); setSelectedSubcategoryLabel(null); setDynamicData({}); setFuelType(null); setRentalDuration(null);
     setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false);
-  }, []);
+    restoreFormScrollPosition();
+  }, [restoreFormScrollPosition]);
 
   const handleSelectSubcategory = useCallback((sub: LocalSubcategory) => {
     setSubcategoryId((prev) => {
@@ -332,13 +364,16 @@ export default function PostScreen() {
       return shouldClear ? null : sub.id;
     });
     setSubcategorySearch(""); setSubcategoryModalVisible(false);
-  }, []);
+    restoreFormScrollPosition();
+  }, [restoreFormScrollPosition]);
 
   const handleSubmit = async (phoneOverride?: string) => {
     if (submitting) return;
     if (postCredits <= 0) { Alert.alert("Эрх дууссан", "Таны үнэгүй зар оруулах эрх дууссан байна. Профайл хэсгээс эрхээ цэнэглэнэ үү.", [{ text: "Хаах", style: "cancel" }, { text: "Профайл руу", onPress: () => router.push("/profile") }]); return; }
     if (!description.trim()) { Alert.alert("Алдаа", "Зарын мэдээлэл оруулна уу"); return; }
     if (!selectedCategoryObj) { Alert.alert("Алдаа", "Категори сонгоно уу"); return; }
+    if (isTransportListing && !fuelType) { Alert.alert("Алдаа", "Түлшний төрлөө сонгоно уу"); return; }
+    if (isRealEstateListing && !rentalDuration) { Alert.alert("Алдаа", "Түрээсийн хугацаагаа сонгоно уу"); return; }
     const parsedQuantity = Math.max(1, Math.floor(Number(quantity || 1)));
     if (!Number.isFinite(parsedQuantity) || parsedQuantity < 1) { Alert.alert("Алдаа", "Тоо ширхэгийг зөв оруулна уу"); return; }
     const parsedPrice = Number(price.replace(/[^0-9]/g, "")) || 0;
@@ -355,26 +390,64 @@ export default function PostScreen() {
     const remainingCredits = Math.max(0, originalCredits - 1);
     let creditConsumed = false;
     let jobCreated = false;
+    let consumedCreditSource: "free" | "paid" | null = null;
+    let usedLegacyCreditUpdate = false;
+    let consumedCreditSource: "free" | "paid" | null = null;
+    let usedLegacyCreditUpdate = false;
 
     try {
       setSubmitting(true);
       const imageUrls = await uploadImagesToSupabase(pickedImages);
-      const { data: creditRows, error: creditError } = await supabase
-        .from("users")
-        .update({ available_post_credits: remainingCredits })
-        .eq("id", (user as any)?.id)
-        .eq("available_post_credits", originalCredits)
-        .select("id");
-      if (creditError) throw creditError;
-      if (!creditRows?.length) throw new Error("POST_CREDIT_UNAVAILABLE");
-      creditConsumed = true;
+      const creditResult = await supabase.rpc("consume_post_credit");
+      if (creditResult.error && creditResult.error.code !== "PGRST202") {
+        throw creditResult.error;
+      }
+
+      if (!creditResult.error) {
+        const consumedCredit = Array.isArray(creditResult.data)
+          ? creditResult.data[0]
+          : creditResult.data;
+        const source = (consumedCredit as any)?.consumed_from;
+        consumedCreditSource = source === "free" || source === "paid" ? source : null;
+        creditConsumed = true;
+      } else {
+        // Keep the current app usable if it reaches an older backend before the
+        // credit-balance migration has been applied.
+        const creditResult = await supabase.rpc("consume_post_credit");
+      if (creditResult.error && creditResult.error.code !== "PGRST202") {
+        throw creditResult.error;
+      }
+
+      if (!creditResult.error) {
+        const consumedCredit = Array.isArray(creditResult.data)
+          ? creditResult.data[0]
+          : creditResult.data;
+        const source = (consumedCredit as any)?.consumed_from;
+        consumedCreditSource = source === "free" || source === "paid" ? source : null;
+        creditConsumed = true;
+      } else {
+        // Keep the current app usable if it reaches an older backend before the
+        // credit-balance migration has been applied.
+        const { data: creditRows, error: creditError } = await supabase
+          .from("users")
+          .update({ available_post_credits: remainingCredits })
+          .eq("id", (user as any)?.id)
+          .eq("available_post_credits", originalCredits)
+          .select("id");
+        if (creditError) throw creditError;
+        if (!creditRows?.length) throw new Error("POST_CREDIT_UNAVAILABLE");
+        usedLegacyCreditUpdate = true;
+        creditConsumed = true;
+      }
+      }
 
       await addJob({
           title: selectedSubcategoryObj?.name || selectedCategoryObj.name, description: description.trim(),
           category: selectedCategoryObj.name, subcategory: selectedSubcategoryObj?.name ?? null, category_id: categoryId, subcategory_id: subcategoryId,
           postType, location: selectedLocation || undefined, image_url: imageUrls[0] ?? null, image_urls: imageUrls,
-          quantity: parsedQuantity, available_quantity: parsedQuantity, price: parsedPrice, 
-          price_type: priceType, dynamic_data: dynamicData 
+          quantity: parsedQuantity, available_quantity: parsedQuantity, price: parsedPrice,
+          price_type: priceType, fuel_type: isTransportListing ? fuelType : null,
+          rental_duration: isRealEstateListing ? rentalDuration : null, dynamic_data: dynamicData
         } as any,
         { name: user?.name || user?.phone || "Хэрэглэгч", phone: contactPhone, photoUri: (user as any)?.photoUri, sponsoredUntil: (user as any)?.sponsoredUntil ?? null }
       );
@@ -389,12 +462,26 @@ export default function PostScreen() {
     } catch (error: any) {
       if (creditConsumed && !jobCreated) {
         try {
-          const { error: rollbackError } = await supabase
-            .from("users")
-            .update({ available_post_credits: originalCredits })
-            .eq("id", (user as any)?.id)
-            .eq("available_post_credits", remainingCredits);
-          if (rollbackError) console.log("POST CREDIT ROLLBACK ERROR:", rollbackError);
+          if (usedLegacyCreditUpdate) {
+            if (usedLegacyCreditUpdate) {
+            const { error: rollbackError } = await supabase
+              .from("users")
+              .update({ available_post_credits: originalCredits })
+              .eq("id", (user as any)?.id)
+              .eq("available_post_credits", remainingCredits);
+            if (rollbackError) console.log("POST CREDIT ROLLBACK ERROR:", rollbackError);
+          } else if (consumedCreditSource) {
+            const { error: rollbackError } = await supabase.rpc("restore_post_credit", {
+              p_source: consumedCreditSource,
+            });
+            if (rollbackError) console.log("POST CREDIT ROLLBACK ERROR:", rollbackError);
+          }
+          } else if (consumedCreditSource) {
+            const { error: rollbackError } = await supabase.rpc("restore_post_credit", {
+              p_source: consumedCreditSource,
+            });
+            if (rollbackError) console.log("POST CREDIT ROLLBACK ERROR:", rollbackError);
+          }
         } catch (rollbackFailure) {
           console.log("POST CREDIT ROLLBACK ERROR:", rollbackFailure);
         }
@@ -409,7 +496,16 @@ export default function PostScreen() {
       <AppHeader title="Зар нэмэх" showBack={false} />
 
       <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+        <ScrollView
+          ref={formScrollRef}
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.contentContainer}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          scrollEventThrottle={16}
+          onScroll={(event) => { lastFormScrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
+        >
           
           <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 20 }}>
             Түрээслүүлэх зарын дэлгэрэнгүй мэдээллээ оруулна уу
@@ -422,7 +518,7 @@ export default function PostScreen() {
           
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: colors.text }]}>Үнэ (₮) *</Text>
-            <TextInput style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Жишээ нь: 50000" placeholderTextColor={colors.textSecondary} value={price} onChangeText={(value) => { setPrice(value.replace(/[^0-9]/g, "")); }} keyboardType="number-pad" editable={!submitting} />
+            <TextInput style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Жишээ нь: 50,000" placeholderTextColor={colors.textSecondary} value={price} onChangeText={(value) => { setPrice(formatWholePrice(value)); }} keyboardType="number-pad" editable={!submitting} />
             
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
               {PRICE_TYPES.map(({ value, label }) => {
@@ -486,7 +582,7 @@ export default function PostScreen() {
 
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: colors.text }]}>Категори *</Text>
-            <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedCategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setCategorySearch(""); setCategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || loadingCategories}>
+            <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedCategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { rememberFormScrollPosition(); setCategorySearch(""); setCategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || loadingCategories}>
               <View style={styles.selectButtonTextWrap}>
                 <Text style={[styles.selectButtonTitle, { color: selectedCategoryName ? colors.text : colors.textSecondary }]} numberOfLines={1}>
                   {loadingCategories ? "Уншиж байна..." : (selectedCategoryName ? `${selectedCategoryObj?.icon || ''} ${selectedCategoryName}` : "Категори сонгох")}
@@ -498,7 +594,7 @@ export default function PostScreen() {
             {selectedCategoryObj ? (
               <View style={styles.subcategoryWrap}>
                 <Text style={[styles.label, { color: colors.text }]}>Дэд категори</Text>
-                <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedSubcategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategorySearch(""); setSubcategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || (selectedCategoryObj.subcategories?.length ?? 0) === 0}>
+                <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedSubcategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { rememberFormScrollPosition(); setSubcategorySearch(""); setSubcategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || (selectedCategoryObj.subcategories?.length ?? 0) === 0}>
                   <View style={styles.selectButtonTextWrap}>
                     <Text style={[styles.selectButtonTitle, { color: selectedSubcategoryName ? colors.text : colors.textSecondary }]} numberOfLines={1}>
                       {selectedSubcategoryName ? `${selectedSubcategoryObj?.icon || ''} ${selectedSubcategoryName}` : "Дэд категори сонгох / алгасах"}
@@ -511,6 +607,32 @@ export default function PostScreen() {
               </View>
             ) : null}
           </View>
+
+          {isTransportListing && (
+            <View style={styles.formSection}>
+              <Text style={[styles.label, { color: colors.text }]}>Түлшний төрөл *</Text>
+              <Text style={[styles.helperText, { color: colors.textSecondary }]}>Хайлт дээр энэ мэдээллээр шүүж болно</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                {FUEL_TYPES.map((value) => {
+                  const selected = fuelType === value;
+                  return <TouchableOpacity key={value} onPress={() => setFuelType(value)} disabled={submitting} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary : "transparent" }}><Text style={{ color: selected ? colors.buttonText : colors.text, fontSize: 13, fontWeight: "600" }}>{value}</Text></TouchableOpacity>;
+                })}
+              </View>
+            </View>
+          )}
+
+          {isRealEstateListing && (
+            <View style={styles.formSection}>
+              <Text style={[styles.label, { color: colors.text }]}>Түрээсийн хугацаа *</Text>
+              <Text style={[styles.helperText, { color: colors.textSecondary }]}>Үнэ ямар нэгжээр бичигдсэнийг доорх үнэний сонголтоор тусад нь заана</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                {RENTAL_DURATIONS.map(({ value, label }) => {
+                  const selected = rentalDuration === value;
+                  return <TouchableOpacity key={value} onPress={() => setRentalDuration(value)} disabled={submitting} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary : "transparent" }}><Text style={{ color: selected ? colors.buttonText : colors.text, fontSize: 13, fontWeight: "600" }}>{label}</Text></TouchableOpacity>;
+                })}
+              </View>
+            </View>
+          )}
 
           {/* ӨӨРЧЛӨЛТ 3: ХУВЦАС ХЭРЭГСЭЛ дээр ӨНГӨ ОРУУЛАХ */}
           {isClothingCategory(selectedCategoryName) && (

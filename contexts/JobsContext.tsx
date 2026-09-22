@@ -250,6 +250,8 @@ const mapDbToJob = (row: DbJobRow, reviewStats?: ReviewStats): Job => {
     available_quantity: availableQuantity, price: asNumberOrNull(row?.price) ?? 0,
     dynamic_data: normalizeDynamicData(row?.dynamic_data ?? row?.dynamicData),
     price_type: row?.price_type ?? row?.priceType ?? null,
+    fuel_type: row?.fuel_type ?? row?.fuelType ?? null,
+    rental_duration: row?.rental_duration ?? row?.rentalDuration ?? null,
   };
   return mapped as Job;
 };
@@ -267,7 +269,7 @@ async function hydrateJobDetails(rows: any[]): Promise<any[]> {
   try {
     const { data, error } = await supabase
       .from("jobs")
-      .select("id,dynamic_data,price_type,category_id,subcategory_id")
+      .select("id,dynamic_data,price_type,fuel_type,rental_duration,category_id,subcategory_id")
       .in("id", jobIds);
     if (error || !Array.isArray(data)) return rows;
 
@@ -279,6 +281,8 @@ async function hydrateJobDetails(rows: any[]): Promise<any[]> {
         ...row,
         dynamic_data: detail.dynamic_data ?? row?.dynamic_data ?? row?.dynamicData,
         price_type: detail.price_type ?? row?.price_type ?? row?.priceType,
+        fuel_type: detail.fuel_type ?? row?.fuel_type ?? row?.fuelType,
+        rental_duration: detail.rental_duration ?? row?.rental_duration ?? row?.rentalDuration,
         category_id: detail.category_id ?? row?.category_id ?? row?.categoryId,
         subcategory_id: detail.subcategory_id ?? row?.subcategory_id ?? row?.subcategoryId,
       };
@@ -680,6 +684,8 @@ export const [JobsContext, useJobs] = createContextHook(() => {
           is_active: true,
           dynamic_data: (newJob as any).dynamic_data ?? null,
           price_type: (newJob as any).price_type ?? null,
+          fuel_type: (newJob as any).fuel_type ?? null,
+          rental_duration: (newJob as any).rental_duration ?? null,
         };
         const res = await safeInsertJob(payload);
         if (res.error) throw res.error;

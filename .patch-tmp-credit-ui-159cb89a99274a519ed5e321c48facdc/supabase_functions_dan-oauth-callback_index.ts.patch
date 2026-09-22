@@ -1,0 +1,16 @@
+diff --git a/.patch-tmp-credit-ui-159cb89a99274a519ed5e321c48facdc/before/supabase/functions/dan-oauth-callback/index.ts b/.patch-tmp-credit-ui-159cb89a99274a519ed5e321c48facdc/after/supabase/functions/dan-oauth-callback/index.ts
+index ca2d4e6..fe621f3 100644
+--- a/.patch-tmp-credit-ui-159cb89a99274a519ed5e321c48facdc/before/supabase/functions/dan-oauth-callback/index.ts
++++ b/.patch-tmp-credit-ui-159cb89a99274a519ed5e321c48facdc/after/supabase/functions/dan-oauth-callback/index.ts
+@@ -112,8 +112,10 @@ serve(async (req: Request) => {
+           // The full legal name remains private; only its shortened DAN-derived form is public.
+           name: citizen.publicName ?? "DAN хэрэглэгч",
+           phone: null,
+-          // New user starts with two monthly free listing credits.
++          // The database default initializes the split balances as 2 free + 0 paid.
+           available_post_credits: 2,
++          free_post_credits: 2,
++          paid_post_credits: 0,
+           terms_accepted_at: state.terms_accepted_at,
+         },
+         { onConflict: "id", ignoreDuplicates: true },

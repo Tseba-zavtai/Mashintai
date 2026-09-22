@@ -112,10 +112,8 @@ serve(async (req: Request) => {
           // The full legal name remains private; only its shortened DAN-derived form is public.
           name: citizen.publicName ?? "DAN хэрэглэгч",
           phone: null,
-          // The database default initializes the split balances as 2 free + 0 paid.
+          // New user starts with two monthly free listing credits.
           available_post_credits: 2,
-          free_post_credits: 2,
-          paid_post_credits: 0,
           terms_accepted_at: state.terms_accepted_at,
         },
         { onConflict: "id", ignoreDuplicates: true },

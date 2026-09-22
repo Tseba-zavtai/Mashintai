@@ -26,7 +26,6 @@ type SponsorPlan = {
   name: string;
   price: number;
   durationDays: number;
-  credits?: number;
   description: string;
 };
 
@@ -102,7 +101,7 @@ export default function SponsorPaymentScreen() {
       setMockReceipt(receipt);
 
       if (selectedPlanData.id === "credit") {
-        const creditGrant = await supabase.rpc("grant_test_purchased_post_credit", { p_payment_id: receipt.payment_id });
+        const creditGrant = await supabase.rpc("grant_test_purchased_post_credit");
         if (creditGrant.error && creditGrant.error.code !== "PGRST202") throw creditGrant.error;
 
         if (creditGrant.error) {
@@ -114,8 +113,7 @@ export default function SponsorPaymentScreen() {
             .update({ available_post_credits: currentCredits + (selectedPlanData.credits ?? 1) })
             .eq("id", user?.id);
           if (error) throw error;
-        }
-        if (refetchProfile) await refetchProfile();
+        }        if (refetchProfile) await refetchProfile();
       } 
       else if (selectedPlanData.id === "bump" && jobId) {
         if (!bumpJob) throw new Error("BUMP_ACTION_UNAVAILABLE");
