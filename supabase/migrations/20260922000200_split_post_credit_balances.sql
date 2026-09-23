@@ -13,6 +13,18 @@ alter table public.users
 alter table public.users
   add column if not exists paid_post_credits integer;
 
+-- One completed credit use has a one-time token. The token lets the app return
+-- a credit only when its own job creation fails; it cannot be reused to mint
+-- arbitrary credits.
+alter table public.users
+  add column if not exists last_post_credit_consumption_id uuid;
+
+alter table public.users
+  add column if not exists last_post_credit_consumed_from text;
+
+alter table public.users
+  add column if not exists last_post_credit_restored_at timestamptz;
+
 alter table public.users
   alter column free_post_credits set default 2;
 
@@ -161,6 +173,7 @@ $$;
 
 create or replace function public.consume_post_credit()
 returns table (
+  consumption_id uuid,
   consumed_from text,
   free_credits integer,
   paid_credits integer,
@@ -174,6 +187,7 @@ declare
   v_free integer;
   v_paid integer;
   v_source text;
+  v_consumption_id uuid := gen_random_uuid();
 begin
   perform public.refresh_post_credit_balance();
 
@@ -200,14 +214,22 @@ begin
   update public.users
   set free_post_credits = v_free,
       paid_post_credits = v_paid,
-      available_post_credits = v_free + v_paid
+      available_post_credits = v_free + v_paid,
+      last_post_credit_consumption_id = v_consumption_id,
+      last_post_credit_consumed_from = v_source,
+      last_post_credit_restored_at = null
   where id = auth.uid();
 
-  return query select v_source, v_free, v_paid, v_free + v_paid;
+  return query select v_consumption_id, v_source, v_free, v_paid, v_free + v_paid;
 end;
 $$;
 
-create or replace function public.restore_post_credit(p_source text)
+-- A credit can be restored only once and only using the matching token created
+-- by consume_post_credit(). This prevents a client from repeatedly minting
+-- credits by calling a public restore RPC.
+drop function if exists public.restore_post_credit(text);
+
+create or replace function public.restore_post_credit(p_consumption_id uuid)
 returns table (
   free_credits integer,
   paid_credits integer,
@@ -220,19 +242,21 @@ as $$
 declare
   v_free integer;
   v_paid integer;
+  v_source text;
+  v_last_consumption_id uuid;
+  v_restored_at timestamptz;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required.' using errcode = '42501';
   end if;
 
-  if p_source not in ('free', 'paid') then
-    raise exception 'Invalid post credit source.' using errcode = '22023';
-  end if;
-
-  perform public.refresh_post_credit_balance();
-
-  select coalesce(u.free_post_credits, 0), coalesce(u.paid_post_credits, 0)
-  into v_free, v_paid
+  select
+    coalesce(u.free_post_credits, 0),
+    coalesce(u.paid_post_credits, 0),
+    u.last_post_credit_consumed_from,
+    u.last_post_credit_consumption_id,
+    u.last_post_credit_restored_at
+  into v_free, v_paid, v_source, v_last_consumption_id, v_restored_at
   from public.users u
   where u.id = auth.uid()
   for update;
@@ -241,7 +265,14 @@ begin
     raise exception 'User profile not found.' using errcode = 'P0002';
   end if;
 
-  if p_source = 'free' then
+  if p_consumption_id is null
+     or p_consumption_id is distinct from v_last_consumption_id
+     or v_restored_at is not null
+     or v_source not in ('free', 'paid') then
+    raise exception 'POST_CREDIT_RESTORE_NOT_ALLOWED' using errcode = 'P0001';
+  end if;
+
+  if v_source = 'free' then
     v_free := v_free + 1;
   else
     v_paid := v_paid + 1;
@@ -250,13 +281,13 @@ begin
   update public.users
   set free_post_credits = v_free,
       paid_post_credits = v_paid,
-      available_post_credits = v_free + v_paid
+      available_post_credits = v_free + v_paid,
+      last_post_credit_restored_at = now()
   where id = auth.uid();
 
   return query select v_free, v_paid, v_free + v_paid;
 end;
 $$;
-
 -- Test-only grant: a mock receipt belongs to the signed-in user and can be
 -- consumed only once. Replace this with QPay server verification before launch.
 create or replace function public.grant_test_purchased_post_credit(p_payment_id uuid)
@@ -272,6 +303,7 @@ as $$
 declare
   v_free integer;
   v_paid integer;
+  v_granted_at timestamptz;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required.' using errcode = '42501';
@@ -279,21 +311,17 @@ begin
 
   perform public.refresh_post_credit_balance();
 
-  perform 1
+  select receipt.post_credit_granted_at
+  into v_granted_at
   from public.mock_ebarimt_receipts receipt
   where receipt.payment_id = p_payment_id
     and receipt.user_id = auth.uid()
     and receipt.service_type = 'post_credit'
-    and receipt.post_credit_granted_at is null
   for update;
 
   if not found then
     raise exception 'TEST_CREDIT_RECEIPT_NOT_FOUND' using errcode = 'P0002';
   end if;
-
-  update public.mock_ebarimt_receipts
-  set post_credit_granted_at = now()
-  where payment_id = p_payment_id;
 
   select coalesce(u.free_post_credits, 0), coalesce(u.paid_post_credits, 0)
   into v_free, v_paid
@@ -305,6 +333,17 @@ begin
     raise exception 'User profile not found.' using errcode = 'P0002';
   end if;
 
+  -- Retrying the same completed test payment returns the existing balance;
+  -- it never grants a second credit.
+  if v_granted_at is not null then
+    return query select v_free, v_paid, v_free + v_paid;
+    return;
+  end if;
+
+  update public.mock_ebarimt_receipts
+  set post_credit_granted_at = now()
+  where payment_id = p_payment_id;
+
   v_paid := v_paid + 1;
 
   update public.users
@@ -315,17 +354,16 @@ begin
   return query select v_free, v_paid, v_free + v_paid;
 end;
 $$;
-
 revoke all on function public.refresh_post_credit_balance() from public;
 revoke all on function public.grant_monthly_post_credits_if_due() from public;
 revoke all on function public.consume_post_credit() from public;
-revoke all on function public.restore_post_credit(text) from public;
+revoke all on function public.restore_post_credit(uuid) from public;
 revoke all on function public.grant_test_purchased_post_credit(uuid) from public;
 
 grant execute on function public.refresh_post_credit_balance() to authenticated;
 grant execute on function public.grant_monthly_post_credits_if_due() to authenticated;
 grant execute on function public.consume_post_credit() to authenticated;
-grant execute on function public.restore_post_credit(text) to authenticated;
+grant execute on function public.restore_post_credit(uuid) to authenticated;
 grant execute on function public.grant_test_purchased_post_credit(uuid) to authenticated;
 
 commit;

@@ -34,6 +34,7 @@ import {
   ClipboardList,
   Sparkles,
   Star,
+  ShieldCheck,
 } from "lucide-react-native";
 import {
   SafeAreaView,
@@ -225,6 +226,7 @@ function JobCard({
   const { colors } = useTheme();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [mediaWidth, setMediaWidth] = useState(0);
+  const mediaTouchRef = useRef({ startX: 0, startY: 0, moved: false });
 
   const j = normalizeJob(job);
   const imageUrls: string[] = Array.isArray(j.image_urls) ? j.image_urls : [];
@@ -238,12 +240,37 @@ function JobCard({
   const rating = asNumberOrNull(j.itemRatingAvg);
   const reviewCount = asNumberOrNull(j.itemReviewCount) ?? 0;
   const hasRating = Boolean(rating && rating > 0 && reviewCount > 0);
+  const isDanVerified = Boolean(
+    j.postedBy?.isDanVerified ?? j.postedBy?.is_dan_verified ?? (j as any).posted_by_is_dan_verified,
+  );
+  const hasTrustMeta = isDanVerified || hasRating;
   const iconEmoji = getCategoryIcon(j.category ?? "");
   const postedAtDate = j.hasPostedDate ? (j.postedDate ?? null) : null;
 
   const handleCardPress = () => {
     if (isSponsored) void recordPromotionMetric("sponsored_job", j.id, "click");
     router.push(`/job-detail?id=${j.id}`);
+  };
+
+  const beginMediaTouch = (event: any) => {
+    const { pageX, pageY } = event.nativeEvent;
+    mediaTouchRef.current = { startX: pageX, startY: pageY, moved: false };
+  };
+
+  const moveMediaTouch = (event: any) => {
+    const { pageX, pageY } = event.nativeEvent;
+    const touch = mediaTouchRef.current;
+    if (Math.abs(pageX - touch.startX) > 8 || Math.abs(pageY - touch.startY) > 8) {
+      mediaTouchRef.current.moved = true;
+    }
+  };
+
+  const endMediaTouch = () => {
+    if (!mediaTouchRef.current.moved) handleCardPress();
+  };
+
+  const cancelMediaTouch = () => {
+    mediaTouchRef.current.moved = true;
   };
 
   const formatDate = (date: Date | null) => {
@@ -263,14 +290,23 @@ function JobCard({
   };
 
   return (
-    <TouchableOpacity style={[styles.gridJobCard, { backgroundColor: colors.card }]} activeOpacity={0.84} onPress={handleCardPress}>
+    <View style={[styles.gridJobCard, { backgroundColor: colors.card }]}>
       <View style={[styles.gridMedia, { backgroundColor: colors.backgroundSecondary }]} onLayout={(event) => handleMediaLayout(event.nativeEvent.layout.width)}>
         {imageUrls.length > 0 ? (
           <ScrollView
             style={styles.gridImageScroller}
             horizontal
             pagingEnabled
+            directionalLockEnabled
+            nestedScrollEnabled
+            scrollEnabled={imageUrls.length > 1}
             showsHorizontalScrollIndicator={false}
+            scrollEventThrottle={16}
+            onTouchStart={beginMediaTouch}
+            onTouchMove={moveMediaTouch}
+            onTouchEnd={endMediaTouch}
+            onTouchCancel={cancelMediaTouch}
+            onScrollBeginDrag={() => { mediaTouchRef.current.moved = true; }}
             onMomentumScrollEnd={(event) => {
               const width = event.nativeEvent.layoutMeasurement.width;
               if (width > 0) setActiveImageIndex(Math.max(0, Math.min(imageUrls.length - 1, Math.round(event.nativeEvent.contentOffset.x / width))));
@@ -287,14 +323,19 @@ function JobCard({
             ))}
           </ScrollView>
         ) : (
-          <View style={[styles.gridImage, styles.gridImageFallback, { backgroundColor: colors.accent }]}>
+          <Pressable
+            style={[styles.gridImage, styles.gridImageFallback, { backgroundColor: colors.accent }]}
+            onPress={handleCardPress}
+            accessibilityRole="button"
+            accessibilityLabel={`${listingLabel} дэлгэрэнгүй харах`}
+          >
             <Text style={styles.gridPlaceholderIcon}>{iconEmoji}</Text>
-          </View>
+          </Pressable>
         )}
 
         {isSponsored ? (
           <View style={[styles.gridSponsoredBadge, { backgroundColor: colors.primary }]}>
-            <Text style={[styles.gridSponsoredText, { color: colors.buttonText }]}>Онцлох</Text>
+            <Text style={[styles.gridSponsoredText, { color: colors.buttonText }]}>Sponsored</Text>
           </View>
         ) : null}
 
@@ -316,20 +357,37 @@ function JobCard({
         </View>
       ) : null}
 
-      <View style={styles.gridCardContent}>
+      <Pressable
+        style={styles.gridCardContent}
+        onPress={handleCardPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${listingLabel} дэлгэрэнгүй харах`}
+      >
         <Text style={[styles.gridListingLabel, { color: colors.text }]} numberOfLines={2}>{listingLabel}</Text>
-        <View style={styles.gridMetaRow}>
-          {hasRating ? (
-            <View style={styles.gridRatingWrap}>
-              <Star size={12} color={BRAND_PURPLE} fill={BRAND_PURPLE} strokeWidth={2.4} />
-              <Text style={[styles.gridRatingText, { color: colors.textSecondary }]}>{rating!.toFixed(1)} ({reviewCount})</Text>
-            </View>
-          ) : <View />}
-          {!!formatDate(postedAtDate) && <Text style={[styles.gridDate, { color: colors.textSecondary }]} numberOfLines={1}>{formatDate(postedAtDate)}</Text>}
-        </View>
+        {(hasTrustMeta || postedAtDate) ? (
+          <View style={[styles.gridMetaRow, !hasTrustMeta && styles.gridMetaRowDateOnly]}>
+            {hasTrustMeta ? (
+              <View style={styles.gridTrustMeta}>
+                {isDanVerified ? (
+                  <View style={styles.gridDanBadge} accessibilityRole="text" accessibilityLabel="DAN баталгаажсан">
+                    <ShieldCheck size={12} color="#087F4F" strokeWidth={2.8} />
+                    <Text style={styles.gridDanText}>DAN</Text>
+                  </View>
+                ) : null}
+                {hasRating ? (
+                  <View style={styles.gridRatingWrap}>
+                    <Star size={12} color={BRAND_PURPLE} fill={BRAND_PURPLE} strokeWidth={2.4} />
+                    <Text style={[styles.gridRatingText, { color: colors.textSecondary }]}>{rating!.toFixed(1)} ({reviewCount})</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+            {!!formatDate(postedAtDate) && <Text style={[styles.gridDate, { color: colors.textSecondary }]} numberOfLines={1}>{formatDate(postedAtDate)}</Text>}
+          </View>
+        ) : null}
         <Text style={[styles.gridPrice, { color: BRAND_PURPLE }]} numberOfLines={1}>{priceLabel}</Text>
-      </View>
-    </TouchableOpacity>
+      </Pressable>
+    </View>
   );
 }
 export default function HomeScreen() {
@@ -557,7 +615,10 @@ export default function HomeScreen() {
       const visibleListingCount = index + rowJobs.length;
       rows.push({
         jobs: rowJobs,
-        shouldShowBanner: visibleListingCount >= 6 && (visibleListingCount - 6) % 20 === 0,
+        // The Home feed now shows two listings per row. Keep the same visual
+        // spacing as the previous single-column feed: 6 rows before the first
+        // banner, then 20 full rows between subsequent banners.
+        shouldShowBanner: visibleListingCount >= 12 && (visibleListingCount - 12) % 40 === 0,
       });
     }
     return rows;
@@ -906,7 +967,11 @@ const styles = StyleSheet.create({
   gridCardContent: { paddingHorizontal: 10, paddingTop: 3, paddingBottom: 11 },
   gridListingLabel: { minHeight: 36, fontSize: 14, lineHeight: 18, fontWeight: "800" },
   gridMetaRow: { minHeight: 20, marginTop: 4, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 },
-  gridRatingWrap: { flexDirection: "row", alignItems: "center", gap: 3, minWidth: 0 },
+  gridMetaRowDateOnly: { justifyContent: "flex-start" },
+  gridTrustMeta: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 },
+  gridDanBadge: { flexDirection: "row", alignItems: "center", gap: 2, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 999, backgroundColor: "#E8F8EF", flexShrink: 0 },
+  gridDanText: { color: "#087F4F", fontSize: 10, fontWeight: "800" },
+  gridRatingWrap: { flexDirection: "row", alignItems: "center", gap: 3, minWidth: 0, flexShrink: 1 },
   gridRatingText: { fontSize: 11, fontWeight: "600" },
   gridDate: { flexShrink: 1, fontSize: 11, textAlign: "right" },
   gridPrice: { marginTop: 4, fontSize: 15, lineHeight: 20, fontWeight: "800" },

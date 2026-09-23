@@ -386,13 +386,11 @@ export default function PostScreen() {
     }
 
 
-    const originalCredits = Math.max(0, Number(postCredits));
+    const originalCredits = Math.max(0, Number(postCredits ?? 0) || 0);
     const remainingCredits = Math.max(0, originalCredits - 1);
     let creditConsumed = false;
     let jobCreated = false;
-    let consumedCreditSource: "free" | "paid" | null = null;
-    let usedLegacyCreditUpdate = false;
-    let consumedCreditSource: "free" | "paid" | null = null;
+    let consumedCreditId: string | null = null;
     let usedLegacyCreditUpdate = false;
 
     try {
@@ -407,23 +405,8 @@ export default function PostScreen() {
         const consumedCredit = Array.isArray(creditResult.data)
           ? creditResult.data[0]
           : creditResult.data;
-        const source = (consumedCredit as any)?.consumed_from;
-        consumedCreditSource = source === "free" || source === "paid" ? source : null;
-        creditConsumed = true;
-      } else {
-        // Keep the current app usable if it reaches an older backend before the
-        // credit-balance migration has been applied.
-        const creditResult = await supabase.rpc("consume_post_credit");
-      if (creditResult.error && creditResult.error.code !== "PGRST202") {
-        throw creditResult.error;
-      }
-
-      if (!creditResult.error) {
-        const consumedCredit = Array.isArray(creditResult.data)
-          ? creditResult.data[0]
-          : creditResult.data;
-        const source = (consumedCredit as any)?.consumed_from;
-        consumedCreditSource = source === "free" || source === "paid" ? source : null;
+        const consumptionId = (consumedCredit as any)?.consumption_id;
+        consumedCreditId = typeof consumptionId === "string" ? consumptionId : null;
         creditConsumed = true;
       } else {
         // Keep the current app usable if it reaches an older backend before the
@@ -439,8 +422,6 @@ export default function PostScreen() {
         usedLegacyCreditUpdate = true;
         creditConsumed = true;
       }
-      }
-
       await addJob({
           title: selectedSubcategoryObj?.name || selectedCategoryObj.name, description: description.trim(),
           category: selectedCategoryObj.name, subcategory: selectedSubcategoryObj?.name ?? null, category_id: categoryId, subcategory_id: subcategoryId,
@@ -463,22 +444,15 @@ export default function PostScreen() {
       if (creditConsumed && !jobCreated) {
         try {
           if (usedLegacyCreditUpdate) {
-            if (usedLegacyCreditUpdate) {
             const { error: rollbackError } = await supabase
               .from("users")
               .update({ available_post_credits: originalCredits })
               .eq("id", (user as any)?.id)
               .eq("available_post_credits", remainingCredits);
             if (rollbackError) console.log("POST CREDIT ROLLBACK ERROR:", rollbackError);
-          } else if (consumedCreditSource) {
+          } else if (consumedCreditId) {
             const { error: rollbackError } = await supabase.rpc("restore_post_credit", {
-              p_source: consumedCreditSource,
-            });
-            if (rollbackError) console.log("POST CREDIT ROLLBACK ERROR:", rollbackError);
-          }
-          } else if (consumedCreditSource) {
-            const { error: rollbackError } = await supabase.rpc("restore_post_credit", {
-              p_source: consumedCreditSource,
+              p_consumption_id: consumedCreditId,
             });
             if (rollbackError) console.log("POST CREDIT ROLLBACK ERROR:", rollbackError);
           }
