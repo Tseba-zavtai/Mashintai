@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
-  SafeAreaView,
+
   ScrollView,
   StyleSheet,
   Text,
@@ -10,9 +10,9 @@ import {
   View,
 } from "react-native";
 import { Image } from "expo-image";
-import { ArrowLeft, MapPin, Sparkles, Tag } from "lucide-react-native";
+import { MapPin, Sparkles, Tag } from "lucide-react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { getLogoSource } from "@/constants/logo";
+import AppHeader from "@/components/AppHeader";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
@@ -44,7 +44,7 @@ function formatPrice(job: any): string {
 export default function SeasonalCollectionScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const { colors, currentTheme } = useTheme();
+  const { colors } = useTheme();
   const { jobs, loadJobs } = useJobs() as any;
   const jobCount = Array.isArray(jobs) ? jobs.length : 0;
   const [collection, setCollection] = useState<SeasonalCollection | null>(null);
@@ -85,14 +85,7 @@ export default function SeasonalCollectionScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.75} accessibilityLabel="Буцах">
-            <ArrowLeft size={24} color={colors.headerText} />
-          </TouchableOpacity>
-          <Image source={getLogoSource(currentTheme)} style={styles.logo} contentFit="contain" />
-        </View>
-      </SafeAreaView>
+      <AppHeader title={collection?.title || "Улирлын сонголт"} />
 
       <ScrollView
         style={styles.content}
@@ -170,9 +163,9 @@ export default function SeasonalCollectionScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { zIndex: 1, elevation: 1 },
-  header: { height: 68, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16 },
+  header: { height: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16 },
   backButton: { width: 44, height: 44, alignItems: "flex-start", justifyContent: "center" },
-  logo: { width: 132, height: 48 },
+  logo: { width: 104, height: 32 },
   content: { flex: 1 },
   contentContainer: { padding: 20, paddingBottom: 36 },
   loadingWrap: { minHeight: 260, justifyContent: "center", alignItems: "center" },

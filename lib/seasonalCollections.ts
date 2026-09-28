@@ -11,6 +11,7 @@ export type SeasonalCollection = {
   id: string;
   title: string;
   subtitle: string | null;
+  coverImageUrl: string | null;
   startsAt: string;
   endsAt: string;
   sortOrder: number;
@@ -22,6 +23,7 @@ type SeasonalCollectionRow = {
   id?: string | null;
   title?: string | null;
   subtitle?: string | null;
+  cover_image_url?: string | null;
   starts_at?: string | null;
   ends_at?: string | null;
   sort_order?: number | null;
@@ -56,6 +58,9 @@ function normalizeCollection(row: SeasonalCollectionRow | null | undefined): Sea
     id,
     title,
     subtitle: typeof row?.subtitle === "string" && row.subtitle.trim() ? row.subtitle.trim() : null,
+    coverImageUrl: typeof row?.cover_image_url === "string" && row.cover_image_url.trim()
+      ? row.cover_image_url.trim()
+      : null,
     startsAt,
     endsAt,
     sortOrder: Number.isFinite(Number(row?.sort_order)) ? Number(row?.sort_order) : 0,
@@ -64,18 +69,37 @@ function normalizeCollection(row: SeasonalCollectionRow | null | undefined): Sea
   };
 }
 
-const COLLECTION_SELECT = "id,title,subtitle,starts_at,ends_at,sort_order,icon_key,seasonal_collection_rules(id,category_id,subcategory_id)";
+const COLLECTION_SELECT = "id,title,subtitle,cover_image_url,starts_at,ends_at,sort_order,icon_key,seasonal_collection_rules(id,category_id,subcategory_id)";
+const LEGACY_COLLECTION_SELECT = "id,title,subtitle,starts_at,ends_at,sort_order,icon_key,seasonal_collection_rules(id,category_id,subcategory_id)";
+
+function isCoverImageColumnUnavailable(error: any) {
+  return error?.code === "42703" && String(error?.message ?? "").includes("cover_image_url");
+}
 
 export async function fetchActiveSeasonalCollections(): Promise<SeasonalCollection[]> {
   const now = new Date().toISOString();
-  const { data, error } = await supabase
+  let data: SeasonalCollectionRow[] | null = null;
+  let error: any = null;
+  ({ data, error } = await supabase
     .from("seasonal_collections")
     .select(COLLECTION_SELECT)
     .eq("is_visible", true)
     .lte("starts_at", now)
     .gte("ends_at", now)
     .order("sort_order", { ascending: true })
-    .order("starts_at", { ascending: true });
+    .order("starts_at", { ascending: true }));
+
+  // Keeps earlier app/database combinations usable until the additive migration is applied.
+  if (isCoverImageColumnUnavailable(error)) {
+    ({ data, error } = await supabase
+      .from("seasonal_collections")
+      .select(LEGACY_COLLECTION_SELECT)
+      .eq("is_visible", true)
+      .lte("starts_at", now)
+      .gte("ends_at", now)
+      .order("sort_order", { ascending: true })
+      .order("starts_at", { ascending: true }));
+  }
 
   if (error) throw error;
   return (data ?? [])
@@ -88,14 +112,27 @@ export async function fetchActiveSeasonalCollection(id: string): Promise<Seasona
   if (!normalizedId) return null;
 
   const now = new Date().toISOString();
-  const { data, error } = await supabase
+  let data: SeasonalCollectionRow | null = null;
+  let error: any = null;
+  ({ data, error } = await supabase
     .from("seasonal_collections")
     .select(COLLECTION_SELECT)
     .eq("id", normalizedId)
     .eq("is_visible", true)
     .lte("starts_at", now)
     .gte("ends_at", now)
-    .maybeSingle();
+    .maybeSingle());
+
+  if (isCoverImageColumnUnavailable(error)) {
+    ({ data, error } = await supabase
+      .from("seasonal_collections")
+      .select(LEGACY_COLLECTION_SELECT)
+      .eq("id", normalizedId)
+      .eq("is_visible", true)
+      .lte("starts_at", now)
+      .gte("ends_at", now)
+      .maybeSingle());
+  }
 
   if (error) throw error;
   return normalizeCollection(data as SeasonalCollectionRow | null);

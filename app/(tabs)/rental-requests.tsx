@@ -1,9 +1,9 @@
 // app/rental-requests.tsx
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal } from "react-native";
+import { useCallback, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { Check, X, ClipboardList, RefreshCw, PhoneCall, CheckSquare, Square, ShieldAlert } from "lucide-react-native";
+import { Check, X, ClipboardList, RefreshCw, PhoneCall, CheckSquare, Square } from "lucide-react-native";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/rentalInsurance";
 import AppHeader from "@/components/AppHeader";
 import { RENTAL_INSURANCE_ENABLED } from "@/constants/features"; // 🎯 НЭМСЭН: Нэгдсэн стандартын толгой
+import { isRentalRequestExpired } from "@/lib/rentalRequestExpiry";
 
 type RentalRequest = {
   id: string;
@@ -39,6 +40,8 @@ type RentalRequest = {
   owner_agreed_at?: string | null;
   requester_agreed_at?: string | null;
   agreement_completed_at?: string | null;
+  expires_at?: string | null;
+  expired_at?: string | null;
   created_at?: string;
   jobs?: any;
 };
@@ -70,7 +73,7 @@ export default function RentalRequestsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { user } = useAuth();
-  const { rentalRequests, rentalRequestsError, loadRentalRequests, rejectRentalRequest } = useJobs() as any;
+  const { rentalRequests, rentalRequestsError, loadRentalRequests, markRentalRequestNotificationsRead, rejectRentalRequest } = useJobs() as any;
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -82,12 +85,8 @@ export default function RentalRequestsScreen() {
   const [depositAmountInput, setDepositAmountInput] = useState("0");
   const [agreementModalVisible, setAgreementModalVisible] = useState(false);
   const [agreementRequestId, setAgreementRequestId] = useState<string | null>(null);
-  const [disputeModalVisible, setDisputeModalVisible] = useState(false);
-  const [disputeRequestId, setDisputeRequestId] = useState<string | null>(null);
-  const [disputeReason, setDisputeReason] = useState("not_returned");
-  const [disputeDescription, setDisputeDescription] = useState("");
-  const [openDisputeRequestIds, setOpenDisputeRequestIds] = useState<Set<string>>(new Set());
   const [reviewedRequestIds, setReviewedRequestIds] = useState<Set<string>>(new Set());
+  const termsScrollRef = useRef<ScrollView>(null);
 
   const loadReviewStatuses = useCallback(async () => {
     if (!user?.id) {
@@ -104,30 +103,23 @@ export default function RentalRequestsScreen() {
     setReviewedRequestIds(new Set((data ?? []).map((row: any) => String(row.request_id))));
   }, [user?.id]);
 
-  const loadOpenDisputeStatuses = useCallback(async () => {
-    if (!user?.id) {
-      setOpenDisputeRequestIds(new Set());
-      return;
+  const refreshRequestsAndMarkNotifications = useCallback(async () => {
+    const [loadedRequests] = await Promise.all([loadRentalRequests?.(), loadReviewStatuses()]);
+    if (Array.isArray(loadedRequests)) {
+      await markRentalRequestNotificationsRead?.(loadedRequests);
     }
+  }, [loadRentalRequests, loadReviewStatuses, markRentalRequestNotificationsRead]);
 
-    const { data, error } = await supabase
-      .from("rental_disputes")
-      .select("rental_request_id")
-      .eq("reporter_id", user.id)
-      .in("status", ["open", "under_review"]);
-    if (error) throw error;
-    setOpenDisputeRequestIds(new Set((data ?? []).map((row: any) => String(row.rental_request_id))));
-  }, [user?.id]);
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      await Promise.all([loadRentalRequests?.(), loadReviewStatuses(), loadOpenDisputeStatuses()]);
+      await refreshRequestsAndMarkNotifications();
     } catch (e: any) {
       Alert.alert("Алдаа", e?.message ?? "Хүсэлтүүд татахад алдаа гарлаа");
     } finally {
       setLoading(false);
     }
-  }, [loadRentalRequests, loadReviewStatuses, loadOpenDisputeStatuses]);
+  }, [refreshRequestsAndMarkNotifications]);
 
   useFocusEffect(useCallback(() => {
     void load();
@@ -136,28 +128,11 @@ export default function RentalRequestsScreen() {
   const onRefresh = useCallback(async () => {
     try {
       setRefreshing(true);
-      await Promise.all([loadRentalRequests?.(), loadReviewStatuses(), loadOpenDisputeStatuses()]);
+      await refreshRequestsAndMarkNotifications();
     } finally {
       setRefreshing(false);
     }
-  }, [loadRentalRequests, loadReviewStatuses, loadOpenDisputeStatuses]);
-
-  useEffect(() => {
-    const clearAllBadges = async () => {
-      if (!user?.id) return;
-      try {
-        await supabase
-          .from("notifications")
-          .update({ is_read: true })
-          .eq("user_id", user.id)
-          .eq("is_read", false);
-      } catch (err) {
-        console.log("Badge clear error:", err);
-      }
-    };
-
-    clearAllBadges();
-  }, [user]);
+  }, [refreshRequestsAndMarkNotifications]);
 
   const handleMarkAsRead = async (requestId: string) => {
     if (!user?.id) return;
@@ -178,6 +153,11 @@ export default function RentalRequestsScreen() {
     setDepositAmountInput("0");
     setAgreeTerms(false);
     setTermsModalVisible(true);
+  };
+
+  const closeTermsModal = () => {
+    Keyboard.dismiss();
+    setTermsModalVisible(false);
   };
 
   const continueOwnerInsurancePayment = (request: RentalRequest) => {
@@ -325,46 +305,6 @@ export default function RentalRequestsScreen() {
     }
   };
 
-  const openDisputeModal = (requestId: string) => {
-    setDisputeRequestId(requestId);
-    setDisputeReason("not_returned");
-    setDisputeDescription("");
-    setDisputeModalVisible(true);
-  };
-
-  const submitDispute = async () => {
-    if (!disputeRequestId || !user?.id || busyId) return;
-    const request = (Array.isArray(rentalRequests) ? rentalRequests : []).find((item: RentalRequest) => item.id === disputeRequestId) as RentalRequest | undefined;
-    if (!request) {
-      Alert.alert("Алдаа", "Түрээсийн хүсэлт олдсонгүй.");
-      return;
-    }
-    const description = disputeDescription.trim();
-    if (description.length < 10) {
-      Alert.alert("Тайлбар дутуу", "Маргааны талаар дор хаяж 10 тэмдэгтээр тайлбарлана уу.");
-      return;
-    }
-    const reportedUserId = request.requester_id === user.id ? request.owner_id : request.requester_id;
-    try {
-      setBusyId(disputeRequestId);
-      const { error } = await supabase.from("rental_disputes").insert({
-        rental_request_id: disputeRequestId,
-        reporter_id: user.id,
-        reported_user_id: reportedUserId,
-        reason: disputeReason,
-        description,
-      });
-      if (error) throw error;
-      await loadOpenDisputeStatuses();
-      setDisputeModalVisible(false);
-      Alert.alert("Маргаан бүртгэгдлээ", "Админ шалгаж, шаардлагатай бол account-д түр хязгаарлалт тавина. Та баримт, чат болон хүлээлцсэн мэдээллээ хадгална уу.");
-    } catch (e: any) {
-      Alert.alert("Алдаа", e?.message ?? "Маргааныг бүртгэж чадсангүй.");
-    } finally {
-      setBusyId(null);
-      setDisputeRequestId(null);
-    }
-  };
   const handleReject = async (id: string) => {
     if (busyId) return;
     handleMarkAsRead(id);
@@ -561,9 +501,17 @@ export default function RentalRequestsScreen() {
               const imageUrls = Array.isArray(job.image_urls) ? job.image_urls : [];
               const imageUrl = job.image_url ?? imageUrls[0] ?? null;
               
-              const isOwner = currentUserId === item.owner_id;
-              const isRequester = currentUserId === item.requester_id;
-              const isApprovedOrActive = item.status !== "pending" && item.status !== "rejected" && item.status !== "cancelled";
+               const isOwner = currentUserId === item.owner_id;
+               const isRequester = currentUserId === item.requester_id;
+               const isExpired = isRentalRequestExpired({ ...item, jobs: job });
+               const isInactiveListing = item.status === "pending" && job.is_active === false;
+               const isUnavailable = isExpired || isInactiveListing;
+               const requestStatusLabel = isExpired
+                 ? "Хугацаа дууссан"
+                 : isInactiveListing
+                   ? "Зар идэвхгүй"
+                   : statusLabel(item.status);
+               const isApprovedOrActive = item.status !== "pending" && item.status !== "rejected" && item.status !== "cancelled";
                const hasReviewed = reviewedRequestIds.has(item.id);
                const insuranceStatus = item.insurance_status ?? "not_requested";
                const insurancePaid = isRentalInsurancePaid(insuranceStatus);
@@ -571,12 +519,11 @@ export default function RentalRequestsScreen() {
                const insurancePaymentPending = insuranceStatus === "payment_pending_requester" || insuranceStatus === "payment_pending_owner";
                const agreementPrepared = Boolean(item.owner_agreed_at && item.agreement_snapshot);
                const requesterAcceptedAgreement = Boolean(item.requester_agreed_at);
-               const hasOpenDispute = openDisputeRequestIds.has(item.id);
 
               return (
                 <TouchableOpacity 
                   key={item.id} 
-                  style={[styles.card, { backgroundColor: colors.card }]}
+                  style={[styles.card, { backgroundColor: isUnavailable ? colors.backgroundSecondary : colors.card, borderColor: isUnavailable ? colors.border : "transparent", borderWidth: isUnavailable ? 1 : 0, opacity: isUnavailable ? 0.72 : 1 }]}
                   activeOpacity={0.9}
                   onPress={() => handleMarkAsRead(item.id)}
                 >
@@ -614,7 +561,7 @@ export default function RentalRequestsScreen() {
 
                   <View style={styles.statusRow}>
                     <Text style={[styles.statusText, { color: colors.text }]}>
-                      Төлөв: <Text style={{ color: '#34C759' }}>{statusLabel(item.status)}</Text>
+                      Төлөв: <Text style={{ color: isUnavailable ? colors.textSecondary : '#34C759' }}>{requestStatusLabel}</Text>
                     </Text>
                     {item.total_price ? (
                       <Text style={[styles.priceText, { color: "#6E0AB0" }]}>
@@ -642,7 +589,7 @@ export default function RentalRequestsScreen() {
                     </View>
                   )}
                   {/* ТҮРЭЭСЛҮҮЛЭГЧИЙН ҮЙЛДЛҮҮД */}
-                  {isOwner && (
+                  {isOwner && !isUnavailable && (
                     <View style={styles.actionsRow}>
                       {RENTAL_INSURANCE_ENABLED && item.status === "pending" && insuranceStatus === "payment_pending_owner" && (
                         <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => continueOwnerInsurancePayment(item)}>
@@ -686,7 +633,7 @@ export default function RentalRequestsScreen() {
                   )}
 
                   {/* ТҮРЭЭСЛЭГЧИЙН ҮЙЛДЛҮҮД */}
-                  {isRequester && (
+                  {isRequester && !isUnavailable && (
                     <View style={styles.actionsRow}>
                       {RENTAL_INSURANCE_ENABLED && item.status === "pending" && insuranceStatus === "payment_pending_requester" && item.insurance_payer_id === currentUserId && (
                         <TouchableOpacity
@@ -750,16 +697,6 @@ export default function RentalRequestsScreen() {
                       )}
                     </View>
                   )}
-                  {isApprovedOrActive && (
-                    <TouchableOpacity
-                      style={[styles.disputeButton, { borderColor: hasOpenDispute ? colors.border : "#D64545", backgroundColor: hasOpenDispute ? colors.backgroundSecondary : "rgba(214,69,69,0.08)" }]}
-                      onPress={() => !hasOpenDispute && openDisputeModal(item.id)}
-                      disabled={hasOpenDispute}
-                    >
-                      <ShieldAlert size={17} color={hasOpenDispute ? colors.textSecondary : "#D64545"} />
-                      <Text style={[styles.disputeButtonText, { color: hasOpenDispute ? colors.textSecondary : "#D64545" }]}>{hasOpenDispute ? "Маргаан шалгагдаж байна" : "Маргаан мэдээлэх"}</Text>
-                    </TouchableOpacity>
-                  )}
                 </TouchableOpacity>
               );
             })
@@ -770,66 +707,103 @@ export default function RentalRequestsScreen() {
           visible={termsModalVisible}
           transparent
           animationType="slide"
-          onRequestClose={() => setTermsModalVisible(false)}
+          onRequestClose={closeTermsModal}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.termsModal, { backgroundColor: colors.background }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                Түрээсийн нөхцөл тогтоох
-              </Text>
-              
-              <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>
-                Барьцааны дүн, түрээсийн нөхцөлийг баталгаажуулна. Барьцааг Tureesly автоматаар татахгүй; талууд биечлэн төлбөр, хүлээлцэх нөхцөлөө тохиролцоно.
-              </Text>
-
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Барьцааны дүн (₮)</Text>
-              <TextInput
-                value={depositAmountInput}
-                onChangeText={setDepositAmountInput}
-                keyboardType="number-pad"
-                placeholder="Жишээ нь: 50000"
-                placeholderTextColor={colors.textSecondary}
-                style={[styles.depositInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.backgroundSecondary }]}
-              />
-              <Text style={[styles.depositHint, { color: colors.textSecondary }]}>0 ₮ гэж үлдээвэл барьцаагүй гэсэн нөхцөл болно.</Text>
-
-              <TouchableOpacity 
-                style={[styles.termsWrap, { backgroundColor: agreeTerms ? 'rgba(0,180,90,0.08)' : colors.backgroundSecondary, borderColor: agreeTerms ? '#00B45A' : colors.border }]} 
-                activeOpacity={0.8}
-                onPress={() => setAgreeTerms(!agreeTerms)}
-              >
-                <View style={styles.termsHeader}>
-                  {agreeTerms ? <CheckSquare size={20} color="#00B45A" /> : <Square size={20} color={colors.textSecondary} />}
-                  <Text style={[styles.termsTitle, { color: agreeTerms ? '#00B45A' : colors.text }]}>Гэрээ, хариуцлагын нөхцөлийг зөвшөөрөх</Text>
-                </View>
-                <Text style={[styles.termsDescText, { color: colors.textSecondary }]}>
-                  Энэ баталгаажуулалт нь барьцаа, барааны тоо, хугацаа болон нийт түрээсийн дүнг тухайн хүсэлтэд тогтоож үлдээнэ. Tureesly нь барьцааг одоохондоо хүлээн авч, хадгалахгүй.
-                </Text>
-              </TouchableOpacity>
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalCancelButton, { borderColor: colors.border }]}
-                  onPress={() => setTermsModalVisible(false)}
-                  disabled={busyId !== null}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={0}
+            style={styles.modalKeyboardAvoiding}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.termsModalSheet, { backgroundColor: colors.background }]}>
+                <ScrollView
+                  ref={termsScrollRef}
+                  style={styles.termsModalScroll}
+                  contentContainerStyle={styles.termsModalContent}
+                  keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
                 >
-                  <Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text>
-                </TouchableOpacity>
+                  <View style={styles.termsModalHeader}>
+                    <Text style={[styles.modalTitle, styles.termsModalTitle, { color: colors.text }]}>Түрээсийн нөхцөл тогтоох</Text>
+                    <TouchableOpacity
+                      style={[styles.modalCloseButton, { borderColor: colors.border }]}
+                      onPress={closeTermsModal}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel="Түрээсийн нөхцөл хаах"
+                    >
+                      <X size={20} color={colors.text} />
+                    </TouchableOpacity>
+                  </View>
 
-                <TouchableOpacity
-                  style={[styles.modalSubmitButton, { backgroundColor: agreeTerms ? colors.primary : colors.border }]}
-                  onPress={confirmApprove}
-                  disabled={busyId !== null || !agreeTerms}
-                >
-                  {busyId !== null ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={[styles.modalSubmitText, { color: agreeTerms ? "#FFFFFF" : colors.textSecondary }]}>Зөвшөөрөх</Text>
-                  )}
-                </TouchableOpacity>
+                  <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>
+                    Барьцааны дүн, түрээсийн нөхцөлийг баталгаажуулна. Барьцааг Tureesly автоматаар татахгүй; талууд биечлэн төлбөр, хүлээлцэх нөхцөлөө тохиролцоно.
+                  </Text>
+
+                  <View style={styles.inputLabelRow}>
+                    <Text style={[styles.inputLabel, { color: colors.text }]}>Барьцааны дүн (₮)</Text>
+                    <TouchableOpacity
+                      onPress={Keyboard.dismiss}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel="Гар буулгах"
+                    >
+                      <Text style={[styles.dismissKeyboardText, { color: colors.primary }]}>Гар буулгах</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    value={depositAmountInput}
+                    onChangeText={setDepositAmountInput}
+                    onFocus={() => {
+                      setTimeout(() => termsScrollRef.current?.scrollToEnd({ animated: true }), 120);
+                    }}
+                    onSubmitEditing={Keyboard.dismiss}
+                    keyboardType="number-pad"
+                    placeholder="Жишээ нь: 50000"
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.depositInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.backgroundSecondary }]}
+                  />
+                  <Text style={[styles.depositHint, { color: colors.textSecondary }]}>0 ₮ гэж үлдээвэл барьцаагүй гэсэн нөхцөл болно.</Text>
+
+                  <TouchableOpacity
+                    style={[styles.termsWrap, { backgroundColor: agreeTerms ? 'rgba(0,180,90,0.08)' : colors.backgroundSecondary, borderColor: agreeTerms ? '#00B45A' : colors.border }]}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setAgreeTerms((current) => !current);
+                    }}
+                  >
+                    <View style={styles.termsHeader}>
+                      {agreeTerms ? <CheckSquare size={20} color="#00B45A" /> : <Square size={20} color={colors.textSecondary} />}
+                      <Text style={[styles.termsTitle, { color: agreeTerms ? '#00B45A' : colors.text }]}>Гэрээ, хариуцлагын нөхцөлийг зөвшөөрөх</Text>
+                    </View>
+                    <Text style={[styles.termsDescText, { color: colors.textSecondary }]}>Энэ баталгаажуулалт нь барьцаа, барааны тоо, хугацаа болон нийт түрээсийн дүнг тухайн хүсэлтэд тогтоож үлдээнэ. Tureesly нь барьцааг одоохондоо хүлээн авч, хадгалахгүй.</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      style={[styles.modalCancelButton, { borderColor: colors.border }]}
+                      onPress={closeTermsModal}
+                      disabled={busyId !== null}
+                    >
+                      <Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalSubmitButton, { backgroundColor: agreeTerms ? colors.primary : colors.border }]}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        void confirmApprove();
+                      }}
+                      disabled={busyId !== null || !agreeTerms}
+                    >
+                      {busyId !== null ? <ActivityIndicator color="#FFFFFF" /> : <Text style={[styles.modalSubmitText, { color: agreeTerms ? "#FFFFFF" : colors.textSecondary }]}>Зөвшөөрөх</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
         <Modal
           visible={agreementModalVisible}
@@ -860,50 +834,6 @@ export default function RentalRequestsScreen() {
           </View>
         </Modal>
 
-        <Modal
-          visible={disputeModalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setDisputeModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.termsModal, { backgroundColor: colors.background }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Маргаан мэдээлэх</Text>
-              <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>Зөвхөн бодит асуудлаа тайлбарлаж илгээнэ үү. Админ шалгах хүртэл чат, зураг, хүлээлцсэн баримтаа хадгалаарай.</Text>
-              <View style={styles.reasonRow}>
-                {[
-                  ["not_returned", "Бараа буцаагаагүй"],
-                  ["damaged", "Эвдрэл, гэмтэл"],
-                  ["payment", "Төлбөр"],
-                  ["conduct", "Харилцаа"],
-                  ["other", "Бусад"],
-                ].map(([value, label]) => (
-                  <TouchableOpacity key={value} onPress={() => setDisputeReason(value)} style={[styles.reasonChip, { borderColor: disputeReason === value ? colors.primary : colors.border, backgroundColor: disputeReason === value ? "rgba(110,10,176,0.10)" : colors.backgroundSecondary }]}>
-                    <Text style={[styles.reasonChipText, { color: disputeReason === value ? colors.primary : colors.textSecondary }]}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <TextInput
-                value={disputeDescription}
-                onChangeText={setDisputeDescription}
-                multiline
-                maxLength={3000}
-                placeholder="Юу болсон, хэзээ болсон, ямар баримт байгаа талаар товч бичнэ үү..."
-                placeholderTextColor={colors.textSecondary}
-                textAlignVertical="top"
-                style={[styles.disputeInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.backgroundSecondary }]}
-              />
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.modalCancelButton, { borderColor: colors.border }]} onPress={() => setDisputeModalVisible(false)} disabled={busyId !== null}>
-                  <Text style={[styles.modalCancelText, { color: colors.text }]}>Болих</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalSubmitButton, { backgroundColor: "#D64545" }]} onPress={submitDispute} disabled={busyId !== null}>
-                  {busyId ? <ActivityIndicator color="#FFFFFF" /> : <Text style={[styles.modalSubmitText, { color: "#FFFFFF" }]}>Илгээх</Text>}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </SafeAreaView>
     </>
   );
@@ -938,28 +868,31 @@ const styles = StyleSheet.create({
   agreementBadge: { marginTop: 10, borderWidth: 1, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8 },
   agreementBadgeText: { fontSize: 13, fontWeight: "800" },
   agreementStatusText: { marginTop: 3, fontSize: 12, fontWeight: "700" },
-  disputeButton: { marginTop: 12, minHeight: 42, borderWidth: 1, borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 7 },
-  disputeButtonText: { fontSize: 13, fontWeight: "800" },
   priceText: { fontSize: 16, fontWeight: "900" },
   actionsRow: { flexDirection: "row", gap: 10, marginTop: 14 },
   actionButton: { flex: 1, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 },
   rejectButton: { borderWidth: 1 },
   actionText: { fontSize: 14, fontWeight: "800" },
+  modalKeyboardAvoiding: { flex: 1 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   termsModal: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 30 },
+  termsModalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "100%", flexShrink: 1, overflow: "hidden" },
+  termsModalScroll: { flexShrink: 1 },
+  termsModalContent: { padding: 20, paddingBottom: 30 },
+  termsModalHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 8 },
+  termsModalTitle: { flex: 1, marginBottom: 0 },
+  modalCloseButton: { width: 36, height: 36, borderWidth: 1, borderRadius: 18, alignItems: "center", justifyContent: "center", marginTop: -2 },
   modalTitle: { fontSize: 20, fontWeight: "800", marginBottom: 8 },
   modalDesc: { fontSize: 14, lineHeight: 20, marginBottom: 16 },
-  inputLabel: { fontSize: 14, fontWeight: "800", marginBottom: 8 },
+  inputLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  inputLabel: { flex: 1, fontSize: 14, fontWeight: "800", marginBottom: 8 },
+  dismissKeyboardText: { fontSize: 13, fontWeight: "800", marginBottom: 8 },
   depositInput: { height: 48, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, fontWeight: "700" },
   depositHint: { fontSize: 12, marginTop: 6, marginBottom: 14 },
   agreementPreview: { borderWidth: 1, borderRadius: 12, padding: 14 },
   agreementPreviewTitle: { fontSize: 16, fontWeight: "800", marginBottom: 8 },
   agreementPreviewText: { fontSize: 13, lineHeight: 20 },
   agreementPreviewDeposit: { fontSize: 16, fontWeight: "900", marginTop: 10 },
-  reasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
-  reasonChip: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
-  reasonChipText: { fontSize: 12, fontWeight: "700" },
-  disputeInput: { minHeight: 120, borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14, lineHeight: 20, marginBottom: 16 },
   termsWrap: { borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 20 },
   termsHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
   termsTitle: { fontSize: 15, fontWeight: "700" },

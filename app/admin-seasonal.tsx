@@ -38,6 +38,7 @@ type SeasonalRow = {
   id: string;
   title: string;
   subtitle: string | null;
+  cover_image_url?: string | null;
   starts_at: string;
   ends_at: string;
   sort_order: number;
@@ -122,6 +123,7 @@ export default function AdminSeasonalScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
+  const [coverImageUrl, setCoverImageUrl] = useState("");
   const [iconKey, setIconKey] = useState<SeasonalIconKey>("sparkles");
   const [startsAt, setStartsAt] = useState(() => new Date());
   const [endsAt, setEndsAt] = useState(() => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
@@ -137,10 +139,21 @@ export default function AdminSeasonalScreen() {
       const catalog = await refreshCategoryCatalog();
       setCategories(catalog.categories);
 
-      const { data, error } = await supabase
+      let data: SeasonalRow[] | null = null;
+      let error: any = null;
+      ({ data, error } = await supabase
         .from("seasonal_collections")
-        .select("id,title,subtitle,starts_at,ends_at,sort_order,icon_key,is_visible,seasonal_collection_rules(id,category_id,subcategory_id)")
-        .order("starts_at", { ascending: false });
+        .select("id,title,subtitle,cover_image_url,starts_at,ends_at,sort_order,icon_key,is_visible,seasonal_collection_rules(id,category_id,subcategory_id)")
+        .order("starts_at", { ascending: false }));
+
+      // The image field is additive. Let the older setup remain manageable until
+      // the matching migration has been run in Supabase.
+      if (error?.code === "42703" && String(error?.message ?? "").includes("cover_image_url")) {
+        ({ data, error } = await supabase
+          .from("seasonal_collections")
+          .select("id,title,subtitle,starts_at,ends_at,sort_order,icon_key,is_visible,seasonal_collection_rules(id,category_id,subcategory_id)")
+          .order("starts_at", { ascending: false }));
+      }
 
       if (error) throw error;
       setCollections((data ?? []) as SeasonalRow[]);
@@ -167,6 +180,7 @@ export default function AdminSeasonalScreen() {
     setEditingId(null);
     setTitle("");
     setSubtitle("");
+    setCoverImageUrl("");
     setIconKey("sparkles");
     setStartsAt(new Date());
     setEndsAt(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
@@ -185,6 +199,7 @@ export default function AdminSeasonalScreen() {
     setEditingId(collection.id);
     setTitle(collection.title ?? "");
     setSubtitle(collection.subtitle ?? "");
+    setCoverImageUrl(collection.cover_image_url?.trim() ?? "");
     setIconKey(normalizeSeasonalIconKey(collection.icon_key));
     setStartsAt(new Date(collection.starts_at));
     setEndsAt(new Date(collection.ends_at));
@@ -246,6 +261,7 @@ export default function AdminSeasonalScreen() {
       const payload = {
         title: normalizedTitle,
         subtitle: subtitle.trim() || null,
+        cover_image_url: coverImageUrl.trim() || null,
         icon_key: iconKey,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
@@ -440,6 +456,17 @@ export default function AdminSeasonalScreen() {
               placeholderTextColor={colors.textSecondary}
               style={[styles.textInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
               maxLength={200}
+            />
+            <Text style={[styles.fieldLabel, { color: colors.text }]}>Background зургийн URL (заавал биш)</Text>
+            <TextInput
+              value={coverImageUrl}
+              onChangeText={setCoverImageUrl}
+              placeholder="https://…"
+              placeholderTextColor={colors.textSecondary}
+              style={[styles.textInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
             />
 
             <Text style={[styles.fieldLabel, { color: colors.text }]}>Seasonal icon</Text>

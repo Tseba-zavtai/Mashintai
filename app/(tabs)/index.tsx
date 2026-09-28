@@ -25,16 +25,18 @@ import {
   Linking,
 } from "react-native";
 import { Image } from "expo-image";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Search,
   X,
-  Palette,
   Heart,
   RefreshCw,
   ClipboardList,
   Sparkles,
   Star,
   ShieldCheck,
+  ChevronRight,
 } from "lucide-react-native";
 import {
   SafeAreaView,
@@ -44,9 +46,7 @@ import { Job } from "@/mocks/jobs";
 import { useJobs } from "@/contexts/JobsContext";
 import { useRouter } from "expo-router";
 import { useTheme } from "@/contexts/ThemeContext";
-import ThemeSelector from "@/components/ThemeSelector";
 import { supabase } from "@/lib/supabase";
-import { SeasonalIcon } from "@/lib/seasonalIcons";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
 import { searchMatch } from "@/lib/searchUtils";
@@ -64,6 +64,14 @@ import {
   fetchActiveSeasonalCollections,
   type SeasonalCollection,
 } from "@/lib/seasonalCollections";
+import { SeasonalCarousel } from "@/components/SeasonalCarousel";
+import ListingGridCard from "@/components/ListingGridCard";
+import {
+  buildHomeFeed,
+  savedInterestScorer,
+  HOME_FEED_RECOMMENDATION_COPY,
+  type HomeFeedKind,
+} from "@/lib/homeFeed";
 
 const CURRENT_VERSION = "1.0.0";
 const BRAND_PURPLE = "#6E0AB0";
@@ -390,19 +398,101 @@ function JobCard({
     </View>
   );
 }
+function HomeFeedRail({
+  mode,
+  title,
+  subtitle,
+  items,
+  viewportWidth,
+  colors,
+  savedJobIds,
+  onToggleSave,
+}: {
+  mode: HomeFeedKind;
+  title: string;
+  subtitle?: string;
+  items: NormalizedJob[];
+  viewportWidth: number;
+  colors: any;
+  savedJobIds: string[];
+  onToggleSave: (id: string) => void | Promise<void>;
+}) {
+  const router = useRouter();
+  const cardWidth = Math.max(122, Math.min(184, Math.round((viewportWidth - 54) / 2.2)));
+
+  if (!items.length) return null;
+
+  return (
+    <View style={styles.feedSection}>
+      <View style={styles.feedHeader}>
+        <View style={styles.feedHeading}>
+          <Text style={[styles.feedTitle, { color: colors.text }]}>{title}</Text>
+          {subtitle ? <Text style={[styles.feedSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{subtitle}</Text> : null}
+        </View>
+        <TouchableOpacity
+          style={styles.feedSeeAllButton}
+          onPress={() => router.push({ pathname: "/listings", params: { mode } } as any)}
+          activeOpacity={0.72}
+          accessibilityRole="button"
+          accessibilityLabel={`${title} бүгдийг харах`}
+        >
+          <Text style={[styles.feedSeeAllText, { color: colors.text }]}>Бүгдийг харах</Text>
+          <ChevronRight size={17} color={colors.text} strokeWidth={2.5} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.feedRailViewport}>
+        <ScrollView
+          horizontal
+          nestedScrollEnabled
+          directionalLockEnabled
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.feedRailContent}
+        >
+          {items.map((job) => (
+            <View key={String(job.id)} style={[styles.feedRailCard, { width: cardWidth }]}>
+              <ListingGridCard
+                job={job}
+                imageSwipeEnabled={false}
+                isSaved={savedJobIds.includes(String(job.id))}
+                onToggleSave={onToggleSave}
+              />
+            </View>
+          ))}
+          <TouchableOpacity
+            style={[styles.feedRailCard, { width: cardWidth, minHeight: 190, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: colors.card }]}
+            onPress={() => router.push({ pathname: "/listings", params: { mode } } as any)}
+            accessibilityRole="button"
+            accessibilityLabel={title + " бүгдийг харах"}
+          >
+            <ChevronRight size={30} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontWeight: "700", marginTop: 8 }}>Бүгдийг харах</Text>
+          </TouchableOpacity>
+        </ScrollView>
+        {items.length > 2 ? (
+          <View pointerEvents="none" style={[styles.feedRailAffordance, { backgroundColor: colors.background }]}>
+            <ChevronRight size={18} color={colors.primary} strokeWidth={2.8} />
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
 export default function HomeScreen() {
+  const { user } = useAuth();
+  const announcementStoragePrefix = "announcement-dismissed:" + (user?.id ?? "guest") + ":";
   const { jobs, loadJobs, isLoading, searchJobs, clearSearch, savedJobIds, toggleSaveJob } = useJobs() as any;
   const router = useRouter();
   const { colors, currentTheme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
 
-  const [selectedFilter, setSelectedFilter] = useState<FilterType>("all");
+  const [selectedFilter] = useState<FilterType>("all");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState<string[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
-  const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
   const [dbCategories, setDbCategories] = useState<DbCategoryRow[]>(() => getCategoryCatalogImmediately().categories);
@@ -427,8 +517,28 @@ export default function HomeScreen() {
   const [safeIsLoading, setSafeIsLoading] = useState(true);
 
   const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [announcement, setAnnouncement] = useState<{ title: string; message: string; image_url?: string | null; start_at?: string | null; end_at?: string | null } | null>(null);
+  const [announcement, setAnnouncement] = useState<{ id: string; title: string; message: string; image_url?: string | null; start_at?: string | null; end_at?: string | null } | null>(null);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  const [dontShowAnnouncementAgain, setDontShowAnnouncementAgain] = useState(false);
+  const [savingAnnouncementDismissal, setSavingAnnouncementDismissal] = useState(false);
+  const [announcementSaveError, setAnnouncementSaveError] = useState(false);
+  const closeAnnouncement = async () => {
+    if (savingAnnouncementDismissal) return;
+    if (dontShowAnnouncementAgain && announcement?.id) {
+      setSavingAnnouncementDismissal(true);
+      try {
+        await AsyncStorage.setItem(announcementStoragePrefix + announcement.id, "1");
+      } catch {
+        setAnnouncementSaveError(true);
+        return;
+      } finally {
+        setSavingAnnouncementDismissal(false);
+      }
+    }
+    setShowAnnouncementModal(false);
+    setDontShowAnnouncementAgain(false);
+    setAnnouncementSaveError(false);
+  };
   
   useEffect(() => { setSafeIsLoading(isLoading); if (isLoading) { const fallbackTimer = setTimeout(() => { setSafeIsLoading(false); }, 5000); return () => clearTimeout(fallbackTimer); } }, [isLoading]);
   
@@ -475,6 +585,8 @@ export default function HomeScreen() {
         const now = new Date();
         
         // 🎯 ШИНЭ ЛОГИК: Одоогийн цаг хугацаа заасан интервалд таарч байгаа эсэхийг шүүнэ
+        const dismissalKeys = annData.map(ann => announcementStoragePrefix + ann.id);
+        const dismissed = new Map(dismissalKeys.length ? await AsyncStorage.multiGet(dismissalKeys) : []);
         const activeAnn = annData.find(ann => {
           const start = ann.start_at ? new Date(ann.start_at) : null;
           const end = ann.end_at ? new Date(ann.end_at) : null;
@@ -482,10 +594,12 @@ export default function HomeScreen() {
           const isStarted = !start || start <= now;
           const isNotExpired = !end || end >= now;
           
-          return isStarted && isNotExpired;
+          return isStarted && isNotExpired && dismissed.get(announcementStoragePrefix + ann.id) !== "1";
         });
 
         if (activeAnn) {
+          setDontShowAnnouncementAgain(false);
+          setAnnouncementSaveError(false);
           setAnnouncement(activeAnn);
           setShowAnnouncementModal(true);
         } else {
@@ -496,7 +610,7 @@ export default function HomeScreen() {
     } catch (e) {
       console.log("Error checking app config/announcements:", e);
     }
-  }, []);
+  }, [announcementStoragePrefix]);
 
   const applyCategoryCatalog = useCallback((snapshot: { categories: CatalogCategory[] }) => {
     const nextCategoryNameById = Object.fromEntries(
@@ -618,45 +732,26 @@ export default function HomeScreen() {
         // The Home feed now shows two listings per row. Keep the same visual
         // spacing as the previous single-column feed: 6 rows before the first
         // banner, then 20 full rows between subsequent banners.
-        shouldShowBanner: visibleListingCount >= 12 && (visibleListingCount - 12) % 40 === 0,
+        shouldShowBanner: visibleListingCount >= 12 && visibleListingCount % 12 === 0,
       });
     }
     return rows;
   }, [filteredJobs]);
-  const shouldShowSeasonalCollections = seasonalCollections.length > 0
-    && selectedFilter === "all"
+  const isDefaultHomeFeed = selectedFilter === "all"
     && selectedCategoryIds.length === 0
     && selectedSubcategoryIds.length === 0
     && !searchText.trim();
+  const shouldShowSeasonalCollections = isDefaultHomeFeed && seasonalCollections.length > 0;
 
-  const seasonalUsesPeachSurface = currentTheme === "purple" || currentTheme === "navy";
-  const seasonalSurfaceColor = seasonalUsesPeachSurface ? "#FFE3DD" : "#6E0AB0";
-  const seasonalContentColor = seasonalUsesPeachSurface ? "#6E0AB0" : "#FFE3DD";
-  const seasonalSubtitleColor = seasonalUsesPeachSurface ? "#6B7280" : "#FFF3F0";
-
-  const renderSeasonalCard = (collection: SeasonalCollection, variant: "single" | "scroll" = "scroll") => (
-    <TouchableOpacity
-      key={collection.id}
-      style={[
-        styles.seasonalCard,
-        variant === "single" && styles.seasonalCardSingle,
-        { backgroundColor: seasonalSurfaceColor },
-      ]}
-      activeOpacity={0.84}
-      onPress={() => router.push({ pathname: "/seasonal-collection", params: { id: collection.id } } as any)}
-    >
-      <View style={[styles.seasonalIcon, variant === "single" && styles.seasonalIconSingle, { backgroundColor: "#FFFFFF" }]}>
-        <SeasonalIcon iconKey={collection.iconKey} size={variant === "single" ? 24 : 20} color={seasonalContentColor} />
-      </View>
-      <View style={variant === "single" ? styles.seasonalContentSingle : undefined}>
-        <Text style={[styles.seasonalTitle, { color: seasonalContentColor }]} numberOfLines={variant === "single" ? 1 : 2}>{collection.title}</Text>
-        <Text style={[styles.seasonalSubtitle, { color: seasonalSubtitleColor }]} numberOfLines={variant === "single" ? 1 : 2}>
-          {collection.subtitle || "Энэ сарын онцлох сонголтууд"}
-        </Text>
-        <Text style={[styles.seasonalOpenText, { color: seasonalContentColor }]}>Заруудыг харах →</Text>
-      </View>
-    </TouchableOpacity>
-  );  const toggleOpen = (id: string) => { setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] })); };
+  const homeFeeds = useMemo(() => buildHomeFeed(filteredJobs, {
+    limit: 8,
+    dedupeAcrossSections: false,
+    isSponsored: (job) => getHomeListingTier(job) === 2,
+    getCreatedAt: (job) => job.postedDate,
+    getUpdatedAt: (job) => job.postedDate,
+    getPersonalScore: savedInterestScorer(normalizedJobs, savedJobIds),
+  }), [filteredJobs, normalizedJobs, savedJobIds]);
+  const toggleOpen = (id: string) => { setOpenCategoryIds((prev) => ({ ...prev, [id]: !prev[id] })); };
   const toggleMain = (catId: string) => { setSelectedCategoryIds((prev) => { const on = prev.includes(catId); const next = on ? prev.filter((x) => x !== catId) : [...prev, catId]; if (on) { const subs = (subByCategoryId[catId] ?? []).map((s) => s.id); setSelectedSubcategoryIds((current) => current.filter((id) => !subs.includes(id))); } return next; }); };
   const toggleSub = (catId: string, subId: string) => { setSelectedCategoryIds((prev) => prev.includes(catId) ? prev : [...prev, catId]); setSelectedSubcategoryIds((prev) => { const on = prev.includes(subId); return on ? prev.filter((x) => x !== subId) : [...prev, subId]; }); };
   
@@ -691,10 +786,7 @@ export default function HomeScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
         <View style={styles.header}>
-          <Text style={[styles.greeting, { color: colors.headerText }]}>Сайн байна уу!</Text>
-          <View style={styles.headerRight}>
-            <Image source={getLogoSource(currentTheme)} style={styles.logo} contentFit="contain" />
-          </View>
+          <Image source={getLogoSource(currentTheme)} style={styles.logo} contentFit="contain" />
         </View>
 
         <View style={styles.searchRow}>
@@ -720,29 +812,7 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-        {shouldShowSeasonalCollections && (
-          <View style={styles.seasonalSection}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Танд яг одоо хэрэгтэй</Text>
-            </View>
-            {seasonalCollections.length === 1 ? (
-              <View style={styles.seasonalSingleContent}>
-                {renderSeasonalCard(seasonalCollections[0], "single")}
-              </View>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seasonalScrollContent}>
-                {seasonalCollections.map((collection) => renderSeasonalCard(collection))}
-              </ScrollView>
-            )}
-          </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Шинэ зарууд</Text>
-          <TouchableOpacity onPress={async () => { setSelectedFilter("all"); setSelectedCategoryIds([]); setSelectedSubcategoryIds([]); await clearTopSearch(); }} activeOpacity={0.75}><Text style={[styles.seeAll, { color: colors.text }]}>Бүгдийг харах</Text></TouchableOpacity>
-        </View>
-
-        {safeIsLoading && !refreshing && (
+        {safeIsLoading && !refreshing ? (
           <View>
             <View style={styles.listingGridRow}>
               <SkeletonCard compact />
@@ -757,15 +827,78 @@ export default function HomeScreen() {
               <SkeletonCard compact />
             </View>
           </View>
-        )}
+        ) : isDefaultHomeFeed ? (
+          filteredJobs.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>Одоогоор зар алга</Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary, marginBottom: 20 }]}>Шинэ зарууд нэмэгдэхэд энд харагдана. Та дараа дахин зочлоорой.</Text>
+              <TouchableOpacity
+                style={[styles.retryButton, { backgroundColor: colors.primary }]}
+                onPress={handleRetryLoad}
+                activeOpacity={0.8}
+              >
+                <RefreshCw size={18} color={colors.buttonText} />
+                <Text style={[styles.retryButtonText, { color: colors.buttonText }]}>Дахин ачааллах</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {shouldShowSeasonalCollections ? (
+                <SeasonalCarousel
+                  collections={seasonalCollections.map((collection) => ({
+                    id: String(collection.id),
+                    title: collection.title,
+                    description: collection.subtitle,
+                    icon: collection.iconKey,
+                    coverImageUrl: (collection as any).coverImageUrl
+                      ?? (collection as any).cover_image_url
+                      ?? (collection as any).image_url
+                      ?? null,
+                  }))}
+                  onPressCollection={(collection) => router.push({ pathname: "/seasonal-collection", params: { id: collection.id } } as any)}
+                />
+              ) : null}
+              {homeFeeds.sponsored.items.length > 0 ? (
+                <HomeFeedRail
+                  mode="sponsored"
+                  title="Sponsored зарууд"
+                  items={homeFeeds.sponsored.items}
+                  viewportWidth={width}
+                  colors={colors}
+                  savedJobIds={savedJobIds}
+                  onToggleSave={toggleSaveJob}
+                />
+              ) : null}
+              {homeFeeds.sponsored.items.length > 0 ? (
+              <HomeFeedRail
+                mode="recommended"
+                title="Танд санал болгох"
+                subtitle={HOME_FEED_RECOMMENDATION_COPY[homeFeeds.recommended.recommendationMode ?? "recent"]}
+                items={homeFeeds.recommended.items}
+                viewportWidth={width}
+                colors={colors}
+                savedJobIds={savedJobIds}
+                onToggleSave={toggleSaveJob}
+              />
+              ) : null}
+              <HomeFeedRail
+                mode="newest"
+                title="Шинэ зарууд"
+                items={homeFeeds.newest.items}
+                viewportWidth={width}
+                colors={colors}
+                savedJobIds={savedJobIds}
+                onToggleSave={toggleSaveJob}
+              />
 
-        {!safeIsLoading && filteredJobs.length === 0 ? (
+            </>
+          )
+        ) : filteredJobs.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>Зар олдсонгүй</Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary, marginBottom: 20 }]}>Интернет холболтоо шалгах эсвэл шүүлтүүрээ өөрчлөөд дахин үзээрэй.</Text>
-            
-            <TouchableOpacity 
-              style={[styles.retryButton, { backgroundColor: colors.primary }]} 
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: colors.primary }]}
               onPress={handleRetryLoad}
               activeOpacity={0.8}
             >
@@ -797,8 +930,6 @@ export default function HomeScreen() {
         <View style={styles.bottomPadding} />
       </ScrollView>
 
-      <TouchableOpacity style={[styles.floatingButton, { backgroundColor: colors.primary }]} onPress={() => setShowThemeSelector(true)} activeOpacity={0.8}><Palette size={24} color={colors.buttonText} /></TouchableOpacity>
-      <ThemeSelector visible={showThemeSelector} onClose={() => setShowThemeSelector(false)} />
 
       {/* МОДАЛ 1: Хүчээр Шинэчлэлт хийлгэх (Force Update) */}
       <Modal visible={showUpdateModal} animationType="fade" transparent={true}>
@@ -820,13 +951,13 @@ export default function HomeScreen() {
       </Modal>
 
       {/* МОДАЛ 2: Баярын постер / Чухал мэдэгдэл */}
-      <Modal visible={showAnnouncementModal} animationType="slide" transparent={true} onRequestClose={() => setShowAnnouncementModal(false)}>
+      <Modal visible={showAnnouncementModal} animationType="slide" transparent={true} onRequestClose={closeAnnouncement}>
         <View style={styles.versionOverlay}>
           {/* 🎯 ЗАССАН: Модал картын өндрийг утасны дэлгэцийн 80%-иас хэтрэхгүй уян хатан (Dynamic) болгов */}
           <View style={[styles.annContent, { backgroundColor: colors.card, maxHeight: height * 0.8 }]}>
             <View style={styles.annHeader}>
               <Text style={[styles.annTitle, { color: colors.text }]} numberOfLines={1}>{announcement?.title}</Text>
-              <TouchableOpacity onPress={() => setShowAnnouncementModal(false)} style={{ padding: 4 }}>
+              <TouchableOpacity onPress={closeAnnouncement} style={{ padding: 4 }}>
                 <X size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
@@ -847,9 +978,22 @@ export default function HomeScreen() {
               </Text>
             </ScrollView>
             
+            <TouchableOpacity
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: dontShowAnnouncementAgain, disabled: savingAnnouncementDismissal }}
+              disabled={savingAnnouncementDismissal}
+              onPress={() => { setDontShowAnnouncementAgain(value => !value); setAnnouncementSaveError(false); }}
+              style={{ flexDirection: "row", alignItems: "center", minHeight: 44, gap: 10 }}
+            >
+              <View style={{ width: 22, height: 22, borderWidth: 2, borderRadius: 4, borderColor: colors.primary, backgroundColor: dontShowAnnouncementAgain ? colors.primary : "transparent", alignItems: "center", justifyContent: "center" }}>
+                {dontShowAnnouncementAgain ? <Text style={{ color: colors.buttonText }}>✓</Text> : null}
+              </View>
+              <Text style={{ color: colors.text, flex: 1 }}>Дахин бүү харуул</Text>
+            </TouchableOpacity>
+            {announcementSaveError ? <Text accessibilityRole="alert" style={{ color: colors.textSecondary }}>Сонголтыг хадгалж чадсангүй. Дахин оролдоно уу.</Text> : null}
             <TouchableOpacity 
               style={[styles.versionBtn, { backgroundColor: colors.primary, marginTop: 8 }]} 
-              onPress={() => setShowAnnouncementModal(false)}
+              onPress={closeAnnouncement}
             >
               <Text style={{ color: colors.buttonText, fontWeight: "700", fontSize: 15 }}>Баярлалаа</Text>
             </TouchableOpacity>
@@ -926,31 +1070,26 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { paddingBottom: 16, zIndex: 10, elevation: 10 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  greeting: { fontSize: 18, fontWeight: "600" },
-  logo: { width: 140, height: 60 },
+  safeArea: { paddingBottom: 12, zIndex: 10, elevation: 10 },
+  header: { height: 42, alignItems: "center", justifyContent: "center", paddingTop: 0, paddingBottom: 2 },
+  logo: { width: 120, height: 36 },
   searchRow: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, gap: 10, marginBottom: 12 },
   searchContainer: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255, 255, 255, 0.92)", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, gap: 10 },
   searchInput: { flex: 1, fontSize: 16, padding: 0 },
   categoryIconBtn: { width: 48, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   content: { flex: 1 },
   contentContainer: { paddingTop: 16 },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: "700" },
-  seasonalSection: { marginBottom: 18 },
-  seasonalScrollContent: { paddingHorizontal: 20, gap: 12, paddingRight: 32 },
-  seasonalSingleContent: { paddingHorizontal: 20 },
-  seasonalCard: { width: 244, minHeight: 128, borderRadius: 16, padding: 15, justifyContent: "flex-end" },
-  seasonalCardSingle: { width: "100%", minHeight: 108, flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 12 },
-  seasonalIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", marginBottom: 9 },
-  seasonalIconSingle: { width: 46, height: 46, borderRadius: 23, marginBottom: 0 },
-  seasonalContentSingle: { flex: 1 },
-  seasonalTitle: { fontSize: 17, fontWeight: "800" },
-  seasonalSubtitle: { fontSize: 13, lineHeight: 18, marginTop: 4 },
-  seasonalOpenText: { fontSize: 13, fontWeight: "800", marginTop: 7 },
-  seeAll: { fontSize: 14, fontWeight: "600" },
+  feedSection: { marginBottom: 28 },
+  feedHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingHorizontal: 20, marginBottom: 12 },
+  feedHeading: { flex: 1, paddingRight: 8 },
+  feedTitle: { fontSize: 22, lineHeight: 27, fontWeight: "800", letterSpacing: -0.25 },
+  feedSubtitle: { fontSize: 12, lineHeight: 17, marginTop: 3 },
+  feedSeeAllButton: { flexDirection: "row", alignItems: "center", paddingTop: 4, marginLeft: 8 },
+  feedSeeAllText: { fontSize: 13, fontWeight: "700" },
+  feedRailViewport: { position: "relative" },
+  feedRailContent: { paddingHorizontal: 20, gap: 12, paddingRight: 20 },
+  feedRailCard: { flexShrink: 0 },
+  feedRailAffordance: { position: "absolute", right: 9, top: "43%", width: 31, height: 31, borderRadius: 16, alignItems: "center", justifyContent: "center", opacity: 0.94, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2 },
   listingGridRow: { flexDirection: "row", alignItems: "stretch", gap: 12, paddingHorizontal: 20, marginBottom: 12 },
   gridJobCard: { flex: 1, minWidth: 0, borderRadius: 16, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   gridSpacer: { flex: 1 },
@@ -996,7 +1135,6 @@ const styles = StyleSheet.create({
   categoryList: { marginBottom: 8 },
   categoryItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, backgroundColor: "#F9F9F9" },
   categoryItemText: { fontSize: 15 },
-  floatingButton: { position: "absolute", right: 20, bottom: 90, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8 },
   selectedCategoryContainer: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
   selectedCategoryBadge: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, gap: 8 },
   selectedCategoryText: { fontSize: 14, fontWeight: "700" },

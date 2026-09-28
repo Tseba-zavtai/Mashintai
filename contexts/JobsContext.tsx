@@ -14,6 +14,7 @@ import {
 import { searchMatch } from "@/lib/searchUtils";
 import { loadDefaultContactPhone } from "@/lib/contactPhones";
 import { BUMP_PRIORITY_DECAY_PER_HOUR, BUMP_PRIORITY_MAX_SCORE } from "@/constants/monetization";
+import { isRentalRequestActionable } from "@/lib/rentalRequestExpiry";
 
 const STORAGE_KEY = "@jobs_storage";
 const USER_LOCATION_KEY = "@user_location";
@@ -27,9 +28,21 @@ export type RentalRequest = {
   id: string; job_id: string; requester_id: string; owner_id: string;
   requester_name?: string | null; requester_phone?: string | null; requester_photo?: string | null;
   quantity: number; rent_days?: number; total_price?: number; status: RentalRequestStatus;
-  message?: string | null; insurance_status?: string | null; insurance_payer_id?: string | null; insurance_payer_role?: "requester" | "owner" | null; insurance_premium?: number | null; insurance_rate_percent?: number | null; insurance_paid_at?: string | null; created_at?: string; updated_at?: string; jobs?: any;
+  message?: string | null; insurance_status?: string | null; insurance_payer_id?: string | null; insurance_payer_role?: "requester" | "owner" | null; insurance_premium?: number | null; insurance_rate_percent?: number | null; insurance_paid_at?: string; expires_at?: string | null; expired_at?: string | null; created_at?: string; updated_at?: string; jobs?: any;
 };
 
+function getActionableOwnerRequestIds(requests: RentalRequest[], ownerId: string): string[] {
+  return Array.from(new Set(
+    requests
+      .filter((request) => (
+        request.owner_id === ownerId
+        && isRentalRequestActionable(request)
+        && typeof request.id === "string"
+        && request.id.length > 0
+      ))
+      .map((request) => request.id),
+  ));
+}
 function asPositiveInt(value: any, fallback = 1): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -364,6 +377,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
   const [rentalRequestsError, setRentalRequestsError] = useState<string | null>(null);
+  const [unreadRentalRequestNotificationCount, setUnreadRentalRequestNotificationCount] = useState(0);
   
   // Хадгалсан заруудын ID-г барьж байх State
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
@@ -535,6 +549,64 @@ export const [JobsContext, useJobs] = createContextHook(() => {
   const searchJobs = useCallback(async (text: string) => { await loadJobs(text); }, [loadJobs]);
   const clearSearch = useCallback(async () => { await loadJobs(); }, [loadJobs]);
 
+  const syncUnreadRentalRequestNotificationCount = useCallback(async (
+    requests: RentalRequest[],
+    ownerId: string,
+  ) => {
+    try {
+      const requestIds = getActionableOwnerRequestIds(requests, ownerId);
+      if (!requestIds.length) {
+        if (mountedRef.current) setUnreadRentalRequestNotificationCount(0);
+        return 0;
+      }
+
+      const { count, error } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", ownerId)
+        .eq("type", "rental_request")
+        .eq("is_read", false)
+        .in("reference_id", requestIds);
+
+      if (error) throw error;
+      const nextCount = count ?? 0;
+      if (mountedRef.current) setUnreadRentalRequestNotificationCount(nextCount);
+      return nextCount;
+    } catch (error) {
+      console.log("LOAD UNREAD RENTAL REQUEST NOTIFICATIONS ERROR:", error);
+      return 0;
+    }
+  }, []);
+
+  const markRentalRequestNotificationsRead = useCallback(async (requests: RentalRequest[]) => {
+    try {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      const ownerId = data.session?.user?.id;
+      if (sessionError || !ownerId) {
+        if (mountedRef.current) setUnreadRentalRequestNotificationCount(0);
+        return;
+      }
+
+      const requestIds = getActionableOwnerRequestIds(requests, ownerId);
+      if (!requestIds.length) {
+        if (mountedRef.current) setUnreadRentalRequestNotificationCount(0);
+        return;
+      }
+
+      const { error } = await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("user_id", ownerId)
+        .eq("type", "rental_request")
+        .eq("is_read", false)
+        .in("reference_id", requestIds);
+      if (error) throw error;
+
+      await syncUnreadRentalRequestNotificationCount(requests, ownerId);
+    } catch (error) {
+      console.log("MARK RENTAL REQUEST NOTIFICATIONS READ ERROR:", error);
+    }
+  }, [syncUnreadRentalRequestNotificationCount]);
   const loadRentalRequests = useCallback(async () => {
     try {
       const { data, error: sessionError } = await supabase.auth.getSession();
@@ -542,11 +614,18 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         if (mountedRef.current) {
           setRentalRequests([]);
           setRentalRequestsError(null);
+          setUnreadRentalRequestNotificationCount(0);
         }
         return [];
       }
       const uid = data.session.user.id;
-      const selectWithJob = "id,job_id,requester_id,owner_id,requester_name,requester_phone,requester_photo,quantity,rent_days,total_price,status,message,insurance_status,insurance_payer_id,insurance_payer_role,insurance_premium,insurance_rate_percent,insurance_paid_at,deposit_amount,agreement_snapshot,owner_agreed_at,requester_agreed_at,agreement_completed_at,created_at,updated_at,jobs(id,title,description,category,subcategory,posted_by_name,posted_by_phone,image_url,image_urls)";
+      const { error: expireError } = await supabase.rpc("expire_stale_rental_requests");
+      // The UI also calculates expiry locally, so an older database without this
+      // migration remains usable while a release is being rolled out.
+      if (expireError) console.log("EXPIRE STALE RENTAL REQUESTS ERROR:", expireError);
+
+      const selectWithJob = "id,job_id,requester_id,owner_id,requester_name,requester_phone,requester_photo,quantity,rent_days,total_price,status,message,insurance_status,insurance_payer_id,insurance_payer_role,insurance_premium,insurance_rate_percent,insurance_paid_at,deposit_amount,agreement_snapshot,owner_agreed_at,requester_agreed_at,agreement_completed_at,expires_at,expired_at,created_at,updated_at,jobs(id,title,description,category,subcategory,posted_by_name,posted_by_phone,image_url,image_urls,is_active)";
+      const legacySelectWithJob = "id,job_id,requester_id,owner_id,requester_name,requester_phone,requester_photo,quantity,rent_days,total_price,status,message,insurance_status,insurance_payer_id,insurance_payer_role,insurance_premium,insurance_rate_percent,insurance_paid_at,deposit_amount,agreement_snapshot,owner_agreed_at,requester_agreed_at,agreement_completed_at,created_at,updated_at,jobs(id,title,description,category,subcategory,posted_by_name,posted_by_phone,image_url,image_urls)";
 
       let rows: any[] = [];
       const withJoin = await supabase
@@ -556,22 +635,34 @@ export const [JobsContext, useJobs] = createContextHook(() => {
         .order("created_at", { ascending: false });
 
       if (withJoin.error) {
-        const fallback = await supabase
+        const legacyWithJoin = await supabase
           .from("rental_requests")
-          .select("*")
+          .select(legacySelectWithJob)
           .or(`owner_id.eq.${uid},requester_id.eq.${uid}`)
           .order("created_at", { ascending: false });
-        if (fallback.error) throw fallback.error;
-        rows = Array.isArray(fallback.data) ? fallback.data : [];
+
+        if (!legacyWithJoin.error) {
+          rows = Array.isArray(legacyWithJoin.data) ? legacyWithJoin.data : [];
+        } else {
+          const fallback = await supabase
+            .from("rental_requests")
+            .select("*")
+            .or(`owner_id.eq.${uid},requester_id.eq.${uid}`)
+            .order("created_at", { ascending: false });
+          if (fallback.error) throw fallback.error;
+          rows = Array.isArray(fallback.data) ? fallback.data : [];
+        }
       } else {
         rows = Array.isArray(withJoin.data) ? withJoin.data : [];
       }
 
+      const requestRows = rows as RentalRequest[];
       if (mountedRef.current) {
-        setRentalRequests(rows as RentalRequest[]);
+        setRentalRequests(requestRows);
         setRentalRequestsError(null);
       }
-      return rows as RentalRequest[];
+      await syncUnreadRentalRequestNotificationCount(requestRows, uid);
+      return requestRows;
     } catch (error) {
       console.log("LOAD RENTAL REQUESTS ERROR:", error);
       if (mountedRef.current) {
@@ -579,7 +670,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       }
       return [];
     }
-  }, []);
+  }, [syncUnreadRentalRequestNotificationCount]);
 
   const createRentalRequest = useCallback(async (jobId: string, quantity = 1, rentDays = 1, message?: string) => {
       const session = await requireSession();
@@ -590,6 +681,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
 
       const job = jobs.find((item: any) => String(item.id) === String(jobId)) as any;
       if (!job) throw new Error("Зар олдсонгүй");
+      if (job.is_active === false) throw new Error("Энэ зар идэвхгүй болсон тул түрээслэх хүсэлт илгээх боломжгүй");
 
       const ownerId = job?.postedBy?.id ?? job?.posted_by_id ?? job?.owner_id ?? null;
       if (!ownerId) throw new Error("Зарын эзний мэдээлэл олдсонгүй");
@@ -807,9 +899,37 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       } catch (error) { throw error; }
     }, [jobs, loadJobs, loadRentalRequests]);
 
+  useEffect(() => {
+    let channel: any = null;
+    let disposed = false;
+
+    const subscribeToRentalRequestNotifications = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      const userId = data.session?.user?.id;
+      if (disposed || error || !userId) {
+        if (!disposed && mountedRef.current) setUnreadRentalRequestNotificationCount(0);
+        return;
+      }
+
+      channel = supabase
+        .channel(`rental-request-notifications:${userId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+          () => { void loadRentalRequests(); },
+        )
+        .subscribe();
+    };
+
+    void subscribeToRentalRequestNotifications();
+    return () => {
+      disposed = true;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [loadRentalRequests]);
   return {
     jobs, addJob, sponsorJob, updateJobCategory, deleteJob, toggleJobActive, bumpJob, submitRentalReview,
-    rentalRequests, rentalRequestsError, loadRentalRequests, createRentalRequest, approveRentalRequest, rejectRentalRequest,
+    rentalRequests, rentalRequestsError, unreadRentalRequestNotificationCount, loadRentalRequests, markRentalRequestNotificationsRead, createRentalRequest, approveRentalRequest, rejectRentalRequest,
     isLoading, userLocation, saveUserLocation, loadJobs, searchJobs, clearSearch,
     savedJobIds, toggleSaveJob,
   };

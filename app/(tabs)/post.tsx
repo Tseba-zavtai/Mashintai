@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -11,14 +12,13 @@ import {
   View,
   Image,
   ActivityIndicator,
-  InteractionManager,
   Modal,
   Pressable,
   FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useJobs } from "@/contexts/JobsContext";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import * as Location from "expo-location";
 import { File } from "expo-file-system";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -48,6 +48,9 @@ type PickedImage = { uri: string; name: string; mimeType: string; };
 
 type LocalSubcategory = { id: string; name: string; icon?: string | null; };
 type LocalCategory = { id: string; name: string; icon?: string | null; form_schema?: any[]; subcategories: LocalSubcategory[]; };
+type CategoryPickerOption =
+  | { kind: "category"; category: LocalCategory }
+  | { kind: "subcategory"; category: LocalCategory; subcategory: LocalSubcategory };
 type PriceType = "hourly" | "daily" | "monthly";
 type RentalDuration = "hourly" | "daily" | "monthly" | "long_term";
 
@@ -157,6 +160,7 @@ export default function PostScreen() {
   const formScrollRef = useRef<ScrollView>(null);
   const lastFormScrollOffsetRef = useRef(0);
   const selectionScrollOffsetRef = useRef(0);
+  const shouldResetFormScrollOnFocusRef = useRef(false);
 
   const postCredits = (user as any)?.available_post_credits ?? 0;
 
@@ -212,12 +216,35 @@ export default function PostScreen() {
   }, [user?.id]);
 
 
+  const scrollFormToTop = useCallback(() => {
+    lastFormScrollOffsetRef.current = 0;
+    selectionScrollOffsetRef.current = 0;
+
+    // The tab stays mounted after a successful post. Run this after the next
+    // layout as well so reopening "Нэмэх" never preserves the old bottom offset.
+    requestAnimationFrame(() => {
+      formScrollRef.current?.scrollTo({ y: 0, animated: false });
+      requestAnimationFrame(() => formScrollRef.current?.scrollTo({ y: 0, animated: false }));
+    });
+  }, []);
+
   const resetForm = useCallback(() => {
     setDescription(""); setQuantity("1"); setPrice(""); setPriceType("daily"); setFuelType(null); setRentalDuration(null);
     setCategoryId(null); setSubcategoryId(null); setSelectedCategoryLabel(null); setSelectedSubcategoryLabel(null); setDynamicData({});
     setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false); setSubcategoryModalVisible(false);
-    setSelectedLocation(null); setPickedImages([]); setSubmitting(false); setPickingImages(false);
-  }, []);
+    setSelectedLocation(null); setPickedImages([]); setSubmitting(false); setPickingImages(false); setContactPhoneModalVisible(false); setContinuePostAfterPhone(false);
+    shouldResetFormScrollOnFocusRef.current = true;
+    Keyboard.dismiss();
+    scrollFormToTop();
+  }, [scrollFormToTop]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!shouldResetFormScrollOnFocusRef.current) return;
+      shouldResetFormScrollOnFocusRef.current = false;
+      scrollFormToTop();
+    }, [scrollFormToTop]),
+  );
 
   useEffect(() => {
     (async () => {
@@ -263,9 +290,21 @@ export default function PostScreen() {
 
   const selectedSubcategoryName = selectedSubcategoryObj?.name ?? selectedSubcategoryLabel ?? null;
 
-  const visibleCategories = useMemo(() => {
-    if (!categorySearch.trim()) return dbCategories;
-    return dbCategories.filter((item) => searchMatch(item.name, categorySearch));
+  const categoryPickerOptions = useMemo<CategoryPickerOption[]>(() => {
+    const query = categorySearch.trim();
+    if (!query) {
+      return dbCategories.map((category) => ({ kind: "category", category }));
+    }
+
+    return dbCategories.flatMap((category): CategoryPickerOption[] => {
+      if (searchMatch(category.name, query)) {
+        return [{ kind: "category", category }];
+      }
+
+      return category.subcategories
+        .filter((subcategory) => searchMatch(subcategory.name, query))
+        .map((subcategory) => ({ kind: "subcategory", category, subcategory }));
+    });
   }, [categorySearch, dbCategories]);
 
   const visibleSubcategories = useMemo(() => {
@@ -283,12 +322,21 @@ export default function PostScreen() {
   }, []);
 
   const restoreFormScrollPosition = useCallback(() => {
-    const offset = selectionScrollOffsetRef.current;
-    InteractionManager.runAfterInteractions(() => {
-      requestAnimationFrame(() => {
-        formScrollRef.current?.scrollTo({ y: offset, animated: false });
-      });
+    const offset = Math.max(0, selectionScrollOffsetRef.current);
+    const restore = () => {
+      lastFormScrollOffsetRef.current = offset;
+      formScrollRef.current?.scrollTo({ y: offset, animated: false });
+    };
+
+    Keyboard.dismiss();
+    // Closing a picker and updating the category changes the form height in the
+    // same frame. Restore immediately and once more after the iOS keyboard
+    // animation so the form cannot snap back to its top.
+    requestAnimationFrame(() => {
+      restore();
+      requestAnimationFrame(restore);
     });
+    setTimeout(restore, Platform.OS === "ios" ? 275 : 75);
   }, []);
 
   const handlePickImages = useCallback(async () => {
@@ -357,6 +405,14 @@ export default function PostScreen() {
     restoreFormScrollPosition();
   }, [restoreFormScrollPosition]);
 
+  const handleSelectCategoryAndSubcategory = useCallback((cat: LocalCategory, sub: LocalSubcategory) => {
+    setCategoryId(cat.id); setSelectedCategoryLabel(cat.name);
+    setSubcategoryId(sub.id); setSelectedSubcategoryLabel(sub.name);
+    setDynamicData({}); setFuelType(null); setRentalDuration(null);
+    setCategorySearch(""); setSubcategorySearch(""); setCategoryModalVisible(false);
+    restoreFormScrollPosition();
+  }, [restoreFormScrollPosition]);
+
   const handleSelectSubcategory = useCallback((sub: LocalSubcategory) => {
     setSubcategoryId((prev) => {
       const shouldClear = prev === sub.id;
@@ -364,6 +420,14 @@ export default function PostScreen() {
       return shouldClear ? null : sub.id;
     });
     setSubcategorySearch(""); setSubcategoryModalVisible(false);
+    restoreFormScrollPosition();
+  }, [restoreFormScrollPosition]);
+
+  const handleSkipSubcategory = useCallback(() => {
+    setSubcategoryId(null);
+    setSelectedSubcategoryLabel(null);
+    setSubcategorySearch("");
+    setSubcategoryModalVisible(false);
     restoreFormScrollPosition();
   }, [restoreFormScrollPosition]);
 
@@ -439,7 +503,7 @@ export default function PostScreen() {
       } catch (profileError) {
         console.log("PROFILE REFRESH ERROR:", profileError);
       }
-      Alert.alert("Амжилттай!", "Таны зар амжилттай нэмэгдлээ", [{ text: "OK", onPress: () => { resetForm(); router.replace("/(tabs)"); } }]);
+      Alert.alert("Амжилттай!", "Таны зар амжилттай нэмэгдлээ", [{ text: "OK", onPress: () => { resetForm(); router.replace("/"); } }]);
     } catch (error: any) {
       if (creditConsumed && !jobCreated) {
         try {
@@ -476,6 +540,7 @@ export default function PostScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.contentContainer}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           nestedScrollEnabled
           scrollEventThrottle={16}
           onScroll={(event) => { lastFormScrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
@@ -556,7 +621,7 @@ export default function PostScreen() {
 
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: colors.text }]}>Категори *</Text>
-            <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedCategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { rememberFormScrollPosition(); setCategorySearch(""); setCategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || loadingCategories}>
+            <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedCategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { rememberFormScrollPosition(); Keyboard.dismiss(); setCategorySearch(""); setCategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || loadingCategories}>
               <View style={styles.selectButtonTextWrap}>
                 <Text style={[styles.selectButtonTitle, { color: selectedCategoryName ? colors.text : colors.textSecondary }]} numberOfLines={1}>
                   {loadingCategories ? "Уншиж байна..." : (selectedCategoryName ? `${selectedCategoryObj?.icon || ''} ${selectedCategoryName}` : "Категори сонгох")}
@@ -568,7 +633,7 @@ export default function PostScreen() {
             {selectedCategoryObj ? (
               <View style={styles.subcategoryWrap}>
                 <Text style={[styles.label, { color: colors.text }]}>Дэд категори</Text>
-                <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedSubcategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { rememberFormScrollPosition(); setSubcategorySearch(""); setSubcategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || (selectedCategoryObj.subcategories?.length ?? 0) === 0}>
+                <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: selectedSubcategoryObj ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { rememberFormScrollPosition(); Keyboard.dismiss(); setSubcategorySearch(""); setSubcategoryModalVisible(true); }} android_ripple={{ color: colors.border }} disabled={submitting || (selectedCategoryObj.subcategories?.length ?? 0) === 0}>
                   <View style={styles.selectButtonTextWrap}>
                     <Text style={[styles.selectButtonTitle, { color: selectedSubcategoryName ? colors.text : colors.textSecondary }]} numberOfLines={1}>
                       {selectedSubcategoryName ? `${selectedSubcategoryObj?.icon || ''} ${selectedSubcategoryName}` : "Дэд категори сонгох / алгасах"}
@@ -667,48 +732,60 @@ export default function PostScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <Modal visible={categoryModalVisible} animationType="slide" transparent onRequestClose={() => setCategoryModalVisible(false)}>
+      <Modal visible={categoryModalVisible} animationType="slide" transparent statusBarTranslucent onShow={() => Keyboard.dismiss()} onRequestClose={() => { Keyboard.dismiss(); setCategoryModalVisible(false); }}>
         <View style={styles.modalOverlay}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setCategoryModalVisible(false)} />
-          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Категори сонгох</Text><Pressable onPress={() => setCategoryModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
-            <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Категори хайх..." placeholderTextColor={colors.textSecondary} value={categorySearch} onChangeText={setCategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
-            <FlatList data={visibleCategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох категори олдсонгүй</Text>} renderItem={({ item }) => {
-                const selected = categoryId === item.id;
-                return (
-                  <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectCategory(item)} android_ripple={{ color: colors.border }}>
-                    <Text style={[styles.modalOptionText, { color: selected ? colors.buttonText : colors.text }]}>
-                      {item.icon ? `${item.icon} ` : ''}{item.name}
-                    </Text>
-                    {selected ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}
-                  </Pressable>
-                );
-              }} />
-          </View>
+          <Pressable style={styles.modalBackdrop} onPress={() => { Keyboard.dismiss(); setCategoryModalVisible(false); }} />
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap} pointerEvents="box-none">
+            <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Категори сонгох</Text><Pressable onPress={() => { Keyboard.dismiss(); setCategoryModalVisible(false); }} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
+              <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Категори / дэд хайх..." placeholderTextColor={colors.textSecondary} value={categorySearch} onChangeText={setCategorySearch} editable={!submitting} autoCorrect={false} autoCapitalize="none" returnKeyType="search" />
+              <FlatList style={styles.modalList} data={categoryPickerOptions} keyExtractor={(item) => item.kind === "category" ? item.category.id : `${item.category.id}-${item.subcategory.id}`} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох категори эсвэл дэд категори олдсонгүй</Text>} renderItem={({ item }) => {
+                  const selected = item.kind === "category"
+                    ? categoryId === item.category.id && !subcategoryId
+                    : categoryId === item.category.id && subcategoryId === item.subcategory.id;
+                  const icon = item.kind === "subcategory" ? (item.subcategory.icon || item.category.icon) : item.category.icon;
+                  const title = item.kind === "subcategory" ? item.subcategory.name : item.category.name;
+                  const hint = item.kind === "subcategory" ? `${item.category.name} дотор` : "Үндсэн категори";
+                  return (
+                    <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => item.kind === "category" ? handleSelectCategory(item.category) : handleSelectCategoryAndSubcategory(item.category, item.subcategory)} android_ripple={{ color: colors.border }}>
+                      <View style={styles.modalOptionTextWrap}>
+                        <Text style={[styles.modalOptionText, { color: selected ? colors.buttonText : colors.text }]}>
+                          {icon ? `${icon} ` : ''}{title}
+                        </Text>
+                        <Text style={[styles.modalOptionHint, { color: selected ? colors.buttonText : colors.textSecondary }]}>{hint}</Text>
+                      </View>
+                      {selected ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}
+                    </Pressable>
+                  );
+                }} />
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
-      <Modal visible={subcategoryModalVisible} animationType="slide" transparent onRequestClose={() => setSubcategoryModalVisible(false)}>
+      <Modal visible={subcategoryModalVisible} animationType="slide" transparent statusBarTranslucent onShow={() => Keyboard.dismiss()} onRequestClose={() => { Keyboard.dismiss(); setSubcategoryModalVisible(false); }}>
         <View style={styles.modalOverlay}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setSubcategoryModalVisible(false)} />
-          <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Дэд категори сонгох</Text><Pressable onPress={() => setSubcategoryModalVisible(false)} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
-            <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Дэд категори хайх..." placeholderTextColor={colors.textSecondary} value={subcategorySearch} onChangeText={setSubcategorySearch} editable={!submitting} autoCorrect={false} returnKeyType="search" />
-            <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => { setSubcategoryId(null); setSelectedSubcategoryLabel(null); setSubcategorySearch(""); setSubcategoryModalVisible(false); }} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? colors.buttonText : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}</Pressable>
-            <FlatList data={visibleSubcategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох дэд категори олдсонгүй</Text>} renderItem={({ item }) => {
-                const selected = subcategoryId === item.id;
-                return (
-                  <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectSubcategory(item)} android_ripple={{ color: colors.border }}>
-                    <Text style={[styles.modalOptionText, { color: selected ? colors.buttonText : colors.text }]}>
-                      {item.icon ? `${item.icon} ` : ''}{item.name}
-                    </Text>
-                    {selected ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}
-                  </Pressable>
-                );
-              }} />
-          </View>
+          <Pressable style={styles.modalBackdrop} onPress={() => { Keyboard.dismiss(); setSubcategoryModalVisible(false); }} />
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap} pointerEvents="box-none">
+            <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.text }]}>Дэд категори сонгох</Text><Pressable onPress={() => { Keyboard.dismiss(); setSubcategoryModalVisible(false); }} hitSlop={12}><Text style={[styles.modalCloseText, { color: colors.text }]}>✕</Text></Pressable></View>
+              <TextInput style={[styles.searchInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]} placeholder="Дэд категори хайх..." placeholderTextColor={colors.textSecondary} value={subcategorySearch} onChangeText={setSubcategorySearch} editable={!submitting} autoCorrect={false} autoCapitalize="none" returnKeyType="search" />
+              <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: !subcategoryId ? colors.primary : colors.card, borderColor: !subcategoryId ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={handleSkipSubcategory} android_ripple={{ color: colors.border }}><Text style={[styles.modalOptionText, { color: !subcategoryId ? colors.buttonText : colors.text }]}>Дэд категори сонгохгүй</Text>{!subcategoryId ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}</Pressable>
+              <FlatList style={styles.modalList} data={visibleSubcategories} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalListContent} ListEmptyComponent={<Text style={[styles.emptyResultText, { color: colors.textSecondary }]}>Тохирох дэд категори олдсонгүй</Text>} renderItem={({ item }) => {
+                  const selected = subcategoryId === item.id;
+                  return (
+                    <Pressable style={({ pressed }) => [styles.modalOption, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={() => handleSelectSubcategory(item)} android_ripple={{ color: colors.border }}>
+                      <Text style={[styles.modalOptionText, { color: selected ? colors.buttonText : colors.text }]}>
+                        {item.icon ? `${item.icon} ` : ''}{item.name}
+                      </Text>
+                      {selected ? (<Text style={[styles.modalSelectedMark, { color: colors.buttonText }]}>✓</Text>) : null}
+                    </Pressable>
+                  );
+                }} />
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -783,14 +860,18 @@ const styles = StyleSheet.create({
   clearSelectionText: { fontSize: 13, fontWeight: "600" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", justifyContent: "flex-end" },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
+  modalKeyboardWrap: { flex: 1, justifyContent: "flex-end" },
   modalSheet: { maxHeight: "82%", borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 10, paddingHorizontal: 20, paddingBottom: 24 },
   modalHandle: { width: 42, height: 4, borderRadius: 999, backgroundColor: "rgba(150,150,150,0.55)", alignSelf: "center", marginBottom: 12 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   modalTitle: { fontSize: 17, fontWeight: "800" },
   modalCloseText: { fontSize: 20, fontWeight: "700" },
   modalListContent: { paddingBottom: 12, gap: 8 },
+  modalList: { flexGrow: 0, flexShrink: 1 },
   modalOption: { minHeight: 52, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  modalOptionText: { flex: 1, fontSize: 14, fontWeight: "700", paddingRight: 10 },
+  modalOptionTextWrap: { flex: 1, paddingRight: 10 },
+  modalOptionText: { fontSize: 14, fontWeight: "700" },
+  modalOptionHint: { marginTop: 3, fontSize: 12 },
   modalSelectedMark: { color: "#111", fontSize: 16, fontWeight: "900" },
   searchInput: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, borderWidth: 1, marginBottom: 12 },
   helperText: { fontSize: 12, marginBottom: 12 },

@@ -8,6 +8,7 @@ import {
   Pressable,
   StyleSheet,
   Dimensions,
+  LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
 } from "react-native";
@@ -37,7 +38,6 @@ type Props = {
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const H_PADDING = 16;
-const CARD_W = SCREEN_W - H_PADDING * 2;
 const VIDEO_FILE_PATTERN = /\.(mp4|m4v|mov|webm)(?:$|[?#])/i;
 
 function mediaUrlForBanner(banner: Banner) {
@@ -83,6 +83,7 @@ export default function BannerCarousel({
 }: Props) {
   const listRef = useRef<FlatList<Banner>>(null);
   const [index, setIndex] = useState(0);
+  const [carouselWidth, setCarouselWidth] = useState(SCREEN_W);
   const viewedBannerIdsRef = useRef<Set<string>>(new Set());
   const wrapRef = useRef<View>(null);
   const [isInViewport, setIsInViewport] = useState(false);
@@ -94,6 +95,17 @@ export default function BannerCarousel({
       setIsInViewport(y < SCREEN_H && y + measuredHeight > 0);
     });
   }, []);
+
+  const handleWrapLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextWidth = Math.round(event.nativeEvent.layout.width);
+    if (nextWidth > 0 && nextWidth !== carouselWidth) {
+      setCarouselWidth(nextWidth);
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: index * nextWidth, animated: false });
+      });
+    }
+    checkViewport();
+  }, [carouselWidth, checkViewport, index]);
 
   useEffect(() => {
     checkViewport();
@@ -116,8 +128,8 @@ export default function BannerCarousel({
 
   const computedHeight = useMemo(() => {
     if (typeof height === "number" && height > 0) return Math.round(height);
-    return Math.round(CARD_W / (aspectRatio || 2));
-  }, [height, aspectRatio]);
+    return Math.round(Math.max(1, carouselWidth - H_PADDING * 2) / (aspectRatio || 2));
+  }, [height, aspectRatio, carouselWidth]);
 
   useEffect(() => {
     setIndex(0);
@@ -135,7 +147,7 @@ export default function BannerCarousel({
       setIndex((prev) => {
         const next = (prev + 1) % data.length;
         listRef.current?.scrollToOffset({
-          offset: next * SCREEN_W,
+          offset: next * carouselWidth,
           animated: true,
         });
         return next;
@@ -143,12 +155,12 @@ export default function BannerCarousel({
     }, autoSlideMs);
 
     return () => clearInterval(t);
-  }, [data.length, autoSlideMs]);
+  }, [data.length, autoSlideMs, carouselWidth]);
 
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
-    const i = Math.round(x / SCREEN_W);
-    if (!Number.isNaN(i)) setIndex(i);
+    const i = Math.round(x / carouselWidth);
+    if (!Number.isNaN(i)) setIndex(Math.max(0, Math.min(i, data.length - 1)));
   };
 
   const onPressBanner = useCallback(async (banner: Banner) => {
@@ -167,7 +179,7 @@ export default function BannerCarousel({
   if (data.length === 0) return null;
 
   return (
-    <View ref={wrapRef} onLayout={checkViewport} style={[styles.wrap, { height: computedHeight }]}>
+    <View ref={wrapRef} onLayout={handleWrapLayout} style={[styles.wrap, { height: computedHeight }]}>
       <FlatList
         ref={listRef}
         data={data}
@@ -181,13 +193,13 @@ export default function BannerCarousel({
         initialNumToRender={data.length}
         windowSize={3}
         getItemLayout={(_, i) => ({
-          length: SCREEN_W,
-          offset: SCREEN_W * i,
+          length: carouselWidth,
+          offset: carouselWidth * i,
           index: i,
         })}
         renderItem={({ item, index: itemIndex }) => (
           <Pressable
-            style={[styles.slide, { width: SCREEN_W, height: computedHeight }]}
+            style={[styles.slide, { width: carouselWidth, height: computedHeight }]}
             onPress={() => onPressBanner(item)}
           >
             <View

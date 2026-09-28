@@ -904,7 +904,10 @@ const styles = StyleSheet.create({
     height: 32,
   },
   backButton: {
-    padding: 4,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: {
     fontSize: 18,
@@ -1092,8 +1095,8 @@ const styles = StyleSheet.create({
   },
   searchHeader: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
+    paddingTop: 4,
+    paddingBottom: 6,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,

@@ -24,8 +24,8 @@ export default function AppHeader({ title, showBack = true, rightAccessory }: He
         
         <View style={styles.leftSection}>
           {showBack && (
-            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backButton}>
-              <ChevronLeft size={28} color={colors.headerText} />
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backButton} accessibilityLabel="Буцах">
+              <ChevronLeft size={24} color={colors.headerText} />
             </TouchableOpacity>
           )}
           
@@ -63,12 +63,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    height: 56,
+    height: 44,
   },
   leftSection: { flexDirection: "row", alignItems: "center", flex: 1 },
   rightSection: { flexDirection: "row", alignItems: "center" },
-  rightAccessory: { marginLeft: 8 },
-  backButton: { paddingRight: 8, paddingVertical: 4 },
-  title: { fontSize: 16, fontWeight: "800" },
-  logo: { width: 80, height: 28 }
+  rightAccessory: { marginLeft: 4 },
+  backButton: { width: 44, height: 44, justifyContent: "center", alignItems: "flex-start" },
+  title: { fontSize: 15, fontWeight: "800" },
+  logo: { width: 72, height: 24 }
 });

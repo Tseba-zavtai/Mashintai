@@ -7,19 +7,17 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useJobs } from "@/contexts/JobsContext";
 
+
 export default function TabLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isAuthenticated, isLoading, user, isAdminUnlocked } = useAuth();
-  const { rentalRequests } = useJobs();
+  const { unreadRentalRequestNotificationCount } = useJobs();
 
-  // 🎯 ЗАСВАР: Зөвхөн тухайн хэрэглэгч өөрөө барааны эзэн (owner_id) бөгөөд 
-  // хүлээгдэж байгаа (pending) хүсэлтүүдийг л улаан тоонд тоолно. 
-  // Илгээгч хэрэглэгчид улаан тоо асаж гацахгүй.
-  const pendingCount = rentalRequests?.filter((req: any) => 
-    req.status === "pending" && req.owner_id === user?.id
-  ).length || 0;
+  // Badge нь шийдвэр хүлээж буй хүсэлтийн тоо биш, уншаагүй мэдэгдлийн тоо.
+  // Хүсэлтийн дэлгэц рүү орж/refresh хиймэгц тухайн үед харагдаж буй мэдэгдлүүд уншигдана.
+  const unreadCount = unreadRentalRequestNotificationCount ?? 0;
 
   const goToAuth = () => router.replace("/auth");
 
@@ -71,7 +69,7 @@ export default function TabLayout() {
         options={{
           title: "Мэдэгдэл",
           tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
-          tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
+          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
           tabBarBadgeStyle: { backgroundColor: "#FF3B30", color: "#FFFFFF", fontSize: 10 },
         }}
         listeners={{
