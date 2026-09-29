@@ -65,6 +65,8 @@ import {
   type SeasonalCollection,
 } from "@/lib/seasonalCollections";
 import { SeasonalCarousel } from "@/components/SeasonalCarousel";
+import HomeHintsCarousel from "@/components/HomeHintsCarousel";
+import HomeReviews from "@/components/HomeReviews";
 import ListingGridCard from "@/components/ListingGridCard";
 import {
   buildHomeFeed,
@@ -869,7 +871,7 @@ export default function HomeScreen() {
                   onToggleSave={toggleSaveJob}
                 />
               ) : null}
-              {homeFeeds.sponsored.items.length > 0 ? (
+              {homeFeeds.recommended.items.length > 0 ? (
               <HomeFeedRail
                 mode="recommended"
                 title="Танд санал болгох"
@@ -927,6 +929,15 @@ export default function HomeScreen() {
             </React.Fragment>
           ))
         )}
+        {isDefaultHomeFeed && !safeIsLoading ? (
+          <>
+            <HomeHintsCarousel />
+            {homeBanners.length > 0 ? (
+              <View style={styles.homeBannerWrap}><BannerCarousel banners={homeBanners} /></View>
+            ) : null}
+            <HomeReviews refreshing={refreshing} />
+          </>
+        ) : null}
         <View style={styles.bottomPadding} />
       </ScrollView>
 
@@ -1082,10 +1093,10 @@ const styles = StyleSheet.create({
   feedSection: { marginBottom: 28 },
   feedHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingHorizontal: 20, marginBottom: 12 },
   feedHeading: { flex: 1, paddingRight: 8 },
-  feedTitle: { fontSize: 22, lineHeight: 27, fontWeight: "800", letterSpacing: -0.25 },
+  feedTitle: { fontSize: 18, lineHeight: 24, fontWeight: "600", letterSpacing: -0.2 },
   feedSubtitle: { fontSize: 12, lineHeight: 17, marginTop: 3 },
   feedSeeAllButton: { flexDirection: "row", alignItems: "center", paddingTop: 4, marginLeft: 8 },
-  feedSeeAllText: { fontSize: 13, fontWeight: "700" },
+  feedSeeAllText: { fontSize: 12, fontWeight: "500" },
   feedRailViewport: { position: "relative" },
   feedRailContent: { paddingHorizontal: 20, gap: 12, paddingRight: 20 },
   feedRailCard: { flexShrink: 0 },

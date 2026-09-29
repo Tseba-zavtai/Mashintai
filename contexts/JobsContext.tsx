@@ -12,6 +12,7 @@ import {
   safeUpdateJob,
 } from "@/lib/supabaseSafe";
 import { searchMatch } from "@/lib/searchUtils";
+import { loadSearchDemand, recordSearchDemand } from "@/lib/searchDemand";
 import { loadDefaultContactPhone } from "@/lib/contactPhones";
 import { BUMP_PRIORITY_DECAY_PER_HOUR, BUMP_PRIORITY_MAX_SCORE } from "@/constants/monetization";
 import { isRentalRequestActionable } from "@/lib/rentalRequestExpiry";
@@ -494,6 +495,14 @@ export const [JobsContext, useJobs] = createContextHook(() => {
       // are refreshed in the background so a slow secondary query does not keep the
       // home screen stuck on a loader.
       const initialSorted = mapAndSort(rows);
+      // Only a settled, still-current search counts, not each typed character.
+      if (qRaw.length >= 2 && initialSorted.length) {
+        setTimeout(() => {
+          if (mountedRef.current && requestIdRef.current === myReqId) {
+            void recordSearchDemand(initialSorted.map(job => String(job.id))).catch(() => {});
+          }
+        }, 1500);
+      }
       if (!hasQuery && initialSorted.length === 0 && cachedJobs.length > 0) {
         setJobs(sortJobs(cachedJobs));
       } else {
@@ -502,13 +511,14 @@ export const [JobsContext, useJobs] = createContextHook(() => {
 
       void (async () => {
         try {
-          const [hydratedRows, reviewStats, danStatuses] = await Promise.all([
+          const [hydratedRows, reviewStats, danStatuses, searchDemand] = await Promise.all([
             hydrateJobDetails(rows),
             loadRentalReviewStats(
               rows.map((row: any) => row?.id).filter(isNonEmptyString),
               rows.map((row: any) => row?.posted_by_id).filter(isNonEmptyString),
             ),
             loadDanVerificationStatuses(rows),
+            loadSearchDemand(),
           ]);
           if (!mountedRef.current || requestIdRef.current !== myReqId) return;
 
@@ -516,6 +526,7 @@ export const [JobsContext, useJobs] = createContextHook(() => {
             const ownerId = row?.posted_by_id ?? row?.postedBy?.id ?? null;
             return {
               ...row,
+              search_count: searchDemand.get(String(row.id)) ?? 0,
               posted_by_is_dan_verified: ownerId
                 ? (danStatuses.get(String(ownerId)) ?? Boolean(row?.posted_by_is_dan_verified))
                 : false,

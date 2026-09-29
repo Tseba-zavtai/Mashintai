@@ -50,7 +50,7 @@ export interface HomeFeedOptions<T> {
   /**
    * Return a positive score only when the user has meaningful history for the
    * listing. With no personal signals, the helper automatically falls back to
-   * popular, then recent listings.
+   * popular listings. With no signals the recommendation section stays empty.
    */
   getPersonalScore?: (item: T) => number | null | undefined;
   getPopularityScore?: (item: T) => number | null | undefined;
@@ -124,11 +124,12 @@ const defaultUpdatedAt = <T,>(item: T): string | Date | number | null | undefine
     : null;
 };
 
-const defaultPopularityScore = <T,>(item: T): number => {
+export const defaultPopularityScore = <T,>(item: T): number => {
   const record = asRecord(item);
   // These weights are intentionally conservative. They provide a sensible
   // cold-start fallback until product analytics supplies a tailored score.
   return (
+    asNumber(record.search_count ?? record.searchCount) * 4 +
     asNumber(record.view_count ?? record.viewCount ?? record.views) +
     asNumber(record.favorite_count ?? record.favoriteCount ?? record.favorites) * 3 +
     asNumber(record.request_count ?? record.requestCount ?? record.rental_count ?? record.rentalCount) * 5
@@ -172,10 +173,8 @@ const remember = <T,>(items: T[], seen: Set<string>, getId: (item: T) => string 
  * Sponsored -> Recommended -> Newest.
  *
  * When the account has no meaningful personal behavior yet, `recommended`
- * is never blank merely because personalization is unavailable: it switches
- * to popular listings, and then to recently posted listings if all popularity
- * scores are zero. The UI can inspect `recommendationMode` to explain that
- * honestly (for example, “Одоогоор эрэлттэй”).
+ * switches to popular listings. With no real signals it stays empty;
+ * sponsorship and recency alone never qualify a recommendation.
  */
 export const buildHomeFeed = <T,>(items: readonly T[], options: HomeFeedOptions<T> = {}): HomeFeedResult<T> => {
   const limit = Math.max(1, options.limit ?? 8);
@@ -206,16 +205,15 @@ export const buildHomeFeed = <T,>(items: readonly T[], options: HomeFeedOptions<
   const sponsoredItems = sponsoredPool.slice(0, sponsoredLimit);
   if (dedupeAcrossSections) remember(sponsoredItems, seen, getId);
 
-  const recommendationCandidates = dedupeAcrossSections ? omitSeen(candidates, seen, getId) : [...candidates];
+  const recommendationCandidates = (dedupeAcrossSections ? omitSeen(candidates, seen, getId) : [...candidates])
+    .filter((item) => personal(item) > 0 || popularity(item) > 0);
   const hasPersonalSignals = recommendationCandidates.some((item) => personal(item) > 0);
   const hasPopularitySignals = recommendationCandidates.some((item) => popularity(item) > 0);
   const recommendationMode: RecommendationMode = hasPersonalSignals
     ? 'personalized'
     : hasPopularitySignals
       ? 'popular'
-      : recommendationCandidates.length > 0
-        ? 'recent'
-        : 'empty';
+      : 'empty';
   const recommendationSorter = hasPersonalSignals
     ? (source: T[]) => sortByScoreThenRecent(source, (item) => personal(item) * 1000 + popularity(item), recent)
     : hasPopularitySignals

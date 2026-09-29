@@ -1,6 +1,5 @@
 import { SeasonalIcon } from '@/lib/seasonalIcons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '@/contexts/ThemeContext';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
@@ -34,12 +33,10 @@ export type SeasonalCarouselItem = {
 type SeasonalCarouselProps = {
   collections: readonly SeasonalCarouselItem[];
   onPressCollection: (collection: SeasonalCarouselItem) => void;
-  title?: string;
   testID?: string;
 };
 
 const HORIZONTAL_PADDING = 20;
-const CARD_GAP = 12;
 
 function getCoverUri(collection: SeasonalCarouselItem): string | undefined {
   const candidate =
@@ -59,20 +56,18 @@ function getCoverUri(collection: SeasonalCarouselItem): string | undefined {
 export function SeasonalCarousel({
   collections,
   onPressCollection,
-  title = 'Танд яг одоо хэрэгтэй',
   testID,
 }: SeasonalCarouselProps) {
-  const { colors } = useTheme();
   const { width: viewportWidth } = useWindowDimensions();
   const listRef = useRef<FlatList<SeasonalCarouselItem>>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  // Leave a visible slice of the next campaign card as an interaction cue.
+  // One full card per page, with pagination overlaid inside the card.
   const cardWidth = useMemo(
-    () => Math.max(180, Math.min(Math.round(viewportWidth * 0.68), 272)),
+    () => Math.max(1, viewportWidth - HORIZONTAL_PADDING * 2),
     [viewportWidth],
   );
-  const snapInterval = cardWidth + CARD_GAP;
+  const snapInterval = cardWidth;
 
   const updateActiveIndex = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -96,12 +91,13 @@ export function SeasonalCarousel({
 
   return (
     <View style={styles.section} testID={testID}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-
       <FlatList
+        key={cardWidth}
         ref={listRef}
         horizontal
+        pagingEnabled
         data={collections as SeasonalCarouselItem[]}
+        initialScrollIndex={Math.min(activeIndex, collections.length - 1)}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <SeasonalCard
@@ -111,7 +107,8 @@ export function SeasonalCarousel({
           />
         )}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.carouselContent}
+        style={styles.carouselContent}
+        getItemLayout={(_, index) => ({ length: cardWidth, offset: cardWidth * index, index })}
         snapToInterval={snapInterval}
         snapToAlignment="start"
         decelerationRate="fast"
@@ -120,7 +117,7 @@ export function SeasonalCarousel({
       />
 
       {collections.length > 1 ? (
-        <View accessibilityRole="tablist" style={styles.pagination}>
+        <View pointerEvents="box-none" accessibilityRole="tablist" style={styles.pagination}>
           {collections.map((collection, index) => {
             const selected = index === activeIndex;
 
@@ -161,12 +158,6 @@ function SeasonalCard({
       <LinearGradient pointerEvents="none" colors={["transparent", "rgba(28,4,55,0.94)"]} style={StyleSheet.absoluteFillObject} />
 
       <View style={styles.copy}>
-        <View style={styles.kickerRow}>
-          <View style={styles.kickerDot} />
-          <Text numberOfLines={1} style={styles.kicker}>
-            УЛИРЛЫН СОНГОЛТ
-          </Text>
-        </View>
         <Text numberOfLines={2} style={styles.cardTitle}>
           {collection.title}
         </Text>
@@ -175,12 +166,6 @@ function SeasonalCard({
             {collection.description}
           </Text>
         ) : null}
-        <View style={styles.ctaRow}>
-          <Text style={styles.cta}>{collection.ctaLabel || 'Заруудыг харах'}</Text>
-          <Text accessibilityElementsHidden style={styles.ctaArrow}>
-            →
-          </Text>
-        </View>
       </View>
     </>
   );
@@ -221,23 +206,17 @@ function FallbackArtwork({ icon }: { icon?: string | null }) {
 
 const styles = StyleSheet.create({
   section: {
-    marginTop: 26,
-  },
-  sectionTitle: {
-    color: '#15131B',
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.35,
-    marginBottom: 14,
-    marginHorizontal: HORIZONTAL_PADDING,
+    marginTop: 0,
+    marginBottom: 22,
   },
   carouselContent: {
-    paddingHorizontal: HORIZONTAL_PADDING,
+    marginHorizontal: HORIZONTAL_PADDING,
+    borderRadius: 24,
+    overflow: 'hidden',
   },
   card: {
     borderRadius: 24,
     height: 220,
-    marginRight: CARD_GAP,
     overflow: 'hidden',
     backgroundColor: '#7010C6',
     shadowColor: '#2D055B',
@@ -313,7 +292,7 @@ const styles = StyleSheet.create({
   copy: {
     bottom: 0,
     left: 0,
-    paddingBottom: 20,
+    paddingBottom: 42,
     paddingHorizontal: 20,
     paddingTop: 10,
     position: 'absolute',
@@ -371,7 +350,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 13,
+    position: 'absolute',
+    bottom: 8,
+    left: HORIZONTAL_PADDING,
+    right: HORIZONTAL_PADDING,
   },
   dotHitbox: {
     alignItems: 'center',
@@ -384,13 +366,13 @@ const styles = StyleSheet.create({
     width: 30,
   },
   dot: {
-    backgroundColor: '#DDD5E4',
+    backgroundColor: 'rgba(255,255,255,0.45)',
     borderRadius: 4,
     height: 7,
     width: 7,
   },
   dotSelected: {
-    backgroundColor: '#780FC8',
+    backgroundColor: '#FFFFFF',
     width: 22,
   },
 });

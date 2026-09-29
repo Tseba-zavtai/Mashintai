@@ -18,6 +18,7 @@ import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
   buildHomeFeed,
+  defaultPopularityScore,
   savedInterestScorer,
   HOME_FEED_RECOMMENDATION_COPY,
   type HomeFeedKind,
@@ -48,7 +49,7 @@ const MODE_COPY: Record<ListingMode, {
     title: "Танд санал болгох",
     heading: "Танд санал болгох",
     emptyTitle: "Одоогоор санал болгох зар алга",
-    emptyText: "Шинэ зар нэмэгдэхэд таны сонирхолд ойр сонголтууд энд автоматаар гарч ирнэ.",
+    emptyText: "Хадгалалт, эрэлтийн мэдээлэлтэй зарууд бүрдэхэд энд харагдана.",
     Icon: Sparkles,
   },
   newest: {
@@ -100,16 +101,7 @@ function listingTimestamp(job: any): string | Date | number | null {
 }
 
 function popularityScore(job: any): number {
-  const asScore = (value: unknown) => {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : 0;
-  };
-
-  return (
-    asScore(job?.view_count ?? job?.viewCount ?? job?.views) +
-    asScore(job?.favorite_count ?? job?.favoriteCount ?? job?.favorites) * 3 +
-    asScore(job?.request_count ?? job?.requestCount ?? job?.rental_count ?? job?.rentalCount) * 5
-  );
+  return defaultPopularityScore(job);
 }
 
 function createFeedRows(jobs: any[], showBanners: boolean): FeedRow[] {

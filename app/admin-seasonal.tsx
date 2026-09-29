@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Platform,
   SafeAreaView,
@@ -14,6 +15,9 @@ import {
   View,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import { File } from "expo-file-system";
 import { CalendarDays, Check, ChevronLeft, Clock3, Edit3, Eye, EyeOff, Plus, Trash2 } from "lucide-react-native";
 
 import AppHeader from "@/components/AppHeader";
@@ -124,11 +128,51 @@ export default function AdminSeasonalScreen() {
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState("");
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [coverPreviewFailed, setCoverPreviewFailed] = useState(false);
+  useEffect(() => { setCoverPreviewFailed(false); }, [coverImageUrl]);
+
+  const uploadCover = async () => {
+    if (!hasAdminAccess || uploadingCover || saving) return;
+    setUploadingCover(true);
+    try {
+      if (Platform.OS !== "web") {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) throw new Error("Зураг сонгохын тулд галерейн зөвшөөрөл өгнө үү.");
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: false,
+        quality: 1,
+      });
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+      const image = await ImageManipulator.manipulateAsync(asset.uri,
+        asset.width > 1600 ? [{ resize: { width: 1600 } }] : [],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG });
+      const bytes = Platform.OS === "web"
+        ? await (await fetch(image.uri)).arrayBuffer()
+        : await new File(image.uri).arrayBuffer();
+      if (bytes.byteLength > 5 * 1024 * 1024) throw new Error("Зураг 5 MB-аас том байна. Жижиг зураг сонгоно уу.");
+      const path = `seasonal/${Date.now()}-${Math.random().toString(36).slice(2, 12)}.jpg`;
+      const { error } = await supabase.storage.from("seasonal-images").upload(path, bytes, {
+        contentType: "image/jpeg", upsert: false,
+      });
+      if (error) throw error;
+      const { data } = supabase.storage.from("seasonal-images").getPublicUrl(path);
+      setCoverImageUrl(data.publicUrl);
+    } catch (error: any) {
+      Alert.alert("Зураг upload хийж чадсангүй", error?.message || "Дахин оролдоно уу.");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
   const [iconKey, setIconKey] = useState<SeasonalIconKey>("sparkles");
   const [startsAt, setStartsAt] = useState(() => new Date());
   const [endsAt, setEndsAt] = useState(() => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
   const [isVisible, setIsVisible] = useState(true);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState<string[]>([]);
 
   const loadData = useCallback(async () => {
@@ -177,6 +221,7 @@ export default function AdminSeasonalScreen() {
   const selectedRuleCount = selectedCategoryIds.length + selectedSubcategoryIds.length;
 
   const resetEditor = useCallback(() => {
+    setCategoriesExpanded(false);
     setEditingId(null);
     setTitle("");
     setSubtitle("");
@@ -195,6 +240,7 @@ export default function AdminSeasonalScreen() {
   };
 
   const openEditEditor = (collection: SeasonalRow) => {
+    setCategoriesExpanded(false);
     const rules = Array.isArray(collection.seasonal_collection_rules) ? collection.seasonal_collection_rules : [];
     setEditingId(collection.id);
     setTitle(collection.title ?? "");
@@ -238,6 +284,11 @@ export default function AdminSeasonalScreen() {
   };
 
   const saveCollection = async () => {
+    if (!hasAdminAccess || uploadingCover || saving) return;
+    if (coverImageUrl.trim() && !/^https?:\/\/\S+$/i.test(coverImageUrl.trim())) {
+      Alert.alert("Зургийн холбоос буруу", "http:// эсвэл https:// эхлэлтэй бүтэн холбоос оруулна уу.");
+      return;
+    }
     const normalizedTitle = title.trim();
     if (normalizedTitle.length < 2) {
       Alert.alert("Гарчиг дутуу", "Seasonal-ийн гарчгийг оруулна уу.");
@@ -248,6 +299,7 @@ export default function AdminSeasonalScreen() {
       return;
     }
     if (!selectedRuleCount) {
+      setCategoriesExpanded(true);
       Alert.alert("Ангилал сонгоно уу", "Дор хаяж нэг үндсэн category эсвэл subcategory сонгоно уу.");
       return;
     }
@@ -426,10 +478,10 @@ export default function AdminSeasonalScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={editorVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEditorVisible(false)}>
+      <Modal visible={editorVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { if (!uploadingCover && !saving) setEditorVisible(false); }}>
         <SafeAreaView style={[styles.editorScreen, { backgroundColor: colors.background }]}>
           <View style={[styles.editorHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity style={styles.backButton} onPress={() => setEditorVisible(false)}>
+            <TouchableOpacity style={styles.backButton} disabled={uploadingCover || saving} onPress={() => setEditorVisible(false)}>
               <ChevronLeft size={24} color={colors.text} />
               <Text style={[styles.backButtonText, { color: colors.text }]}>Буцах</Text>
             </TouchableOpacity>
@@ -458,8 +510,20 @@ export default function AdminSeasonalScreen() {
               maxLength={200}
             />
             <Text style={[styles.fieldLabel, { color: colors.text }]}>Background зургийн URL (заавал биш)</Text>
+            {coverImageUrl.trim() ? (
+              <View>
+                <Image source={{ uri: coverImageUrl.trim() }} style={{ width: "100%", height: 200, borderRadius: 16 }} resizeMode="cover" onError={() => setCoverPreviewFailed(true)} />
+                {coverPreviewFailed ? <Text style={{ color: colors.textSecondary }}>Зураг нээгдэхгүй байна. Холбоосоо шалгана уу.</Text> : null}
+              </View>
+            ) : null}
+            <TouchableOpacity disabled={uploadingCover || saving} onPress={() => void uploadCover()} style={[styles.dateButton, { backgroundColor: colors.primary, marginVertical: 10 }]}>
+              {uploadingCover ? <ActivityIndicator color={colors.buttonText} /> : <Text style={{ color: colors.buttonText, fontWeight: "700" }}>{coverImageUrl ? "Зураг солих" : "Зураг сонгох"}</Text>}
+            </TouchableOpacity>
+            {coverImageUrl ? <TouchableOpacity disabled={uploadingCover || saving} onPress={() => setCoverImageUrl("")} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Зургийг seasonal-оос арилгах</Text></TouchableOpacity> : null}
+            <Text style={{ color: colors.textSecondary, marginBottom: 8 }}>Зураг сонгох эсвэл доор холбоос тавина. Өөрчлөлтийг хэрэгжүүлэхийн тулд Хадгалах дарна уу.</Text>
             <TextInput
               value={coverImageUrl}
+              editable={!uploadingCover && !saving}
               onChangeText={setCoverImageUrl}
               placeholder="https://…"
               placeholderTextColor={colors.textSecondary}
@@ -506,16 +570,18 @@ export default function AdminSeasonalScreen() {
               <Switch value={isVisible} onValueChange={setIsVisible} trackColor={{ false: colors.border, true: colors.primary }} thumbColor={colors.card} />
             </View>
 
-            <View style={styles.categorySectionHeader}>
-              <View>
+            <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: categoriesExpanded }} onPress={() => setCategoriesExpanded(value => !value)} style={styles.categorySectionHeader}>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Category сонгох</Text>
-                <Text style={[styles.sectionHint, { color: colors.textSecondary }]}>Үндсэн category-г сонговол доторх бүх subcategory автоматаар орно. Зөвхөн subcategory сонговол зөвхөн тэр төрлийн зар гарна.</Text>
+                <Text style={[styles.sectionHint, { color: colors.textSecondary }]}>{selectedRuleCount} сонголт · {categoriesExpanded ? "Хураах ▴" : "Дэлгэх ▾"}</Text>
               </View>
               <View style={[styles.countPill, { backgroundColor: colors.accent }]}>
-                <Text style={[styles.countPillText, { color: colors.buttonText }]}>{selectedRuleCount}</Text>
+                <Text style={[styles.countPillText, { color: colors.primary }]}>{selectedRuleCount}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
 
+            {categoriesExpanded && <View>
+            <Text style={[styles.sectionHint, { color: colors.textSecondary }]}>Үндсэн ангиллыг сонговол бүх дэд ангилал орно. Эсвэл зөвхөн хэрэгтэй дэд ангиллаа сонгоорой.</Text>
             {databaseCategories.length === 0 ? (
               <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Category server-ээс татагдаж байна. Хэсэг хүлээгээд шинэчлэнэ үү.</Text>
@@ -557,7 +623,8 @@ export default function AdminSeasonalScreen() {
               })
             )}
 
-            <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saving ? 0.65 : 1 }]} onPress={() => void saveCollection()} disabled={saving} activeOpacity={0.84}>
+            </View>}
+            <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saving || uploadingCover ? 0.65 : 1 }]} onPress={() => void saveCollection()} disabled={saving || uploadingCover} activeOpacity={0.84}>
               {saving ? <ActivityIndicator color={colors.buttonText} /> : <Text style={[styles.saveButtonText, { color: colors.buttonText }]}>Хадгалах</Text>}
             </TouchableOpacity>
           </ScrollView>
