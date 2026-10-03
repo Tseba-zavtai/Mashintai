@@ -9,6 +9,7 @@ import React, {
 import { getLogoSource } from "@/constants/logo";
 import {
   Modal,
+  AppState,
   ScrollView,
   StyleSheet,
   Text,
@@ -44,7 +45,7 @@ import {
 } from "react-native-safe-area-context";
 import { Job } from "@/mocks/jobs";
 import { useJobs } from "@/contexts/JobsContext";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/lib/supabase";
 import BannerCarousel from "@/components/BannerCarousel";
@@ -557,7 +558,7 @@ export default function HomeScreen() {
       setSeasonalCollections(await fetchActiveSeasonalCollections());
     } catch (error) {
       console.log("SEASONAL COLLECTIONS LOAD ERROR:", error);
-      setSeasonalCollections([]);
+      // Keep the last successful result during a temporary network failure.
     }
   }, []);
   
@@ -681,6 +682,48 @@ export default function HomeScreen() {
 
     } catch {} finally { setRefreshing(false); }
   }, [loadJobs, fetchCategories, searchText, loadHomeBanners, loadSeasonalCollections, checkVersionAndAnnouncements]);
+
+  const resumeRefreshRef = useRef({ loadJobs, loadHomeBanners, loadSeasonalCollections, checkVersionAndAnnouncements, searchText });
+  resumeRefreshRef.current = { loadJobs, loadHomeBanners, loadSeasonalCollections, checkVersionAndAnnouncements, searchText };
+  const resumeRefreshBusy = useRef(false);
+  useFocusEffect(useCallback(() => {
+    let focused = true;
+    let previousState = AppState.currentState;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async (includeAnnouncement: boolean) => {
+      if (!focused || AppState.currentState !== 'active' || resumeRefreshBusy.current) return;
+      resumeRefreshBusy.current = true;
+      try {
+        // getSession refreshes an expired persisted token before data requests.
+        await supabase.auth.getSession();
+        if (!focused || AppState.currentState !== 'active') return;
+        const current = resumeRefreshRef.current;
+        await Promise.allSettled([
+          current.loadJobs(current.searchText.trim() || undefined),
+          current.loadHomeBanners(),
+          current.loadSeasonalCollections(),
+          ...(includeAnnouncement ? [current.checkVersionAndAnnouncements()] : []),
+        ]);
+      } catch (error) {
+        console.warn('Home resume refresh failed', error);
+      } finally { resumeRefreshBusy.current = false; }
+    };
+    // Returning from another tab also restores fresh Home data.
+    void refresh(false);
+    const subscription = AppState.addEventListener('change', state => {
+      const resumed = state === 'active' && previousState !== 'active';
+      previousState = state;
+      if (resumed) {
+        void refresh(true);
+        clearTimeout(retryTimer);
+        // The network may still be reconnecting on the first foreground event.
+        retryTimer = setTimeout(() => { void refresh(false); }, 15000);
+      }
+    });
+    // Recover without restarting if connectivity returns while Home stays open.
+    const timer = setInterval(() => { void refresh(false); }, 60000);
+    return () => { focused = false; subscription.remove(); clearInterval(timer); clearTimeout(retryTimer); };
+  }, []));
   
   const normalizedJobs: NormalizedJob[] = useMemo(() => (jobs as any[]).map(normalizeJob), [jobs]);
   
@@ -814,7 +857,7 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-        {safeIsLoading && !refreshing ? (
+        {safeIsLoading && !refreshing && normalizedJobs.length === 0 ? (
           <View>
             <View style={styles.listingGridRow}>
               <SkeletonCard compact />
@@ -929,7 +972,7 @@ export default function HomeScreen() {
             </React.Fragment>
           ))
         )}
-        {isDefaultHomeFeed && !safeIsLoading ? (
+        {isDefaultHomeFeed && (!safeIsLoading || normalizedJobs.length > 0) ? (
           <>
             <HomeHintsCarousel />
             {homeBanners.length > 0 ? (

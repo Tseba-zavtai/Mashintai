@@ -78,10 +78,10 @@ const styles = StyleSheet.create({
   section: { marginTop: 24 },
   title: { marginHorizontal: 20, marginBottom: 12, fontSize: 18, lineHeight: 24, fontWeight: '600' },
   list: { paddingHorizontal: 20, gap: 12 },
-  card: { padding: 18, borderRadius: 18, borderWidth: 1, minHeight: 150 },
+  card: { padding: 14, borderRadius: 16, borderWidth: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   name: { flex: 1, fontSize: 15, fontWeight: '600' },
   rating: { flexDirection: 'row', gap: 5, alignItems: 'center' },
-  comment: { fontSize: 15, lineHeight: 22, marginVertical: 16 },
+  comment: { fontSize: 14, lineHeight: 20, marginVertical: 10 },
   date: { fontSize: 12, textAlign: 'right', marginTop: 'auto' },
 });
