@@ -11,7 +11,7 @@ export type ContactPhone = {
 
 export function normalizeContactPhone(value: string): string | null {
   const digits = String(value ?? "").replace(/\D/g, "");
-  const local = digits.startsWith("976") ? digits.slice(3) : digits;
+  const local = digits.length === 11 && digits.startsWith("976") ? digits.slice(3) : digits;
   return /^\d{8}$/.test(local) ? `+976${local}` : null;
 }
 
@@ -53,17 +53,7 @@ export async function addContactPhone(userId: string, rawPhone: string, rawLabel
 }
 
 export async function makeDefaultContactPhone(userId: string, phoneId: string): Promise<void> {
-  const { error: clearError } = await supabase
-    .from("user_contact_phones")
-    .update({ is_default: false })
-    .eq("user_id", userId)
-    .eq("is_default", true);
-  if (clearError) throw clearError;
-
-  const { error } = await supabase
-    .from("user_contact_phones")
-    .update({ is_default: true })
-    .eq("id", phoneId)
-    .eq("user_id", userId);
+  if (!userId) throw new Error("Нэвтрээгүй байна.");
+  const { error } = await supabase.rpc("select_default_contact_phone", { p_phone_id: phoneId });
   if (error) throw error;
 }

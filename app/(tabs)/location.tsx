@@ -25,14 +25,7 @@ import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : null;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const Circle = Platform.OS !== "web" ? require("react-native-maps").Circle : null;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const PROVIDER_GOOGLE = Platform.OS !== "web" ? require("react-native-maps").PROVIDER_GOOGLE : null;
+import { MapView, Marker, Circle } from "@/components/AppMap";
 
 type FilterType = "near" | "location" | "list";
 
@@ -276,7 +269,6 @@ export default function LocationScreen() {
             <MapView
               ref={mapRef}
               style={styles.map}
-              provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
               region={region}
               onRegionChangeComplete={(r: any) => setRegion(r)}
               showsUserLocation

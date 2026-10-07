@@ -21,7 +21,7 @@ const normalizePhone = (value: string) => value.replace(/\D/g, "").slice(0, 8);
 export default function DanOnboardingScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { completeDanSignup } = useAuth() as any;
+  const { completeDanSignup, logout } = useAuth() as any;
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -43,6 +43,7 @@ export default function DanOnboardingScreen() {
       return;
     }
 
+    if (saving) return;
     setSaving(true);
     try {
       await completeDanSignup(`+976${phone}`, password);
@@ -65,12 +66,12 @@ export default function DanOnboardingScreen() {
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Бүртгэлээ дуусгана уу</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            DAN-аар танигдлаа. Одоо холбоо барих утас болон Tureesly нууц үгээ нэг удаа тохируулна уу.
+            DAN-аар танигдлаа. Одоо нэвтрэх утас болон Tureesly нууц үгээ нэг удаа тохируулна уу.
           </Text>
 
           <View style={styles.form}>
             <View style={styles.field}>
-              <Text style={[styles.label, { color: colors.text }]}>Үндсэн холбоо барих утас</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Нэвтрэх болон үндсэн холбоо барих утас</Text>
               <View style={[styles.phoneBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <View style={[styles.prefix, { backgroundColor: colors.backgroundSecondary, borderRightColor: colors.border }]}>
                   <Text style={[styles.prefixText, { color: colors.text }]}>+976</Text>
@@ -85,7 +86,7 @@ export default function DanOnboardingScreen() {
                   style={[styles.phoneInput, { color: colors.text }]}
                 />
               </View>
-              <Text style={[styles.hint, { color: colors.textSecondary }]}>Энэ дугаар нийтэд автоматаар харагдахгүй. Зар, түрээсийн хүсэлт дээр сонгох үед л ашиглана.</Text>
+              <Text style={[styles.hint, { color: colors.textSecondary }]}>Дараа нь энэ дугаар, нууц үгээрээ нэвтэрнэ. Дугаар нийтэд автоматаар харагдахгүй.</Text>
             </View>
 
             <View style={styles.field}>
@@ -95,6 +96,8 @@ export default function DanOnboardingScreen() {
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   placeholder="Дор хаяж 6 тэмдэгт"
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
@@ -112,6 +115,8 @@ export default function DanOnboardingScreen() {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   placeholder="Нууц үгээ дахин оруулна уу"
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
@@ -126,6 +131,9 @@ export default function DanOnboardingScreen() {
               <Text style={[styles.submitText, { color: colors.buttonText }]}>{saving ? "Хадгалж байна..." : "Бүртгэлийг дуусгах"}</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity disabled={saving} onPress={() => { void logout().then(() => router.replace("/auth")); }} style={{ padding: 16, alignItems: "center" }}>
+            <Text style={{ color: colors.textSecondary }}>Гарах — бүртгэлээ дараа үргэлжлүүлэх</Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

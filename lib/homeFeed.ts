@@ -46,6 +46,7 @@ export interface HomeFeedOptions<T> {
   isSponsored?: (item: T) => boolean;
   getCreatedAt?: (item: T) => string | Date | number | null | undefined;
   getUpdatedAt?: (item: T) => string | Date | number | null | undefined;
+  getBumpedAt?: (item: T) => string | Date | number | null | undefined;
 
   /**
    * Return a positive score only when the user has meaningful history for the
@@ -188,6 +189,11 @@ export const buildHomeFeed = <T,>(items: readonly T[], options: HomeFeedOptions<
   const isSponsored = options.isSponsored ?? defaultSponsored;
   const getCreatedAt = options.getCreatedAt ?? defaultCreatedAt;
   const getUpdatedAt = options.getUpdatedAt ?? defaultUpdatedAt;
+  const getBumpedAt = options.getBumpedAt ?? ((item: T) => {
+    const row = asRecord(item);
+    const value = row.bumpedAt ?? row.bumped_at;
+    return typeof value === 'string' || typeof value === 'number' || value instanceof Date ? value : null;
+  });
   const getPopularityScore = options.getPopularityScore ?? defaultPopularityScore;
   const getPersonalScore = options.getPersonalScore ?? (() => 0);
 
@@ -223,7 +229,11 @@ export const buildHomeFeed = <T,>(items: readonly T[], options: HomeFeedOptions<
   if (dedupeAcrossSections) remember(recommendedItems, seen, getId);
 
   const newestCandidates = dedupeAcrossSections ? omitSeen(candidates, seen, getId) : [...candidates];
-  const newestItems = sortByRecent(newestCandidates, (item) => asTimestamp(getCreatedAt(item))).slice(0, newestLimit);
+  // A bump is a one-time re-listing timestamp, not a timed pinned position.
+  // Any listing created (or bumped) afterwards naturally appears above it.
+  const newestItems = sortByRecent(newestCandidates, (item) =>
+    Math.max(asTimestamp(getCreatedAt(item)), asTimestamp(getBumpedAt(item))),
+  ).slice(0, newestLimit);
 
   return {
     sponsored: {

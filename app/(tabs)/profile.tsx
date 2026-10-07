@@ -51,6 +51,7 @@ import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН
 import ContactPhonePickerModal from "@/components/ContactPhonePickerModal";
 import { loadDefaultContactPhone } from "@/lib/contactPhones";
+import { isJobOwnedBy } from "@/lib/jobOwnership";
 
 
 const DELETE_USER_URL = "https://wrekrjaitokrqydkwgtg.functions.supabase.co/delete-user";
@@ -84,6 +85,8 @@ export default function ProfileScreen() {
   const [contactPhoneModalVisible, setContactPhoneModalVisible] = useState(false);
   const [defaultContactPhone, setDefaultContactPhone] = useState<string | null>(null);
   const [editedPhone, setEditedPhone] = useState("");
+  const [phoneChangePassword, setPhoneChangePassword] = useState("");
+  const [savingPhone, setSavingPhone] = useState(false);
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [isAdminModalVisible, setIsAdminModalVisible] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
@@ -119,16 +122,15 @@ export default function ProfileScreen() {
       .then((phone) => { if (active) setDefaultContactPhone(phone); })
       .catch(() => { if (active) setDefaultContactPhone(null); });
     return () => { active = false; };
-  }, [user?.id]);
+  }, [user?.id, user?.phone]);
+
+  useEffect(() => {
+    if (!isEditModalVisible) setPhoneChangePassword("");
+  }, [isEditModalVisible]);
 
   const myJobs = useMemo(() => {
     if (!user) return [];
-    return (jobs as any[]).filter((job: any) => {
-      const postedBy = job?.postedBy ?? {};
-      const ownerKey = postedBy.phone || postedBy.id || "";
-      const currentUserKey = user.phone || user.id || "";
-      return String(ownerKey) === String(currentUserKey);
-    });
+    return (jobs as any[]).filter((job: any) => isJobOwnedBy(job, user));
   }, [jobs, user]);
 
   const formatRating = (value: any) => {
@@ -249,15 +251,21 @@ export default function ProfileScreen() {
 
   const handleSaveContact = async () => {
     const phoneDigits = editedPhone.replace(/\D/g, "").slice(0, 8);
-    if (editedPhone.trim() && phoneDigits.length !== 8) {
+    if (phoneDigits.length !== 8) {
       Alert.alert("Алдаа", "Холбоо барих утас 8 оронтой байна.");
       return;
     }
 
-    await updateProfile({
-      phone: phoneDigits ? `+976${phoneDigits}` : "",
-    });
-    setIsEditModalVisible(false);
+    if (savingPhone) return;
+    setSavingPhone(true);
+    try {
+      await updateProfile({ phone: `+976${phoneDigits}`, currentPassword: phoneChangePassword });
+      setPhoneChangePassword("");
+      setIsEditModalVisible(false);
+      Alert.alert("Утас хадгалагдлаа", "Дараа нь энэ дугаар болон одоогийн нууц үгээрээ нэвтэрнэ.");
+    } catch (error: any) {
+      Alert.alert("Утас сольж чадсангүй", error?.message || "Дахин оролдоно уу.");
+    } finally { setSavingPhone(false); }
   };
 
   const handleLinkDanIdentity = async () => {
@@ -414,6 +422,7 @@ export default function ProfileScreen() {
           <View style={styles.profileInfo}>
             <Text style={[styles.profileName, { color: colors.text }]}>{user?.name || "Хэрэглэгч"}</Text>
             <Text style={[styles.profilePhone, { color: colors.textSecondary }]}>{defaultContactPhone || "Холбоо барих дугаар оруулаагүй"}</Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>Нэвтрэх дугаар: {user?.phone}</Text>
             {isDanVerified && (
               <View style={styles.danVerifiedBadge}>
                 <ShieldCheck size={12} color="#087F4F" strokeWidth={2.8} />
@@ -479,6 +488,19 @@ export default function ProfileScreen() {
             <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} activeOpacity={0.7} onPress={() => router.push("/location-picker")}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.backgroundSecondary }]}><MapPin size={20} color={colors.textSecondary} /></View>
               <View style={styles.menuTextContainer}><Text style={[styles.menuText, { color: colors.text }]}>Байршил</Text><Text style={[styles.menuSubText, { color: colors.textSecondary }]}>Өөрийн байршлаа тохируулах</Text></View>
+              <ChevronRight size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} activeOpacity={0.7} onPress={() => {
+              setEditedPhone(String(user?.phone ?? "").replace(/^\+976/, ""));
+              setPhoneChangePassword("");
+              setIsEditModalVisible(true);
+            }}>
+              <View style={[styles.menuIconContainer, { backgroundColor: colors.backgroundSecondary }]}><Edit2 size={20} color={colors.textSecondary} /></View>
+              <View style={styles.menuTextContainer}>
+                <Text style={[styles.menuText, { color: colors.text }]}>Нэвтрэх дугаар солих</Text>
+                <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>{user?.phone} · Нууц үгээр баталгаажуулна</Text>
+              </View>
               <ChevronRight size={20} color={colors.textSecondary} />
             </TouchableOpacity>
 
@@ -605,10 +627,10 @@ export default function ProfileScreen() {
             <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
               <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
                 <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: colors.text }]}>Холбоо барих утас</Text>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>Нэвтрэх дугаар солих</Text>
                   <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><X size={24} color={colors.text} /></TouchableOpacity>
                 </View>
-                <Text style={[styles.editFieldLabel, { color: colors.textSecondary }]}>Холбоо барих утас (сонголтоор)</Text>
+                <Text style={[styles.editFieldLabel, { color: colors.textSecondary }]}>Нэвтрэх болон үндсэн холбоо барих утас</Text>
                 <View style={[styles.phoneEditRow, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
                   <Text style={[styles.phoneEditPrefix, { color: colors.textSecondary, borderRightColor: colors.border }]}>+976</Text>
                   <TextInput
@@ -621,9 +643,10 @@ export default function ProfileScreen() {
                     maxLength={8}
                   />
                 </View>
-                <Text style={[styles.editFieldHint, { color: colors.textSecondary }]}>DAN-аас утасны дугаар татдаггүй. Энэ нь таны оруулсан холбоо барих дугаар байна.</Text>
-                <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary }]} onPress={handleSaveContact} activeOpacity={0.8}>
-                  <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>Хадгалах</Text>
+                <Text style={[styles.editFieldHint, { color: colors.textSecondary }]}>Дугаар соливол дараагийн удаа шинэ дугаараар нэвтэрнэ. Нууц үг өөрчлөгдөхгүй.</Text>
+                <TextInput value={phoneChangePassword} onChangeText={setPhoneChangePassword} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder="Одоогийн нууц үг" placeholderTextColor={colors.textSecondary} style={[styles.phoneEditRow, { color: colors.text, padding: 12, borderColor: colors.border }]} />
+                <TouchableOpacity disabled={savingPhone} style={[styles.saveButton, { backgroundColor: colors.primary }]} onPress={handleSaveContact} activeOpacity={0.8}>
+                  <Text style={[styles.saveButtonText, { color: creditButtonTextColor }]}>{savingPhone ? "Хадгалж байна…" : "Хадгалах"}</Text>
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>

@@ -46,11 +46,19 @@ export default function AuthScreen() {
   const [termsScrolledToEnd, setTermsScrolledToEnd] = useState(false);
   const [termsText, setTermsText] = useState<string>("");
   const [loadingTerms, setLoadingTerms] = useState(false);
+  const [termsReady, setTermsReady] = useState(false);
   const termsScrollRef = useRef<ScrollView | null>(null);
+  const termsHeight = useRef(0);
+  const termsViewport = useRef(0);
+  const checkShortTerms = useCallback(() => {
+    if (termsReady && termsHeight.current > 0 && termsViewport.current >= termsHeight.current) setTermsScrolledToEnd(true);
+  }, [termsReady]);
+  useEffect(() => { checkShortTerms(); }, [checkShortTerms, showTerms]);
 
   const fetchTermsFromDB = useCallback(async () => {
     try {
       setLoadingTerms(true);
+      setTermsReady(false);
       const { data, error } = await supabase
         .from("legal_docs")
         .select("content")
@@ -59,6 +67,7 @@ export default function AuthScreen() {
 
       if (error) throw error;
       setTermsText(data?.content ?? "");
+      setTermsReady(Boolean(data?.content?.trim()));
     } catch (error) {
       console.log("Error fetching terms in auth screen:", error);
       setTermsText("Үйлчилгээний нөхцөл уншихад алдаа гарлаа. Та интернэт холболтоо шалгана уу.");
@@ -190,6 +199,7 @@ export default function AuthScreen() {
   const openTerms = () => {
     setTermsScrolledToEnd(false);
     setShowTerms(true);
+    if (!termsReady) void fetchTermsFromDB();
     setTimeout(() => termsScrollRef.current?.scrollTo({ y: 0, animated: false }), 50);
   };
 
@@ -429,6 +439,8 @@ export default function AuthScreen() {
             ref={termsScrollRef}
             contentContainerStyle={styles.termsBody}
             onScroll={onTermsScroll}
+            onLayout={(event) => { termsViewport.current = event.nativeEvent.layout.height; checkShortTerms(); }}
+            onContentSizeChange={(_width, height) => { termsHeight.current = height; checkShortTerms(); }}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator
           >
@@ -447,14 +459,14 @@ export default function AuthScreen() {
             style={[
               styles.termsAcceptBtn,
               { backgroundColor: colors.primary },
-              (!termsScrolledToEnd || loadingTerms) && styles.termsAcceptDisabled,
+              (!termsScrolledToEnd || loadingTerms || !termsReady) && styles.termsAcceptDisabled,
             ]}
             onPress={() => {
-              if (!termsScrolledToEnd || loadingTerms) return;
+              if (!termsScrolledToEnd || loadingTerms || !termsReady) return;
               setShowTerms(false);
               setTimeout(() => void startDanSignUp(), 0);
             }}
-            disabled={!termsScrolledToEnd || loadingTerms}
+            disabled={!termsScrolledToEnd || loadingTerms || !termsReady}
             activeOpacity={0.85}
           >
             <Text style={[styles.termsAcceptText, { color: colors.buttonText }]}>

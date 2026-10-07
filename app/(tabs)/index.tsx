@@ -51,7 +51,6 @@ import { supabase } from "@/lib/supabase";
 import BannerCarousel from "@/components/BannerCarousel";
 import { fetchBanners } from "@/lib/banners";
 import { searchMatch } from "@/lib/searchUtils";
-import { BUMP_PRIORITY_DURATION_HOURS } from "@/constants/monetization";
 import { recordPromotionMetric } from "@/lib/promotionMetrics";
 import SkeletonCard from "@/components/SkeletonCard";
 import {
@@ -165,14 +164,10 @@ function getJobPostedTimestamp(job: any): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function getHomeListingTier(job: any): 0 | 1 | 2 {
+function getHomeListingTier(job: any): 0 | 2 {
   const now = Date.now();
   const sponsoredUntilTs = job?.sponsoredUntil?.getTime?.() ?? getSponsoredUntilDate(job)?.getTime?.() ?? 0;
   if (Boolean(job?.isSponsored) && sponsoredUntilTs > now) return 2;
-
-  const bumpedTs = job?.bumpedAt?.getTime?.() ?? getBumpedAtDate(job)?.getTime?.() ?? 0;
-  const bumpAgeMs = now - bumpedTs;
-  if (bumpedTs > 0 && bumpAgeMs >= 0 && bumpAgeMs < BUMP_PRIORITY_DURATION_HOURS * 60 * 60 * 1000) return 1;
 
   return 0;
 }
@@ -181,14 +176,8 @@ function compareHomeListings(a: any, b: any): number {
   const tierDiff = getHomeListingTier(b) - getHomeListingTier(a);
   if (tierDiff !== 0) return tierDiff;
 
-  const tier = getHomeListingTier(a);
-  if (tier === 1) {
-    const aBumped = a?.bumpedAt?.getTime?.() ?? getBumpedAtDate(a)?.getTime?.() ?? 0;
-    const bBumped = b?.bumpedAt?.getTime?.() ?? getBumpedAtDate(b)?.getTime?.() ?? 0;
-    if (aBumped !== bBumped) return bBumped - aBumped;
-  }
-
-  return getJobPostedTimestamp(b) - getJobPostedTimestamp(a);
+  const timestamp = (job: any) => Math.max(getJobPostedTimestamp(job), getBumpedAtDate(job)?.getTime() ?? 0);
+  return timestamp(b) - timestamp(a);
 }
 
 function normalizeJob(raw: any): NormalizedJob {

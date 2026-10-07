@@ -1,6 +1,6 @@
 // app/_layout.tsx
 import React, { useEffect } from "react";
-import { router, Stack } from "expo-router";
+import { router, Stack, usePathname } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -90,9 +90,16 @@ function useNotificationObserver() {
   }, []);
 }
 function RootLayoutNav() {
+  const pathname = usePathname();
   const { isAuthenticated, isLoading, user, refetchProfile } = useAuth();
   const { colors, currentTheme } = useTheme();
   useNotificationObserver();
+
+  useEffect(() => {
+    if (!isLoading && user?.danVerifiedAt && !user.danOnboardingCompletedAt && pathname !== "/dan-onboarding") {
+      router.replace("/dan-onboarding" as any);
+    }
+  }, [isLoading, user?.danVerifiedAt, user?.danOnboardingCompletedAt, pathname]);
 
   useEffect(() => {
     if (AppState.currentState === "active") supabase.auth.startAutoRefresh();

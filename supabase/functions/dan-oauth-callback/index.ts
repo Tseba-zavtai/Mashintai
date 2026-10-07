@@ -64,7 +64,15 @@ serve(async (req: Request) => {
     // Бүртгүүлэх болон нэвтрэх нь тусдаа үйлдэл. Өмнө нь DAN account
     // үүсгэсэн иргэн дахин бүртгүүлэхгүй, "DAN-аар нэвтрэх"-ийг ашиглана.
     if (state.mode === "sign_up" && userId) {
-      return redirectToApp({ error: "identity_already_registered" });
+      const { data: profile, error } = await admin.from("users")
+        .select("dan_onboarding_completed_at").eq("id", userId).single();
+      if (error) throw error;
+      if (profile.dan_onboarding_completed_at) {
+        return redirectToApp({ error: "identity_already_registered" });
+      }
+      const { error: consentError } = await admin.from("users")
+        .update({ terms_accepted_at: state.terms_accepted_at }).eq("id", userId);
+      if (consentError) throw consentError;
     }
 
     if (state.mode === "link") {
@@ -118,7 +126,7 @@ serve(async (req: Request) => {
           paid_post_credits: 0,
           terms_accepted_at: state.terms_accepted_at,
         },
-        { onConflict: "id", ignoreDuplicates: true },
+        { onConflict: "id" },
       );
       if (profileError) throw new Error("Unable to create user profile.");
 

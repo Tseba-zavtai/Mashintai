@@ -14,7 +14,6 @@ import {
 import { searchMatch } from "@/lib/searchUtils";
 import { loadSearchDemand, recordSearchDemand } from "@/lib/searchDemand";
 import { loadDefaultContactPhone } from "@/lib/contactPhones";
-import { BUMP_PRIORITY_DECAY_PER_HOUR, BUMP_PRIORITY_MAX_SCORE } from "@/constants/monetization";
 import { isRentalRequestActionable } from "@/lib/rentalRequestExpiry";
 
 const STORAGE_KEY = "@jobs_storage";
@@ -198,7 +197,6 @@ async function loadRentalReviewStats(jobIds: string[], userIds: string[]): Promi
 function getJobRankingScore(job: any): number {
   const now = Date.now();
   const postedTs = job?.postedDate?.getTime?.() ?? toSafeDate(job?.created_at ?? job?.updated_at).getTime();
-  const bumpedTs = job?.bumpedAt?.getTime?.() ?? getBumpedAtDate(job)?.getTime?.() ?? 0;
   const sponsoredUntilTs = job?.sponsoredUntil?.getTime?.() ?? toSafeDate(job?.sponsored_until).getTime?.() ?? 0;
   const isSponsored = !!job?.isSponsored && sponsoredUntilTs > now;
   const itemRating = asNumberOrNull(job?.itemRatingAvg ?? job?.item_rating_avg) ?? 0;
@@ -212,10 +210,6 @@ function getJobRankingScore(job: any): number {
     else if (itemRating >= 3) score += 35_000;
     else if (itemRating > 0) score += 12_000;
     else score += 45_000;
-  }
-  if (bumpedTs > 0) {
-    const ageHours = Math.max(0, (now - bumpedTs) / 36e5);
-    score += Math.max(0, BUMP_PRIORITY_MAX_SCORE - ageHours * BUMP_PRIORITY_DECAY_PER_HOUR);
   }
   score += itemRating * 4_000 + userRating * 2_000 + Math.min(rentalCount, 100) * 80 + postedTs / 1_000_000_000;
   return score;
@@ -350,6 +344,14 @@ async function queryJobsRobustly(): Promise<any[]> {
 
 function sortJobs(list: Job[]): Job[] {
   return list.slice().sort((a: any, b: any) => {
+    const isSponsored = (job: any) => Boolean(job.isSponsored) && (job.sponsoredUntil?.getTime?.() ?? 0) > Date.now();
+    const aSponsored = isSponsored(a), bSponsored = isSponsored(b);
+    if (aSponsored !== bSponsored) return bSponsored ? 1 : -1;
+    if (!aSponsored) {
+      const timestamp = (job: any) => Math.max(job.postedDate?.getTime?.() ?? 0, getBumpedAtDate(job)?.getTime() ?? 0);
+      const timeDiff = timestamp(b) - timestamp(a);
+      if (timeDiff !== 0) return timeDiff;
+    }
     const scoreDiff = getJobRankingScore(b) - getJobRankingScore(a);
     if (scoreDiff !== 0) return scoreDiff;
     const aPosted = a?.postedDate?.getTime?.() ?? 0;

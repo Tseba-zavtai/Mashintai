@@ -8,7 +8,7 @@ type FinishSignupBody = {
 
 const normalizePhone = (value: string) => {
   const digits = String(value ?? "").replace(/\D/g, "");
-  const local = digits.startsWith("976") ? digits.slice(3) : digits;
+  const local = digits.length === 11 && digits.startsWith("976") ? digits.slice(3) : digits;
   return /^\d{8}$/.test(local) ? `+976${local}` : null;
 };
 
@@ -31,12 +31,15 @@ serve(async (req: Request) => {
     const admin = adminClient(config);
     const { data: profile, error: profileError } = await admin
       .from("users")
-      .select("id, terms_accepted_at")
+      .select("id, terms_accepted_at, dan_onboarding_completed_at")
       .eq("id", userId)
-      .maybeSingle<{ id: string; terms_accepted_at: string | null }>();
+      .maybeSingle<{ id: string; terms_accepted_at: string | null; dan_onboarding_completed_at: string | null }>();
 
     if (profileError || !profile) throw new Error("DAN profile is unavailable.");
     if (!profile.terms_accepted_at) return json({ error: "terms_acceptance_required" }, 422);
+    if (profile.dan_onboarding_completed_at) return json({ error: "onboarding_already_completed" }, 409);
+    const { data: identity, error: identityError } = await admin.from("dan_identities").select("user_id").eq("user_id", userId).maybeSingle();
+    if (identityError || !identity) return json({ error: "dan_identity_required" }, 403);
 
     // DAN account-ын дотоод email нь нууцлаг байдаг. Утас + нууц үгээр
     // нэвтрэх боломжийг идэвхжүүлэхдээ дотоод нэвтрэх хаягийг утсаар солино.
@@ -46,6 +49,7 @@ serve(async (req: Request) => {
       email: internalEmail,
       email_confirm: true,
       password,
+      user_metadata: { phone, phone_number: phone, auth_provider: "dan" },
     });
     if (authError) {
       const message = String(authError.message ?? "").toLowerCase();
@@ -55,33 +59,11 @@ serve(async (req: Request) => {
       throw authError;
     }
 
-    const now = new Date().toISOString();
-    const { error: updateError } = await admin
-      .from("users")
-      .update({ phone, dan_onboarding_completed_at: now })
-      .eq("id", userId);
+    // Profile, default contact and completion marker commit together.
+    const { error: updateError } = await admin.rpc("save_login_phone_profile", {
+      p_user_id: userId, p_phone: phone, p_complete_signup: true,
+    });
     if (updateError) throw updateError;
-
-    // Утас нь олон нийтэд автоматаар харагдахгүй. Харин зар эсвэл хүсэлт дээр
-    // өөрөө сонгох анхны "Үндсэн" холбоо барих дугаар болж хадгалагдана.
-    const { data: existingContact, error: contactLookupError } = await admin
-      .from("user_contact_phones")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("phone", phone)
-      .maybeSingle<{ id: string }>();
-    if (contactLookupError) throw contactLookupError;
-
-    if (!existingContact) {
-      const { error: contactError } = await admin.from("user_contact_phones").insert({
-        user_id: userId,
-        phone,
-        label: "Үндсэн",
-        is_default: true,
-      });
-      if (contactError) throw contactError;
-    }
-
     return json({ ok: true, phone });
   } catch (error) {
     console.error("dan-auth-finish-signup failed", error instanceof Error ? error.message : "unknown");

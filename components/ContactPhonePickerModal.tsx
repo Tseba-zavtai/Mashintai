@@ -81,6 +81,7 @@ export default function ContactPhonePickerModal({
     try {
       setSaving(true);
       const saved = await addContactPhone(userId, phoneInput, labelInput);
+      if (makeSelectionDefault && !saved.is_default) await makeDefaultContactPhone(userId, saved.id);
       setPhones((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setPhoneInput("");
       setLabelInput("");
@@ -100,7 +101,7 @@ export default function ContactPhonePickerModal({
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-              <Text style={[styles.description, { color: colors.textSecondary }]}>Энд хадгалсан дугаарууд profile дээр нийтэд харагдахгүй. Сонгосон дугаар л тухайн зар эсвэл хүсэлтэд ашиглагдана.</Text>
+              <Text style={[styles.description, { color: colors.textSecondary }]}>Энд хадгалсан дугаарууд profile дээр нийтэд харагдахгүй. Сонгосон дугаар л тухайн зар эсвэл хүсэлтэд ашиглагдана. Энд дугаар солих нь нэвтрэх дугаарыг өөрчлөхгүй.</Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={10}><X size={24} color={colors.text} /></TouchableOpacity>
           </View>

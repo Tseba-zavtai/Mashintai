@@ -109,11 +109,28 @@ export async function finishDanSignUp(phone: string, password: string) {
   );
 
   if (error || !data?.ok) {
-    const code = data?.error;
+    const code = data?.error ?? (await error?.context?.json?.().catch(() => null))?.error;
     if (code === "invalid_phone") throw new Error("8 оронтой утасны дугаар оруулна уу.");
     if (code === "weak_password") throw new Error("Нууц үг 6-аас дээш тэмдэгттэй байна.");
     if (code === "phone_already_in_use") throw new Error("Энэ утасны дугаар өөр Tureesly бүртгэл дээр ашиглагдаж байна.");
     if (code === "terms_acceptance_required") throw new Error("Үйлчилгээний нөхцөлийг эхлээд зөвшөөрнө үү.");
+    if (code === "onboarding_already_completed") throw new Error("Бүртгэл аль хэдийн дууссан байна. Аппаа дахин нээгээд нэвтэрнэ үү.");
     throw new Error(errorMessage(error, "Бүртгэлийн мэдээллийг хадгалж чадсангүй."));
+  }
+}
+
+export async function changeLoginPhone(phone: string, currentPassword: string) {
+  const { data, error } = await supabase.functions.invoke("change-login-phone", {
+    body: { phone, currentPassword },
+  });
+  if (error || !data?.ok) {
+    const code = data?.error ?? (await error?.context?.json?.().catch(() => null))?.error;
+    const messages: Record<string, string> = {
+      invalid_phone: "8 оронтой утасны дугаар оруулна уу.",
+      invalid_password: "Одоогийн нууц үг буруу байна.",
+      phone_already_in_use: "Энэ дугаар өөр бүртгэл дээр ашиглагдаж байна.",
+      onboarding_required: "Эхлээд DAN бүртгэлээ дуусгана уу.",
+    };
+    throw new Error(messages[code] ?? "Утас солиход алдаа гарлаа. Дахин оролдоно уу.");
   }
 }

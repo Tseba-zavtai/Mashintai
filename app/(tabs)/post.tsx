@@ -39,9 +39,7 @@ import {
   type CatalogCategory,
 } from "@/lib/categoryCatalog";
 
-const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null; // eslint-disable-line @typescript-eslint/no-require-imports
-const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : null; // eslint-disable-line @typescript-eslint/no-require-imports
-const PROVIDER_GOOGLE = Platform.OS !== "web" ? require("react-native-maps").PROVIDER_GOOGLE : null; // eslint-disable-line @typescript-eslint/no-require-imports
+import { MapView, Marker } from "@/components/AppMap";
 
 type PickedLocation = { latitude: number; longitude: number; address?: string; };
 type PickedImage = { uri: string; name: string; mimeType: string; };
@@ -716,7 +714,7 @@ export default function PostScreen() {
               <>
                 <Text style={[styles.helperText, { color: colors.textSecondary }]}>Газрын зураг дээр дарж байршил сонгоно уу</Text>
                 <View style={[styles.mapContainer, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                  <MapView style={styles.map} provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined} initialRegion={initialRegion} onPress={handleMapPress}>{selectedLocation && (<Marker coordinate={{ latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }} />)}</MapView>
+                  <MapView style={styles.map} initialRegion={initialRegion} onPress={handleMapPress}>{selectedLocation && (<Marker coordinate={{ latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }} />)}</MapView>
                 </View>
                 {selectedLocation?.address ? (<Text style={[styles.selectedLocationText, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}>Сонгосон байршил: {selectedLocation.address}</Text>) : null}
               </>

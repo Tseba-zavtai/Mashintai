@@ -400,6 +400,9 @@ entrypoint = "./functions/list-feedback/index.ts"
 [functions.create-qpay-invoice]
 verify_jwt = false
 
+[functions.qpay-service]
+verify_jwt = false
+
 [functions.send-rental-request-push]
 verify_jwt = true
 
@@ -414,4 +417,7 @@ verify_jwt = false
 
 [functions.dan-auth-finish-signup]
 verify_jwt = true
+
+[functions.change-login-phone]
+verify_jwt = false
 

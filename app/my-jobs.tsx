@@ -9,6 +9,7 @@ import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Бидний нэгдсэн толгой
+import { isJobOwnedBy } from "@/lib/jobOwnership";
 
 function formatTimeLeft(date: Date | null) {
   if (!date) return null;
@@ -52,12 +53,7 @@ export default function MyJobsScreen() {
 
   const myJobs = useMemo(() => {
     if (!user) return [];
-    let list = (jobs as any[]).filter((job: any) => {
-      const postedBy = job?.postedBy ?? {};
-      const ownerKey = postedBy.phone || postedBy.id || "";
-      const currentUserKey = user.phone || user.id || "";
-      return String(ownerKey) === String(currentUserKey);
-    });
+    let list = (jobs as any[]).filter((job: any) => isJobOwnedBy(job, user));
     
     if (!showInactive) {
       list = list.filter(j => j.isActive !== false && j.is_active !== false);

@@ -8,17 +8,18 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
-  Platform,
+  Linking,
+  AppState,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle, Check, CreditCard } from "lucide-react-native";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { CheckCircle, Check } from "lucide-react-native";
 import { useJobs } from "@/contexts/JobsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { supabase } from "@/lib/supabase";
-import { recordMockServicePaymentAndReceipt, type MockEbarimtReceipt, type PaidServiceType } from "@/lib/mockEbarimt";
+import { callQPay, type QPayInvoice } from "@/lib/qpayPayments";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Нэгдсэн стандартын толгой
 
 type SponsorPlan = {
@@ -32,122 +33,87 @@ type SponsorPlan = {
 
 const ALL_PLANS: SponsorPlan[] = [
   { id: "credit", name: "Зар оруулах 1 эрх", price: 3000, durationDays: 0, credits: 1, description: "Та 3,000₮-өөр 1 удаагийн зар оруулах эрх авна." },
-  { id: "bump", name: "Зараа дээш гаргах", price: 1000, durationDays: 0, description: "Та нийтэлсэн зараа заруудын хамгийн эхэнд гаргах боломжтой." },
+  { id: "bump", name: "Зараа дээш гаргах", price: 1000, durationDays: 0, description: "Зараа нэг удаа жагсаалтын эхэнд гаргана. Үүний дараа шинээр нэмэгдсэн эсвэл дээшлүүлсэн зарууд таны зарын өмнө гарна." },
   { id: "daily", name: "1 хоног", price: 4500, durationDays: 1, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 1 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
   { id: "weekly", name: "7 хоног", price: 21000, durationDays: 7, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 7 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
   { id: "monthly", name: "30 хоног", price: 45000, durationDays: 30, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 30 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
 ];
 
-const PAYMENTS_AVAILABLE = false;
-
-function getEbarimtServiceType(planId: string): PaidServiceType {
-  if (planId === "credit") return "post_credit";
-  if (planId === "bump") return "bump";
-  return "sponsored";
-}
 
 export default function SponsorPaymentScreen() {
   const router = useRouter();
   const { jobId, targetType } = useLocalSearchParams<{ jobId?: string; targetType?: "bump" | "sponsor" | "credit" }>();
-  const { jobs, loadJobs, bumpJob } = useJobs() as any;
+  const { jobs, loadJobs } = useJobs() as any;
   const { user, refetchProfile } = useAuth() as any;
   const { colors } = useTheme();
   const [step, setStep] = useState<"info" | "invoice" | "success">("info");
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [payType, setPayType] = useState<"qpay" | "apple_google">("qpay");
-  const [mockReceipt, setMockReceipt] = useState<MockEbarimtReceipt | null>(null);
+  const [invoice, setInvoice] = useState<QPayInvoice | null>(null);
+  const busy = useRef(false);
+  const storageKey = user?.id ? `qpay-pending:${user.id}:${targetType}:${jobId ?? 'credit'}` : null;
 
-  const dummyBanks = [
-    { name: "Хаан Банк", logo: "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns" },
-    { name: "Голомт Банк", logo: "https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/0rqqd3riktgmfxudfl0s8" },
-    { name: "Төрийн Банк", logo: "https://r2-pub.rork.com/attachments/7h0ju4xu59gyen0tzh8ns" },
-    { name: "ХАС Банк", logo: "https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/0rqqd3riktgmfxudfl0s8" }
-  ];
 
   useEffect(() => {
-    setMockReceipt(null);
     if (targetType === "bump") setSelectedPlan("bump");
     else if (targetType === "credit") setSelectedPlan("credit");
     else setSelectedPlan("daily");
   }, [targetType]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (storageKey) AsyncStorage.getItem(storageKey).then(value => {
+      if (!mounted || !value) return;
+      try {
+        const saved = JSON.parse(value);
+        if (saved.invoice?.orderId && saved.planId) {
+          setInvoice(saved.invoice); setSelectedPlan(saved.planId); setStep('invoice');
+        }
+      } catch { /* Ignore stale local data; the server remains authoritative. */ }
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, [storageKey]);
 
   const selectedPlanData = useMemo(() => ALL_PLANS.find((p) => p.id === selectedPlan) ?? null, [selectedPlan]);
   const selectedJob = useMemo(() => (jobs as any[]).find((j) => String(j?.id) === String(jobId)) ?? null, [jobs, jobId]);
   const screenTitle = "Төлбөр төлөлт";
 
 
-  const handleGenerateInvoice = () => {
-    if (!selectedPlanData) return;
-    setMockReceipt(null);
-    setPayType("qpay");
+  const handleGenerateInvoice = async () => {
+    if (!selectedPlanData || busy.current) return;
+    if (!user?.id) { Alert.alert('Төлбөр','Эхлээд нэвтэрнэ үү.'); return; }
+    busy.current = true;
     setIsSubmitting(true);
-    setTimeout(() => {
-      setStep("invoice");
-      setIsSubmitting(false);
-    }, 800);
-  };
-
-  const handleFakePayment = async () => {
-    if (!selectedPlanData) return;
     try {
-      setIsSubmitting(true);
-      
-      const receipt = await recordMockServicePaymentAndReceipt({
-        serviceType: getEbarimtServiceType(selectedPlanData.id),
-        serviceName: selectedPlanData.name,
-        amount: selectedPlanData.price,
-        referenceId: selectedPlanData.id === "credit" ? null : (jobId ? String(jobId) : null),
-      });
-      setMockReceipt(receipt);
-
-      if (selectedPlanData.id === "credit") {
-        const creditGrant = await supabase.rpc("grant_test_purchased_post_credit", { p_payment_id: receipt.payment_id });
-        if (creditGrant.error && creditGrant.error.code !== "PGRST202") throw creditGrant.error;
-
-        if (creditGrant.error) {
-          // Temporary compatibility for a database that has not received the
-          // split-credit migration yet.
-          const currentCredits = user?.available_post_credits ?? 0;
-          const { error } = await supabase
-            .from("users")
-            .update({ available_post_credits: currentCredits + (selectedPlanData.credits ?? 1) })
-            .eq("id", user?.id);
-          if (error) throw error;
-        }
-        if (refetchProfile) await refetchProfile();
-      } 
-      else if (selectedPlanData.id === "bump" && jobId) {
-        if (!bumpJob) throw new Error("BUMP_ACTION_UNAVAILABLE");
-        await bumpJob(jobId);
-      } 
-      else if (jobId) {
-        const durationMs = selectedPlanData.durationDays * 24 * 60 * 60 * 1000;
-        const currentUntilRaw = selectedJob?.sponsoredUntil ?? selectedJob?.sponsored_until ?? null;
-        const currentUntilMs = currentUntilRaw ? new Date(currentUntilRaw).getTime() : NaN;
-        const startsAtMs = Number.isFinite(currentUntilMs) && currentUntilMs > Date.now()
-          ? currentUntilMs
-          : Date.now();
-        const nextSponsoredUntil = new Date(startsAtMs + durationMs).toISOString();
-        const { error } = await supabase.from("jobs").update({ is_sponsored: true, sponsored_until: nextSponsoredUntil }).eq("id", jobId);
-        if (error) throw error;
-        if (loadJobs) await loadJobs();
-      }
-      setStep("success");
-    } catch (error: any) {
-      console.log("PAYMENT ERROR:", error);
-      Alert.alert("Алдаа", error?.message ?? "Төлбөр гүйцэтгэхэд алдаа гарлаа. (Баазын эрх шалгана уу)");
-    } finally {
-      setIsSubmitting(false);
-    }
+      const data=await callQPay<QPayInvoice>({action:'create',planId:selectedPlanData.id,jobId});
+      if (!data?.orderId || !data.qr_image) throw new Error('Нэхэмжлэл үүсгэж чадсангүй.');
+      setInvoice(data); setStep("invoice");
+      if (storageKey) await AsyncStorage.setItem(storageKey,JSON.stringify({invoice:data,planId:selectedPlanData.id})).catch(() => {});
+    } catch(error:any) { Alert.alert("Төлбөр",error.message); }
+    finally { busy.current=false; setIsSubmitting(false); }
   };
 
-  const checkPaymentStatus = async () => {
+
+  const checkPaymentStatus = useCallback(async (silent = false) => {
+    if (!invoice || busy.current) return;
+    busy.current=true;
     setIsSubmitting(true);
-    setTimeout(() => { 
-      handleFakePayment(); 
-    }, 1500);
-  };
+    try {
+      const data=await callQPay<{paid:boolean}>({action:"status",orderId:invoice.orderId});
+      if(!data?.paid) { if(!silent) Alert.alert("Төлбөр","Төлбөрийн баталгаажуулалт хараахан ирээгүй байна. Төлсний дараа дахин шалгана уу."); return; }
+      setStep("success");
+      if(storageKey) await AsyncStorage.removeItem(storageKey).catch(() => {});
+      await Promise.allSettled([refetchProfile?.(),loadJobs?.()]);
+    } catch(error:any) { if(!silent) Alert.alert("Төлбөр",error.message); }
+    finally { busy.current=false; setIsSubmitting(false); }
+  }, [invoice,storageKey,refetchProfile,loadJobs]);
+
+  useEffect(() => {
+    const subscription=AppState.addEventListener('change',state => {
+      if(state === 'active' && step === 'invoice') void checkPaymentStatus(true);
+    });
+    return () => subscription.remove();
+  }, [checkPaymentStatus,step]);
 
   return (
     // 🎯 ЗАССАН: AppHeader дотор утасны цагны зай (insets.top) тооцоолсон тул эндээс edges=["top"] хэсгийг "bottom" болгож өөрчиллөө
@@ -218,23 +184,6 @@ export default function SponsorPaymentScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Төлбөрийн аргаа сонгоно уу</Text>
                 
                 <View style={{ gap: 12 }}>
-                  <TouchableOpacity 
-                    style={[styles.payMethodBtn, { backgroundColor: "#111111", opacity: PAYMENTS_AVAILABLE ? 1 : 0.55 }]} 
-                    activeOpacity={0.85}
-                    onPress={undefined}
-                    disabled={!PAYMENTS_AVAILABLE || isSubmitting}
-                  >
-                    {isSubmitting && payType === "apple_google" ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <View style={styles.payMethodBtnContent}>
-                        <CreditCard size={24} color="#FFFFFF" />
-                        <Text style={[styles.payMethodBtnText, { color: "#FFFFFF" }]}>
-                          {`${Platform.OS === "ios" ? "Apple Pay" : "Google Pay"} — Coming soon`}
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
 
                   <TouchableOpacity 
                     style={[styles.qpayBtn, { backgroundColor: colors.background }]} 
@@ -242,7 +191,7 @@ export default function SponsorPaymentScreen() {
                     onPress={handleGenerateInvoice}
                     disabled={isSubmitting}
                   >
-                    {isSubmitting && payType === "qpay" ? (
+                    {isSubmitting ? (
                       <ActivityIndicator color={colors.primary} />
                     ) : (
                       <>
@@ -250,7 +199,7 @@ export default function SponsorPaymentScreen() {
                            <Text style={styles.qpayLogoText}>Q<Text style={{color: '#00B45A'}}>Pay</Text></Text>
                         </View>
                         <Text style={[styles.qpayTitle, { color: colors.text }]}>QPay Mongolia</Text>
-                        <Text style={[styles.qpaySub, { color: colors.textSecondary }]}>Туршилтын төлбөр — бодит QPay биш</Text>
+                        <Text style={[styles.qpaySub, { color: colors.textSecondary }]}>Банкны апп ашиглан төлөх</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -268,16 +217,12 @@ export default function SponsorPaymentScreen() {
             </Text>
 
             <View style={styles.qrContainer}>
-              <View style={[styles.dummyQr, { backgroundColor: colors.backgroundSecondary }]}>
-                <Text style={{ color: colors.textSecondary, textAlign: 'center', fontWeight: 'bold', fontSize: 13 }}>
-                  [ ТЕСТ QR КОД ]{"\n\n"}Банкны апп сонгож төлбөрөө баталгаажуулна уу
-                 </Text>
-              </View>
+              {invoice?.qr_image && <Image source={{uri:`data:image/png;base64,${invoice.qr_image}`}} style={{width:220,height:220}} />}
             </View>
 
             <View style={styles.banksGrid}>
-              {dummyBanks.map((bank, idx) => (
-                <TouchableOpacity key={idx} style={[styles.bankItem, { backgroundColor: colors.backgroundSecondary }]} onPress={checkPaymentStatus} disabled={isSubmitting}>
+              {(invoice?.urls ?? []).map((bank, idx) => (
+                <TouchableOpacity key={idx} style={[styles.bankItem, { backgroundColor: colors.backgroundSecondary }]} onPress={() => Linking.openURL(bank.link).catch(() => Alert.alert("Банкны апп","Аппаа суулгасан эсэхийг шалгана уу."))} disabled={isSubmitting}>
                   <Image source={{ uri: bank.logo }} style={styles.bankLogo} />
                   <Text style={[styles.bankName, { color: colors.text }]} numberOfLines={1}>{bank.name}</Text>
                 </TouchableOpacity>
@@ -285,7 +230,7 @@ export default function SponsorPaymentScreen() {
             </View>
 
             <View style={styles.invoiceActions}>
-              <TouchableOpacity style={[styles.actionBtnCheck, { backgroundColor: colors.backgroundSecondary }]} onPress={checkPaymentStatus} disabled={isSubmitting}>
+              <TouchableOpacity style={[styles.actionBtnCheck, { backgroundColor: colors.backgroundSecondary }]} onPress={() => checkPaymentStatus()} disabled={isSubmitting}>
                 {isSubmitting ? <ActivityIndicator color={colors.text} size="small" /> : <Text style={[styles.actionBtnCheckText, { color: colors.text }]}>↻ Төлөв шалгах</Text>}
               </TouchableOpacity>
               <TouchableOpacity style={[styles.actionBtnClose, { backgroundColor: colors.backgroundSecondary }]} onPress={() => setStep("info")} disabled={isSubmitting}>
@@ -302,22 +247,6 @@ export default function SponsorPaymentScreen() {
             <Text style={[styles.successText, { color: colors.textSecondary }]}>
                {targetType === "credit" ? `Таны зарын эрх амжилттай ${selectedPlanData?.credits ?? 1}-ээр нэмэгдлээ.` : "Үйлчилгээ амжилттай идэвхжлээ."}
             </Text>
-            {mockReceipt && (
-              <View style={[styles.mockReceiptCard, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
-                <Text style={[styles.mockReceiptTitle, { color: colors.primary }]}>Mock Ebarimt бүртгэгдлээ</Text>
-                <Text style={[styles.mockReceiptNumber, { color: colors.text }]}>Баримт № {mockReceipt.receipt_no}</Text>
-                <Text style={[styles.mockReceiptService, { color: colors.textSecondary }]}>{mockReceipt.service_name}</Text>
-                <View style={styles.mockReceiptRow}>
-                  <Text style={[styles.mockReceiptLabel, { color: colors.textSecondary }]}>НӨАТ (0%)</Text>
-                  <Text style={[styles.mockReceiptValue, { color: colors.text }]}>0₮</Text>
-                </View>
-                <View style={styles.mockReceiptRow}>
-                  <Text style={[styles.mockReceiptTotal, { color: colors.text }]}>Нийт төлсөн</Text>
-                  <Text style={[styles.mockReceiptTotal, { color: colors.text }]}>{mockReceipt.total_amount.toLocaleString()}₮</Text>
-                </View>
-                <Text style={[styles.mockReceiptNote, { color: colors.textSecondary }]}>Тест баримт — ebarimt.mn рүү илгээгдээгүй.</Text>
-              </View>
-            )}
             <TouchableOpacity style={[styles.doneBtn, { backgroundColor: colors.primary }]} onPress={() => router.replace(targetType === "credit" ? "/profile" : "/my-jobs")}>
               <Text style={[styles.doneBtnText, { color: colors.buttonText }]}>Дуусгах</Text>
             </TouchableOpacity>

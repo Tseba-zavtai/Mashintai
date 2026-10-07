@@ -9,7 +9,7 @@ const USER_STORAGE_KEY = "@user_data";
 const normalizePhone = (phone: string) => {
   const digits = String(phone ?? "").replace(/[^\d]/g, "");
   if (!digits) return "";
-  if (digits.startsWith("976")) {
+  if (digits.length === 11 && digits.startsWith("976")) {
     return `+${digits}`;
   }
   if (digits.length === 8) {
@@ -21,7 +21,7 @@ const normalizePhone = (phone: string) => {
 const phoneToEmail = (phone: string) => {
   const normalizedPhone = normalizePhone(phone);
   const digits = normalizedPhone.replace(/[^\d]/g, "").trim();
-  if (!digits) {
+  if (!/^976\d{8}$/.test(digits)) {
     throw new Error("Утасны дугаар буруу байна.");
   }
   return `u${digits}@example.com`.toLowerCase();
@@ -273,7 +273,9 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       }
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      // Auth callbacks execute under the auth lock. Run server work after it releases.
+      setTimeout(() => { void (async () => {
       if (!mountedRef.current) return;
 
       if (event === "SIGNED_OUT" || !session?.user?.id) {
@@ -292,6 +294,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       } catch {
         // keep current state
       }
+      })(); }, 0);
     });
 
     return () => {
@@ -391,6 +394,8 @@ export const [AuthContext, useAuth] = createContextHook(() => {
 
   const completeDanSignup = useCallback(async (phone: string, password: string) => {
     await finishDanSignUp(phone, password);
+    // Server-side credential updates are reflected in the persisted session too.
+    await supabase.auth.refreshSession();
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -412,7 +417,7 @@ export const [AuthContext, useAuth] = createContextHook(() => {
   );
 
   const updateProfile = useCallback(
-    async (d: { phone?: string; photoUri?: string }) => {
+    async (d: { phone?: string; photoUri?: string; currentPassword?: string }) => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -423,13 +428,19 @@ export const [AuthContext, useAuth] = createContextHook(() => {
       }
 
       const updates: Record<string, any> = {};
-      if (d.phone !== undefined) updates.phone = d.phone.trim() ? normalizePhone(d.phone) : null;
+      if (d.phone !== undefined && normalizePhone(d.phone) !== user?.phone) {
+        const { changeLoginPhone } = await import("@/lib/danAuth");
+        await changeLoginPhone(d.phone, d.currentPassword ?? "");
+        await supabase.auth.refreshSession();
+      }
       if (d.photoUri !== undefined) updates.photo_uri = d.photoUri;
 
-      const { error } = await supabase.from("users").update(updates).eq("id", uid);
-      if (error) throw error;
+      if (Object.keys(updates).length) {
+        const { error } = await supabase.from("users").update(updates).eq("id", uid);
+        if (error) throw error;
+      }
 
-      await fetchProfile(uid, updates.phone ?? user?.phone);
+      await fetchProfile(uid, d.phone !== undefined ? normalizePhone(d.phone) : user?.phone);
       await touchLastActive();
     },
     [fetchProfile, touchLastActive, user?.phone]

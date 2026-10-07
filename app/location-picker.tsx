@@ -23,13 +23,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const MAP_WIDTH = SCREEN_WIDTH;
 const MAP_HEIGHT = SCREEN_HEIGHT - 200;
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const MapView = Platform.OS !== "web" ? require("react-native-maps").default : null;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const Marker = Platform.OS !== "web" ? require("react-native-maps").Marker : null;
-const PROVIDER_GOOGLE =
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  Platform.OS !== "web" ? require("react-native-maps").PROVIDER_GOOGLE : null;
+import { MapView, Marker } from "@/components/AppMap";
 
 export default function LocationPickerScreen() {
   const router = useRouter();
@@ -45,7 +39,7 @@ export default function LocationPickerScreen() {
   const [currentLocation, setCurrentLocation] = useState<{
     latitude: number;
     longitude: number;
-  } | null>(userLocation || null);
+  } | null>(userLocation || { latitude: 47.9184, longitude: 106.9177 });
 
   useEffect(() => {
     requestLocationPermission();
@@ -102,8 +96,8 @@ export default function LocationPickerScreen() {
       return;
     }
 
-    const offsetLat = ((pinPosition.y - MAP_HEIGHT / 2) / MAP_HEIGHT) * 0.1;
-    const offsetLng = ((pinPosition.x - MAP_WIDTH / 2) / MAP_WIDTH) * 0.1;
+    const offsetLat = Platform.OS === "web" ? ((pinPosition.y - MAP_HEIGHT / 2) / MAP_HEIGHT) * 0.1 : 0;
+    const offsetLng = Platform.OS === "web" ? ((pinPosition.x - MAP_WIDTH / 2) / MAP_WIDTH) * 0.1 : 0;
 
     const location = {
       latitude: currentLocation.latitude + offsetLat,
@@ -150,14 +144,14 @@ export default function LocationPickerScreen() {
             {currentLocation && !isLoadingLocation && (
               <MapView
                 style={styles.map}
-                provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
                 initialRegion={{
                   latitude: currentLocation.latitude,
                   longitude: currentLocation.longitude,
                   latitudeDelta: 0.0922,
                   longitudeDelta: 0.0421,
                 }}
-                onPress={() => {
+                onPress={(event: any) => {
+                  setCurrentLocation(event.nativeEvent.coordinate);
                   setPinPosition({
                     x: MAP_WIDTH / 2,
                     y: MAP_HEIGHT / 2,
