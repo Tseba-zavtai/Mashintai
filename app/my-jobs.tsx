@@ -10,6 +10,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Бидний нэгдсэн толгой
 import { isJobOwnedBy } from "@/lib/jobOwnership";
+import { supabase } from '@/lib/supabase';
+import { isListingExpired, manageListings } from '@/lib/listingLifecycle';
 
 function formatTimeLeft(date: Date | null) {
   if (!date) return null;
@@ -37,13 +39,46 @@ function formatDateToYMD(date: Date | null) {
 
 export default function MyJobsScreen() {
   const router = useRouter();
-  const { jobs, deleteJob, toggleJobActive } = useJobs() as any;
-  const { user } = useAuth() as any;
+  const { jobs, loadJobs } = useJobs() as any;
+  const { user, refetchProfile } = useAuth() as any;
   const { colors } = useTheme();
   
   const [showInactive, setShowInactive] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [, setCurrentTime] = useState(Date.now());
+  const [ownedJobs, setOwnedJobs] = useState<any[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const selectMode = selected.length > 0;
+  const reload = async () => {
+    if (!user?.id) return;
+    const {data,error} = await supabase.from('jobs').select('*').eq('posted_by_id',user.id).is('deleted_at',null).order('published_at',{ascending:false});
+    if (error) throw error;
+    setOwnedJobs(data ?? []);
+    await Promise.allSettled([loadJobs(),refetchProfile?.()]);
+  };
+  useEffect(() => {
+    if (!user?.id) { setOwnedJobs([]); return; }
+    let current=true;
+    supabase.from('jobs').select('*').eq('posted_by_id',user.id).is('deleted_at',null).order('published_at',{ascending:false})
+      .then(({data,error}) => { if(current && !error) setOwnedJobs(data ?? []); });
+    return () => {current=false;};
+  },[user?.id,jobs]);
+  const bulk = (action:'activate'|'deactivate'|'delete', ids=selected) => {
+    const expired = ownedJobs.filter(j => ids.includes(j.id) && isListingExpired(j)).length;
+    Alert.alert('Баталгаажуулах',`${ids.length} зарыг ${action==='activate'?'идэвхтэй болгох':action==='deactivate'?'идэвхгүй болгох':'устгах'} уу?${action==='activate' && expired ? `\nХугацаа дууссан ${expired} зарт ${expired} эрх хасагдана.` : ''}`,[
+      {text:'Болих',style:'cancel'}, {text:'Үргэлжлүүлэх',style:action==='delete'?'destructive':'default',onPress:async()=>{
+        if(loadingId) return;
+        setLoadingId('bulk');
+        try {await manageListings(ids,action);setSelected([]);await reload();}
+        catch(e:any) {Alert.alert('Алдаа',e.message);}
+        finally {setLoadingId(null);}
+      }}]);
+  };
+  const pay = (type:'bump'|'sponsor',ids=selected) => {
+    const invalid=ownedJobs.filter(j=>ids.includes(j.id) && (isListingExpired(j)||j.is_active===false||Number(j.available_quantity)<=0));
+    if(invalid.length) {Alert.alert('Төлбөр үүсгэх боломжгүй',`${invalid.length} зар хугацаа дууссан, идэвхгүй эсвэл сул үлдэгдэлгүй байна. Эхлээд зарын төлөвөө шалгана уу.`);return;}
+    router.push({pathname:'/sponsor-payment',params:{jobIds:ids.join(','),targetType:type}});
+  };
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
   // Таймер шинэчлэх
   useEffect(() => {
@@ -53,13 +88,13 @@ export default function MyJobsScreen() {
 
   const myJobs = useMemo(() => {
     if (!user) return [];
-    let list = (jobs as any[]).filter((job: any) => isJobOwnedBy(job, user));
+    let list = ownedJobs.filter((job: any) => isJobOwnedBy(job, user));
     
     if (!showInactive) {
-      list = list.filter(j => j.isActive !== false && j.is_active !== false);
+      list = list.filter(j => j.is_active !== false && !isListingExpired(j,currentTime));
     }
     return list;
-  }, [jobs, user, showInactive]);
+  }, [ownedJobs, user, showInactive,currentTime]);
 
   const handleDelete = (jobId: string) => {
     Alert.alert("Анхаар", "Та энэ зарыг устгахдаа итгэлтэй байна уу?", [
@@ -70,9 +105,9 @@ export default function MyJobsScreen() {
         onPress: async () => {
           try {
             setLoadingId(jobId);
-            await deleteJob(jobId);
-          } catch {
-            Alert.alert("Алдаа", "Устгахад алдаа гарлаа");
+            await manageListings([jobId],'delete'); await reload();
+          } catch (e:any) {
+            Alert.alert("Алдаа", e.message);
           } finally {
             setLoadingId(null);
           }
@@ -82,11 +117,12 @@ export default function MyJobsScreen() {
   };
 
   const handleToggleActive = async (jobId: string, currentStatus: boolean) => {
+    if (!currentStatus) { bulk('activate',[jobId]); return; }
     try {
       setLoadingId(jobId);
-      await toggleJobActive(jobId, !currentStatus);
-    } catch {
-      Alert.alert("Алдаа", "Төлөв өөрчлөхөд алдаа гарлаа");
+      await manageListings([jobId], 'deactivate'); await reload();
+    } catch (e:any) {
+      Alert.alert("Алдаа", e.message);
     } finally {
       setLoadingId(null);
     }
@@ -110,9 +146,13 @@ export default function MyJobsScreen() {
       <AppHeader title="Миний зарууд" />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+        {myJobs.length > 0 && <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{checked:myJobs.every(j=>selected.includes(j.id)),disabled:!!loadingId}} style={{flexDirection:'row',alignItems:'center',gap:8,minHeight:44,alignSelf:'flex-start'}} disabled={!!loadingId} onPress={()=>setSelected(myJobs.every(j=>selected.includes(j.id))?[]:myJobs.map(j=>j.id))}>
+          <Text style={{color:colors.text,fontSize:22}}>{myJobs.every(j=>selected.includes(j.id))?'☑':'☐'}</Text>
+          <Text style={[styles.filterBtnText,{color:colors.text}]}>{myJobs.every(j=>selected.includes(j.id))?'Сонголт арилгах':'Бүгдийг сонгох'}</Text>
+        </TouchableOpacity>}
         
         {/* Идэвхгүйг харуулах товч */}
-        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.background, borderColor: colors.border }]} onPress={() => setShowInactive(!showInactive)} activeOpacity={0.7}>
+        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.background, borderColor: colors.border }]} onPress={() => {setShowInactive(!showInactive);setSelected([]);}} activeOpacity={0.7}>
           {showInactive ? <EyeOff size={18} color={colors.text} /> : <Eye size={18} color={colors.text} />}
           <Text style={[styles.filterBtnText, { color: colors.text }]}>{showInactive ? "Идэвхгүйг нуух" : "Идэвхгүйг харуулах"}</Text>
         </TouchableOpacity>
@@ -125,7 +165,7 @@ export default function MyJobsScreen() {
           myJobs.map((job: any) => {
             const img = job.image_urls?.[0] || job.image_url;
             const imgCount = job.image_urls?.length || 0;
-            const isActive = job.isActive !== false && job.is_active !== false;
+            const isActive = job.is_active !== false && !isListingExpired(job);
             const rating = job.itemRatingAvg || job.item_rating_avg || 0;
             const reviewCount = job.itemReviewCount || job.item_review_count || 0;
             const rentalCount = job.rentalCount || job.rental_count || 0;
@@ -139,6 +179,7 @@ export default function MyJobsScreen() {
                 
                 {/* Толгой хэсэг */}
                 <View style={styles.cardHeader}>
+                  <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${job.title || job.category} зарыг сонгох`} accessibilityState={{checked:selected.includes(job.id),disabled:!!loadingId}} disabled={!!loadingId} onPress={()=>setSelected(prev=>prev.includes(job.id)?prev.filter(id=>id!==job.id):[...prev,job.id])} style={{padding:10}}><Text style={{color:colors.text,fontSize:22}}>{selected.includes(job.id)?'☑':'☐'}</Text></TouchableOpacity>
                   <View style={{ flex: 1, paddingRight: 10 }}>
                     <Text style={[styles.jobTitle, { color: colors.text }]} numberOfLines={2}>{job.title || job.category}</Text>
                   </View>
@@ -175,10 +216,11 @@ export default function MyJobsScreen() {
 
                 <View style={styles.timeWrap}>
                   <Clock size={14} color={colors.textSecondary} />
-                  <Text style={[styles.timeText, { color: colors.textSecondary }]}>{getDaysAgoText(job.postedDate || new Date(job.created_at))}</Text>
+                  <Text style={[styles.timeText, { color: colors.textSecondary }]}>{getDaysAgoText(new Date(job.published_at ?? job.created_at))} · {isListingExpired(job)?'Хугацаа дууссан':`Дуусах: ${formatDateToYMD(new Date(job.listing_expires_at))}`}</Text>
                 </View>
 
                 {/* Үйлдлийн товчнууд (Устгах, Идэвхгүй) */}
+                {!selectMode && <>
                 <View style={styles.actionsGrid}>
                   <TouchableOpacity style={[styles.halfBtn, { borderColor: colors.border }]} onPress={() => handleDelete(job.id)} disabled={loadingId === job.id}>
                     <Trash2 size={16} color={colors.text} />
@@ -194,7 +236,7 @@ export default function MyJobsScreen() {
                 {/* 🎯 BUMP ТОВЧ (QPay рүү үсэрнэ) */}
                 <TouchableOpacity 
                   style={[styles.fullBtn, { borderColor: colors.border }]} 
-                  onPress={() => router.push({ pathname: "/sponsor-payment", params: { jobId: job.id, targetType: "bump" } })}
+                  onPress={() => pay('bump',[job.id])}
                   activeOpacity={0.7}
                 >
                   <TrendingUp size={16} color={colors.text} />
@@ -215,25 +257,63 @@ export default function MyJobsScreen() {
                 ) : (
                   <TouchableOpacity 
                     style={[styles.fullBtn, { backgroundColor: "#6D28D9", borderColor: "#6D28D9" }]} 
-                    onPress={() => router.push({ pathname: "/sponsor-payment", params: { jobId: job.id, targetType: "sponsor" } })}
+                    onPress={() => pay('sponsor',[job.id])}
                     activeOpacity={0.8}
                   >
                     <Award size={16} color="#fff" />
                     <Text style={[styles.fullBtnText, { color: "#fff" }]}>Sponsored зар</Text>
                   </TouchableOpacity>
                 )}
+                </>}
 
               </View>
             );
           })
         )}
       </ScrollView>
+      {selectMode && <View testID="bulk-action-bar" style={[styles.bulkBar,{backgroundColor:colors.background,borderColor:colors.border}]}>
+        <View style={styles.bulkHeading}>
+          <Text accessibilityLiveRegion="polite" style={[styles.bulkCount,{color:colors.text}]}>{selected.length} зар сонгосон</Text>
+          {loadingId ? <ActivityIndicator color="#6D28D9" /> : <TouchableOpacity accessibilityRole="button" onPress={()=>setSelected([])} style={styles.bulkCancel}><Text style={{color:colors.text,fontWeight:'600'}}>Болих</Text></TouchableOpacity>}
+        </View>
+        {selected.length===0 ? <Text style={{color:colors.textSecondary}}>Үйлдэл хийх заруудаа чагтлаарай.</Text> : <>
+          <View style={styles.bulkRow}>
+            <TouchableOpacity accessibilityRole="button" disabled={!!loadingId} onPress={()=>pay('bump')} style={[styles.bulkButton,styles.bulkPrimary,loadingId&&styles.bulkDisabled]}>
+              <TrendingUp size={18} color="#fff" /><Text style={styles.bulkPrimaryText}>Pump · {(selected.length*1000).toLocaleString()}₮</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" disabled={!!loadingId} onPress={()=>pay('sponsor')} style={[styles.bulkButton,styles.bulkPrimary,loadingId&&styles.bulkDisabled]}>
+              <Award size={18} color="#fff" /><Text style={styles.bulkPrimaryText}>Sponsored</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.bulkRow}>
+            <TouchableOpacity accessibilityRole="button" disabled={!!loadingId} onPress={()=>bulk('activate')} style={[styles.bulkButton,{borderColor:colors.border},loadingId&&styles.bulkDisabled]}>
+              <Play size={16} color={colors.text}/><Text style={[styles.bulkText,{color:colors.text}]}>Идэвхтэй{ '\n' }болгох</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" disabled={!!loadingId} onPress={()=>bulk('deactivate')} style={[styles.bulkButton,{borderColor:colors.border},loadingId&&styles.bulkDisabled]}>
+              <Pause size={16} color={colors.text}/><Text style={[styles.bulkText,{color:colors.text}]}>Идэвхгүй{ '\n' }болгох</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" disabled={!!loadingId} onPress={()=>bulk('delete')} style={[styles.bulkButton,{borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,0.06)'},loadingId&&styles.bulkDisabled]}>
+              <Trash2 size={16} color="#EF4444"/><Text style={[styles.bulkText,{color:'#EF4444'}]}>Устгах</Text>
+            </TouchableOpacity>
+          </View>
+        </>}
+      </View>}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  bulkBar: {padding:12,gap:10,borderTopWidth:1,shadowColor:'#000',shadowOffset:{width:0,height:-2},shadowOpacity:0.08,shadowRadius:8,elevation:8},
+  bulkHeading: {flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
+  bulkCount: {fontSize:16,fontWeight:'700'},
+  bulkCancel: {paddingHorizontal:12,paddingVertical:10,minHeight:44,justifyContent:'center'},
+  bulkRow: {flexDirection:'row',gap:8},
+  bulkButton: {flex:1,minHeight:52,paddingVertical:10,paddingHorizontal:6,borderWidth:1,borderRadius:12,alignItems:'center',justifyContent:'center',gap:5},
+  bulkPrimary: {backgroundColor:'#6D28D9',borderColor:'#6D28D9'},
+  bulkPrimaryText: {color:'#fff',fontWeight:'700',fontSize:14,textAlign:'center'},
+  bulkText: {fontSize:12,fontWeight:'600',textAlign:'center'},
+  bulkDisabled: {opacity:0.5},
   content: { flex: 1 },
   contentContainer: { padding: 16, paddingBottom: 40, gap: 16 },
   filterBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 12, borderWidth: 1, gap: 8 },

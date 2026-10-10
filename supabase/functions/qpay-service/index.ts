@@ -1,10 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info", "Content-Type": "application/json" };
-const plans: Record<string, number> = { credit: 3000, bump: 1000, daily: 4500, weekly: 21000, monthly: 45000 };
+const plans: Record<string, number> = { credit: 3000, credit2: 5000, credit3: 7000, bump: 1000, daily: 4500, weekly: 21000, monthly: 45000 };
 let token = ""; let expires = 0;
 let authenticating: Promise<void> | null = null;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-async function qpay(path: string, body: unknown) {
+async function qpay(path: string, body: unknown, method = 'POST') {
  const base = "https://merchant.qpay.mn/v2";
  if (!token || Date.now() >= expires) {
   if (!authenticating) authenticating = (async () => {
@@ -21,8 +21,9 @@ async function qpay(path: string, body: unknown) {
   })().finally(() => { authenticating = null; });
   await authenticating;
  }
- const response = await fetch(`${base}/${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+ const response = await fetch(`${base}/${path}`, { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: method==='DELETE' ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(15000) });
  if (!response.ok) { if (response.status === 401) expires=0; throw new Error("QPAY_REQUEST_FAILED"); }
+ if(method==='DELETE') { const text=await response.text(); return text ? JSON.parse(text) : {}; }
  return await response.json();
 }
 Deno.serve(async req => {
@@ -64,21 +65,45 @@ Deno.serve(async req => {
    if(typeof body.orderId !== 'string' || !uuid.test(body.orderId)) return reply({error:"INVALID_ORDER"},400);
    const {data,error}=await db.from("qpay_service_orders").select("status").eq("id",body.orderId).eq("user_id",user.id).single();
    if(error) return reply({error:"ORDER_NOT_FOUND"},404);
-   return reply({paid:data.status === "PAID"});
+   return reply({paid:data.status === "PAID",cancelled:data.status === 'CANCELLED'});
+  }
+  if(body.action === 'cancel') {
+   if(typeof body.orderId!=='string' || !uuid.test(body.orderId)) return reply({error:'INVALID_ORDER'},400);
+   const {data:order,error}=await db.from('qpay_service_orders').select('*').eq('id',body.orderId).eq('user_id',user.id).single();
+   if(error || !order) return reply({error:'ORDER_NOT_FOUND'},404);
+   if(order.status==='PAID') return reply({paid:true,cancelled:false});
+   if(order.status==='CANCELLED') return reply({paid:false,cancelled:true});
+   if(!order.invoice_id || order.status!=='PENDING') return reply({error:'CANCEL_NOT_READY'},409);
+   const check=await qpay('payment/check',{object_type:'INVOICE',object_id:order.invoice_id,offset:{page_number:1,page_limit:100}});
+   if(!Array.isArray(check.rows)) throw new Error('INVALID_PAYMENT_RESPONSE');
+   const paid=check.rows.filter((p:any)=>p.payment_status==='PAID');
+   if(paid.length) {
+    if(paid.length!==1 || Number(paid[0].payment_amount)!==Number(order.amount) || paid[0].payment_currency!=='MNT' || !paid[0].payment_id)
+     return reply({error:'PAYMENT_RECONCILIATION_REQUIRED'},409);
+    const grant=await db.rpc('finalize_qpay_service_order',{p_order_id:order.id,p_payment_id:paid[0].payment_id,p_paid_amount:Number(order.amount)});
+    if(grant.error) throw new Error('PAYMENT_FINALIZATION_FAILED');
+    return reply({paid:true,cancelled:false});
+   }
+   // Cancel the invoice, never refund/cancel an actual bank payment.
+   await qpay(`invoice/${encodeURIComponent(order.invoice_id)}`,undefined,'DELETE');
+   const cancelled=await db.rpc('cancel_qpay_service_order',{p_order_id:order.id,p_user_id:user.id});
+   if(cancelled.error) throw new Error('CANCEL_SAVE_FAILED');
+   return reply(cancelled.data);
   }
   if(body.action && body.action !== 'create') return reply({error:"INVALID_REQUEST"},400);
   if(typeof body.planId !== 'string' || !Object.hasOwn(plans,body.planId)) return reply({error:"INVALID_PLAN"},400);
-  if(body.planId !== "credit") {
-   if(typeof body.jobId !== 'string' || !uuid.test(body.jobId)) return reply({error:"INVALID_JOB"},400);
-   const {data}=await db.from("jobs").select("id").eq("id",body.jobId).eq("posted_by_id",user.id).maybeSingle();
-   if(!data) return reply({error:"NOT_YOUR_JOB"},403);
-  }
+  const jobIds=body.planId.startsWith('credit') ? [] : (body.jobIds ?? [body.jobId]);
+  if(!Array.isArray(jobIds) || jobIds.length>100 || (!body.planId.startsWith('credit') && jobIds.length===0)
+   || jobIds.some((id:unknown)=>typeof id!=='string' || !uuid.test(id)) || new Set(jobIds).size!==jobIds.length)
+   return reply({error:'INVALID_JOB'},400);
   const code=Deno.env.get("QPAY_INVOICE_CODE");
   if(!code || !Deno.env.get('QPAY_USERNAME') || !Deno.env.get('QPAY_PASSWORD')) return reply({error:"QPAY_NOT_CONFIGURED"},503);
-  const {data:order,error}=await db.rpc('reserve_qpay_service_order',{p_user_id:user.id,p_job_id:body.planId === 'credit' ? null:body.jobId,p_plan_id:body.planId});
+  const {data:order,error}=await db.rpc('reserve_qpay_listing_order',{p_user_id:user.id,p_job_ids:jobIds,p_plan_id:body.planId});
   if(error) {
    if(error.message?.includes('NOT_YOUR_JOB')) return reply({error:'NOT_YOUR_JOB'},403);
    if(error.message?.includes('RATE_LIMITED')) return reply({error:'RATE_LIMITED'},429);
+   for(const code of ['LISTING_EXPIRED','LISTING_INACTIVE','NO_AVAILABLE_QUANTITY','ALREADY_SPONSORED','PENDING_PAYMENT'])
+    if(error.message?.includes(code)) return reply({error:code},409);
    throw new Error("ORDER_CREATE_FAILED");
   }
   if(!order?.id) throw new Error('ORDER_CREATE_FAILED');
@@ -101,7 +126,7 @@ Deno.serve(async req => {
   return reply({orderId:order.id,amount:Number(order.amount),qr_image:invoice.qr_image,urls});
  } catch(error) {
   // Never log tokens, credentials or bank payloads.
-  const known=['QPAY_NOT_CONFIGURED','QPAY_AUTH_FAILED','QPAY_REQUEST_FAILED','ORDER_CREATE_FAILED','INVALID_INVOICE','INVOICE_SAVE_FAILED','PAYMENT_CHECK_FAILED','INVALID_PAYMENT_RESPONSE','PAYMENT_FINALIZATION_FAILED'];
+  const known=['QPAY_NOT_CONFIGURED','QPAY_AUTH_FAILED','QPAY_REQUEST_FAILED','ORDER_CREATE_FAILED','INVALID_INVOICE','INVOICE_SAVE_FAILED','PAYMENT_CHECK_FAILED','INVALID_PAYMENT_RESPONSE','PAYMENT_FINALIZATION_FAILED','CANCEL_SAVE_FAILED'];
   return reply({error:error instanceof Error && known.includes(error.message) ? error.message:"PAYMENT_ERROR"},502);
  }
 });

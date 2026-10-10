@@ -178,7 +178,7 @@ export default function AdminPanel() {
   const queryClient = useQueryClient();
   const { isSuperAdmin, isAdminUnlocked } = useAuth() as any;
   const { updateJobCategory, deleteJob, sponsorJob } = useJobs();
-  const [activeTab, setActiveTab] = useState<"users" | "jobs" | "banners" | "disputes" | "feedback">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "jobs" | "banners" | "announcements" | "disputes" | "feedback">("users");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -255,6 +255,15 @@ export default function AdminPanel() {
       return data || [];
     },
     enabled: hasAdminAccess,
+  });
+  const announcementsQuery = useQuery({
+    queryKey:['admin-announcement-metrics'],
+    queryFn:async()=>{
+      const {data,error}=await supabase.from('system_announcements').select('id,title,is_active,view_count,start_at,end_at,created_at').order('created_at',{ascending:false});
+      if(error) throw error;
+      return data ?? [];
+    },
+    enabled:hasAdminAccess,
   });
   // ✅ FEEDBACK query (ШУУД БААЗААС ТАТАХ - Edge Function хэрэггүй)
   const feedbackQuery = useQuery({
@@ -528,6 +537,7 @@ export default function AdminPanel() {
               usersQuery.refetch();
               jobsQuery.refetch();
               bannersQuery.refetch();
+              announcementsQuery.refetch();
               feedbackQuery.refetch();
               disputesQuery.refetch();
             }}
@@ -622,6 +632,9 @@ export default function AdminPanel() {
           <Text style={[styles.tabText, activeTab === "banners" && styles.activeTabText]}>
             Баннер ({bannersQuery.data?.length || 0})
           </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.tab,activeTab==='announcements'&&styles.activeTab]} onPress={()=>setActiveTab('announcements')}>
+          <Text style={[styles.tabText,activeTab==='announcements'&&styles.activeTabText]}>Мэдэгдэл ({announcementsQuery.data?.length || 0})</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === "disputes" && styles.activeTab]}
@@ -788,6 +801,8 @@ export default function AdminPanel() {
           </View>
         ) : activeTab === "banners" ? (
           <View>
+            <Text style={styles.cardInfo}>Үзэлт: баннерын дор хаяж тал нь 0.75 секунд харагдсан тоо. Даралт: холбоос нээсэн тоо.</Text>
+            <TouchableOpacity style={styles.tab} onPress={()=>bannersQuery.refetch()}><Text style={styles.tabText}>Тоог шинэчлэх</Text></TouchableOpacity>
             {bannersQuery.isLoading ? (
               <ActivityIndicator size="large" color="#007AFF" style={styles.loader} />
             ) : bannersQuery.error ? (
@@ -811,6 +826,19 @@ export default function AdminPanel() {
                 {(bannersQuery.data || []).length === 0 && <Text style={styles.emptyText}>Баннер байхгүй байна</Text>}
               </>
             )}
+          </View>
+        ) : activeTab === 'announcements' ? (
+          <View>
+            <Text style={styles.cardInfo}>Үзэлт нь цонх бодитоор нээгдсэн нийт тоо; давтагдашгүй хүний тоо биш. Тоолол шинэчлэлтээс эхэлнэ.</Text>
+            <TouchableOpacity style={styles.tab} onPress={()=>announcementsQuery.refetch()}><Text style={styles.tabText}>Тоог шинэчлэх</Text></TouchableOpacity>
+            {announcementsQuery.isLoading ? <ActivityIndicator style={styles.loader}/> : announcementsQuery.error ? <Text style={styles.errorText}>Мэдэгдлийн тоог ачаалж чадсангүй.</Text> : <>
+              {(announcementsQuery.data ?? []).map(ann=><View key={ann.id} style={styles.card}>
+                <View style={styles.cardHeader}><Text style={styles.cardTitle}>{ann.title || 'Гарчиггүй мэдэгдэл'}</Text><Text style={styles.cardInfo}>{ann.is_active?'Идэвхтэй':'Идэвхгүй'}</Text></View>
+                <Text style={[styles.cardInfo,{fontWeight:'700'}]}>Үзэлт: {Number(ann.view_count ?? 0).toLocaleString()}</Text>
+                <Text style={styles.cardInfo}>Холбоосын товчгүй тул даралт тоолохгүй.</Text>
+              </View>)}
+              {!announcementsQuery.data?.length && <Text style={styles.emptyText}>Мэдэгдэл байхгүй байна</Text>}
+            </>}
           </View>
         ) : activeTab === "disputes" ? (
           <View>

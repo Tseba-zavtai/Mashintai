@@ -94,6 +94,7 @@ const defaultEligible = <T,>(item: T): boolean => {
   if (record.is_active === false || record.isActive === false) return false;
   if (record.is_deleted === true || record.isDeleted === true) return false;
   if (record.is_expired === true || record.isExpired === true) return false;
+  if (typeof record.listing_expires_at === 'string' && Date.parse(record.listing_expires_at) <= Date.now()) return false;
   if (record.is_hidden === true || record.isHidden === true) return false;
   return true;
 };
@@ -111,7 +112,7 @@ const defaultSponsored = <T,>(item: T): boolean => {
 
 const defaultCreatedAt = <T,>(item: T): string | Date | number | null | undefined => {
   const record = asRecord(item);
-  const value = record.created_at ?? record.createdAt ?? record.posted_at ?? record.postedAt;
+  const value = record.published_at ?? record.created_at ?? record.createdAt ?? record.posted_at ?? record.postedAt;
   return typeof value === 'string' || typeof value === 'number' || value instanceof Date
     ? value
     : null;

@@ -187,7 +187,7 @@ function normalizeJob(raw: any): NormalizedJob {
       phone: raw?.posted_by_phone ?? null,
       photoUri: raw?.users?.photo_uri ?? raw?.photo_uri ?? raw?.posted_by_photo ?? null,
     };
-  const postedDate = raw?.postedDate ?? raw?.created_at ?? raw?.updated_at;
+  const postedDate = raw?.published_at ?? raw?.postedDate ?? raw?.created_at ?? raw?.updated_at;
   const sponsoredUntil = getSponsoredUntilDate(raw);
   const legacySponsored = !!(raw?.isSponsored ?? raw?.is_sponsored ?? false);
   const isSponsoredByTime = sponsoredUntil ? sponsoredUntil.getTime() > Date.now() : false;
@@ -511,6 +511,12 @@ export default function HomeScreen() {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [announcement, setAnnouncement] = useState<{ id: string; title: string; message: string; image_url?: string | null; start_at?: string | null; end_at?: string | null } | null>(null);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  const viewedAnnouncements = useRef(new Set<string>());
+  const onAnnouncementShown = () => {
+    if(!announcement?.id || viewedAnnouncements.current.has(announcement.id)) return;
+    viewedAnnouncements.current.add(announcement.id);
+    void recordPromotionMetric('announcement',announcement.id,'impression');
+  };
   const [dontShowAnnouncementAgain, setDontShowAnnouncementAgain] = useState(false);
   const [savingAnnouncementDismissal, setSavingAnnouncementDismissal] = useState(false);
   const [announcementSaveError, setAnnouncementSaveError] = useState(false);
@@ -956,7 +962,7 @@ export default function HomeScreen() {
                 {row.jobs.length === 1 ? <View style={styles.gridSpacer} /> : null}
               </View>
               {row.shouldShowBanner && homeBanners.length > 0 ? (
-                <View style={styles.homeBannerWrap}><BannerCarousel banners={homeBanners} /></View>
+                <View style={styles.homeBannerWrap}><BannerCarousel banners={homeBanners} enabled={!showAnnouncementModal && !showUpdateModal} /></View>
               ) : null}
             </React.Fragment>
           ))
@@ -965,7 +971,7 @@ export default function HomeScreen() {
           <>
             <HomeHintsCarousel />
             {homeBanners.length > 0 ? (
-              <View style={styles.homeBannerWrap}><BannerCarousel banners={homeBanners} /></View>
+              <View style={styles.homeBannerWrap}><BannerCarousel banners={homeBanners} enabled={!showAnnouncementModal && !showUpdateModal} /></View>
             ) : null}
             <HomeReviews refreshing={refreshing} />
           </>
@@ -994,7 +1000,7 @@ export default function HomeScreen() {
       </Modal>
 
       {/* МОДАЛ 2: Баярын постер / Чухал мэдэгдэл */}
-      <Modal visible={showAnnouncementModal} animationType="slide" transparent={true} onRequestClose={closeAnnouncement}>
+      <Modal visible={showAnnouncementModal} animationType="slide" transparent={true} onShow={onAnnouncementShown} onRequestClose={closeAnnouncement}>
         <View style={styles.versionOverlay}>
           {/* 🎯 ЗАССАН: Модал картын өндрийг утасны дэлгэцийн 80%-иас хэтрэхгүй уян хатан (Dynamic) болгов */}
           <View style={[styles.annContent, { backgroundColor: colors.card, maxHeight: height * 0.8 }]}>

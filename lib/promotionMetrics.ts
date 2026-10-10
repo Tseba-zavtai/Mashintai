@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
-export type PromotionMetricTarget = "sponsored_job" | "banner";
+export type PromotionMetricTarget = "sponsored_job" | "banner" | "announcement";
 export type PromotionMetricEvent = "impression" | "click";
 
 export function isSponsoredPromotionActive(job: any): boolean {
@@ -19,7 +19,8 @@ export async function recordPromotionMetric(
   if (!id) return false;
 
   try {
-    const { data, error } = await supabase.rpc("record_promotion_metric", {
+    if(targetType==='announcement' && eventType!=='impression') return false;
+    const { data, error } = targetType==='announcement' ? await supabase.rpc('record_announcement_view',{p_target_id:id}) : await supabase.rpc("record_promotion_metric", {
       p_target_type: targetType,
       p_target_id: id,
       p_event_type: eventType,

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   View,
+  AppState,
   Text,
   FlatList,
 
@@ -16,6 +17,7 @@ import * as Linking from "expo-linking";
 import { Image as ExpoImage } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { recordPromotionMetric } from "@/lib/promotionMetrics";
+import { useIsFocused } from '@react-navigation/native';
 
 export type Banner = {
   id: string;
@@ -28,6 +30,7 @@ export type Banner = {
 };
 
 type Props = {
+  enabled?: boolean;
   banners: Banner[];
   height?: number;
   borderRadius?: number;
@@ -74,6 +77,7 @@ function BannerMedia({ banner, isActive }: { banner: Banner; isActive: boolean }
 }
 
 export default function BannerCarousel({
+  enabled = true,
   banners,
   height,
   borderRadius = 16,
@@ -87,12 +91,16 @@ export default function BannerCarousel({
   const viewedBannerIdsRef = useRef<Set<string>>(new Set());
   const wrapRef = useRef<View>(null);
   const [isInViewport, setIsInViewport] = useState(false);
+  const isFocused = useIsFocused();
+  const [appActive,setAppActive] = useState(AppState.currentState==='active');
+  useEffect(()=>{const sub=AppState.addEventListener('change',state=>setAppActive(state==='active'));return ()=>sub.remove();},[]);
 
   const data = useMemo(() => (banners ?? []).filter(Boolean), [banners]);
 
   const checkViewport = useCallback(() => {
     wrapRef.current?.measureInWindow((_, y, __, measuredHeight) => {
-      setIsInViewport(y < SCREEN_H && y + measuredHeight > 0);
+      const visibleHeight=Math.max(0,Math.min(y+measuredHeight,SCREEN_H)-Math.max(y,0));
+      setIsInViewport(measuredHeight>0 && visibleHeight/measuredHeight>=0.5);
     });
   }, []);
 
@@ -115,7 +123,7 @@ export default function BannerCarousel({
 
   useEffect(() => {
     const activeBanner = data[index];
-    if (!isInViewport || !activeBanner || viewedBannerIdsRef.current.has(activeBanner.id)) return;
+    if (!enabled || !isFocused || !appActive || !isInViewport || !activeBanner || viewedBannerIdsRef.current.has(activeBanner.id)) return;
 
     const timer = setTimeout(() => {
       if (viewedBannerIdsRef.current.has(activeBanner.id)) return;
@@ -124,7 +132,7 @@ export default function BannerCarousel({
     }, 750);
 
     return () => clearTimeout(timer);
-  }, [data, index, isInViewport]);
+  }, [data, index, isInViewport,enabled,isFocused,appActive]);
 
   const computedHeight = useMemo(() => {
     if (typeof height === "number" && height > 0) return Math.round(height);

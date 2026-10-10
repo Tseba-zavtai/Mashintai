@@ -16,12 +16,12 @@ begin
  perform public.finalize_qpay_service_order(o,'smoke-'||o,3000);
  if (select coalesce(paid_post_credits,0) from public.users where id=u) <> before_paid+1 then raise exception 'duplicate credit grant'; end if;
  select coalesce(bump_count,0) into before_bump from public.jobs where id=j;
- insert into public.qpay_service_orders(user_id,job_id,plan_id,amount,invoice_id,status) values(u,j,'bump',1000,'smoke-'||gen_random_uuid(),'PENDING') returning id into o;
+ insert into public.qpay_service_orders(user_id,job_id,job_ids,plan_id,amount,invoice_id,status) values(u,j,array[j],'bump',1000,'smoke-'||gen_random_uuid(),'PENDING') returning id into o;
  perform public.finalize_qpay_service_order(o,'smoke-'||o,1000);
  perform public.finalize_qpay_service_order(o,'smoke-'||o,1000);
  if (select coalesce(bump_count,0) from public.jobs where id=j) <> before_bump+1 then raise exception 'duplicate bump grant'; end if;
- select greatest(coalesce(sponsored_until,now()),now()) into before_until from public.jobs where id=j;
- insert into public.qpay_service_orders(user_id,job_id,plan_id,amount,invoice_id,status) values(u,j,'weekly',21000,'smoke-'||gen_random_uuid(),'PENDING') returning id into o;
+ before_until:=now();
+ insert into public.qpay_service_orders(user_id,job_id,job_ids,plan_id,amount,invoice_id,status) values(u,j,array[j],'weekly',21000,'smoke-'||gen_random_uuid(),'PENDING') returning id into o;
  perform public.finalize_qpay_service_order(o,'smoke-'||o,21000);
  perform public.finalize_qpay_service_order(o,'smoke-'||o,21000);
  select sponsored_until into after_until from public.jobs where id=j;

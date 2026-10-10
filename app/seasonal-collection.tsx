@@ -13,6 +13,8 @@ import { Image } from "expo-image";
 import { MapPin, Sparkles, Tag } from "lucide-react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import AppHeader from "@/components/AppHeader";
+import BannerCarousel, { type Banner } from "@/components/BannerCarousel";
+import { fetchBanners } from "@/lib/banners";
 import { useJobs } from "@/contexts/JobsContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
@@ -50,6 +52,12 @@ export default function SeasonalCollectionScreen() {
   const [collection, setCollection] = useState<SeasonalCollection | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [banners, setBanners] = useState<Banner[]>([]);
+  const loadBanners = useCallback(async () => {
+    setBanners(await fetchBanners("home_feed"));
+  }, []);
+
+  useEffect(() => { void loadBanners(); }, [loadBanners]);
 
   const loadCollection = useCallback(async () => {
     try {
@@ -77,11 +85,11 @@ export default function SeasonalCollectionScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadCollection(), loadJobs()]);
+      await Promise.all([loadCollection(), loadJobs(), loadBanners()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadCollection, loadJobs]);
+  }, [loadCollection, loadJobs, loadBanners]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -124,12 +132,13 @@ export default function SeasonalCollectionScreen() {
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Шинэ зар тухайн category эсвэл дэд category-д ормогц энд автоматаар харагдана.</Text>
               </View>
             ) : (
-              seasonalJobs.map((job: any) => {
+              seasonalJobs.map((job: any, index: number) => {
                 const imageUrl = getImageUrl(job);
                 const categoryText = [job?.category, job?.subcategory].filter(Boolean).join(" · ");
                 const locationText = typeof job?.location === "object" ? job.location?.address : job?.location ?? job?.address;
 
                 return (
+                  <React.Fragment key={job.id}>
                   <TouchableOpacity
                     key={job.id}
                     style={[styles.jobCard, { backgroundColor: colors.card }]}
@@ -150,6 +159,12 @@ export default function SeasonalCollectionScreen() {
                       <Text style={[styles.priceText, { color: colors.text }]}>{formatPrice(job)}</Text>
                     </View>
                   </TouchableOpacity>
+                  {banners.length > 0 && (index + 1) % 12 === 0 && (
+                    <View style={styles.bannerWrap}>
+                      <BannerCarousel banners={banners} />
+                    </View>
+                  )}
+                  </React.Fragment>
                 );
               })
             )}
@@ -168,6 +183,7 @@ const styles = StyleSheet.create({
   logo: { width: 104, height: 32 },
   content: { flex: 1 },
   contentContainer: { padding: 20, paddingBottom: 36 },
+  bannerWrap: { marginBottom: 12 },
   loadingWrap: { minHeight: 260, justifyContent: "center", alignItems: "center" },
   hero: { borderRadius: 18, padding: 18, marginBottom: 24 },
   heroIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.52)", marginBottom: 10 },

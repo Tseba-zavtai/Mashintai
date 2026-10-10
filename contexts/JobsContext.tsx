@@ -15,6 +15,7 @@ import { searchMatch } from "@/lib/searchUtils";
 import { loadSearchDemand, recordSearchDemand } from "@/lib/searchDemand";
 import { loadDefaultContactPhone } from "@/lib/contactPhones";
 import { isRentalRequestActionable } from "@/lib/rentalRequestExpiry";
+import { manageListings } from '@/lib/listingLifecycle';
 
 const STORAGE_KEY = "@jobs_storage";
 const USER_LOCATION_KEY = "@user_location";
@@ -229,7 +230,7 @@ const mapDbToJob = (row: DbJobRow, reviewStats?: ReviewStats): Job => {
   postedBy.userReviewCount = userStat?.count ?? asNumberOrNull(row?.posted_by_user_review_count ?? row?.user_review_count) ?? 0;
   postedBy.rentalCount = userStat?.rentalCount ?? asNumberOrNull(row?.posted_by_rental_count ?? row?.user_rental_count) ?? 0;
 
-  const postedDateRaw = row?.postedDate ?? row?.created_at ?? row?.updated_at;
+  const postedDateRaw = row?.published_at ?? row?.postedDate ?? row?.created_at ?? row?.updated_at;
   const location: any = row?.location ?? (row?.latitude != null || row?.longitude != null || row?.address != null ? { address: row?.address ?? null, latitude: row?.latitude ?? null, longitude: row?.longitude ?? null } : null);
   const sponsoredUntilRaw = row?.sponsoredUntil ?? row?.sponsored_until ?? null;
   const sponsoredUntil = sponsoredUntilRaw ? toSafeDate(sponsoredUntilRaw) : null;
@@ -244,7 +245,8 @@ const mapDbToJob = (row: DbJobRow, reviewStats?: ReviewStats): Job => {
   const rentalCount = jobStat?.count ?? asNumberOrNull(row?.rental_count ?? row?.rentalCount) ?? itemReviewCount;
   const bumpedAt = getBumpedAtDate(row);
   const quantity = asPositiveInt(row?.quantity ?? row?.qty ?? 1, 1);
-  const availableQuantity = Math.max(0, asPositiveInt(row?.available_quantity ?? row?.availableQuantity ?? quantity, quantity));
+  const availableRaw = Number(row?.available_quantity ?? row?.availableQuantity ?? quantity);
+  const availableQuantity = Number.isFinite(availableRaw) ? Math.max(0,Math.floor(availableRaw)) : quantity;
   
   const mapped: any = {
     ...row, id: row?.id, title: row?.title ?? "", description: row?.description ?? "",
@@ -838,15 +840,10 @@ export const [JobsContext, useJobs] = createContextHook(() => {
 
   const toggleJobActive = useCallback(async (jobId: string, isActive: boolean) => {
       try {
-        const res = await safeUpdateJob(jobId, { is_active: isActive });
-        if (res.error) throw res.error;
-        setJobs((prev) => {
-          const next = prev.map((j: any) => j.id === jobId ? { ...j, isActive } : j);
-          saveJobsToCache(next as Job[]);
-          return next;
-        });
+        await manageListings([jobId],isActive?'activate':'deactivate');
+        await loadJobs();
       } catch (error) { throw error; }
-    }, []);
+    }, [loadJobs]);
 
   const bumpJob = useCallback(async (jobId: string) => {
       try {

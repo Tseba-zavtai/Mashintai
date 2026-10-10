@@ -33,6 +33,8 @@ type SponsorPlan = {
 
 const ALL_PLANS: SponsorPlan[] = [
   { id: "credit", name: "Зар оруулах 1 эрх", price: 3000, durationDays: 0, credits: 1, description: "Та 3,000₮-өөр 1 удаагийн зар оруулах эрх авна." },
+  { id: "credit2", name: "Зар оруулах 2 эрх", price: 5000, durationDays: 0, credits: 2, description: "2 эрхийн багц — 1,000₮ хэмнэнэ." },
+  { id: "credit3", name: "Зар оруулах 3 эрх", price: 7000, durationDays: 0, credits: 3, description: "3 эрхийн багц — 2,000₮ хэмнэнэ." },
   { id: "bump", name: "Зараа дээш гаргах", price: 1000, durationDays: 0, description: "Зараа нэг удаа жагсаалтын эхэнд гаргана. Үүний дараа шинээр нэмэгдсэн эсвэл дээшлүүлсэн зарууд таны зарын өмнө гарна." },
   { id: "daily", name: "1 хоног", price: 4500, durationDays: 1, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 1 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
   { id: "weekly", name: "7 хоног", price: 21000, durationDays: 7, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 7 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
@@ -42,7 +44,9 @@ const ALL_PLANS: SponsorPlan[] = [
 
 export default function SponsorPaymentScreen() {
   const router = useRouter();
-  const { jobId, targetType } = useLocalSearchParams<{ jobId?: string; targetType?: "bump" | "sponsor" | "credit" }>();
+  const { jobId, jobIds: idsParam, targetType } = useLocalSearchParams<{ jobId?: string; jobIds?: string; targetType?: "bump" | "sponsor" | "credit" }>();
+  const selectedIds = useMemo(() => idsParam ? idsParam.split(',').filter(Boolean) : jobId ? [jobId] : [], [idsParam,jobId]);
+  const multiplier = targetType === 'credit' ? 1 : selectedIds.length;
   const { jobs, loadJobs } = useJobs() as any;
   const { user, refetchProfile } = useAuth() as any;
   const { colors } = useTheme();
@@ -50,8 +54,11 @@ export default function SponsorPaymentScreen() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [invoice, setInvoice] = useState<QPayInvoice | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<{invoice:QPayInvoice;planId:string} | null>(null);
   const busy = useRef(false);
-  const storageKey = user?.id ? `qpay-pending:${user.id}:${targetType}:${jobId ?? 'credit'}` : null;
+  const refreshers = useRef({refetchProfile,loadJobs});
+  refreshers.current = {refetchProfile,loadJobs};
+  const storageKey = user?.id ? `qpay-pending:${user.id}:${targetType}:${selectedIds.slice().sort().join(',') || 'credit'}` : null;
 
 
   useEffect(() => {
@@ -62,14 +69,25 @@ export default function SponsorPaymentScreen() {
 
   useEffect(() => {
     let mounted = true;
-    if (storageKey) AsyncStorage.getItem(storageKey).then(value => {
+    setStep('info'); setPendingPayment(null); setInvoice(null);
+    if (storageKey) AsyncStorage.getItem(storageKey).then(async value => {
       if (!mounted || !value) return;
       try {
         const saved = JSON.parse(value);
         if (saved.invoice?.orderId && saved.planId) {
-          setInvoice(saved.invoice); setSelectedPlan(saved.planId); setStep('invoice');
+          const status=await callQPay<{paid:boolean;cancelled?:boolean}>({action:'status',orderId:saved.invoice.orderId});
+          if (!mounted) return;
+          if(status.paid || status.cancelled) {
+            await AsyncStorage.removeItem(storageKey);
+            await Promise.allSettled([refreshers.current.refetchProfile?.(),refreshers.current.loadJobs?.()]);
+          } else setPendingPayment(saved);
         }
-      } catch { /* Ignore stale local data; the server remains authoritative. */ }
+      } catch {
+        // Keep an unconfirmed invoice accessible; never assume a network error means paid.
+        if(mounted) {
+          try {const saved=JSON.parse(value);if(saved.invoice?.orderId && saved.planId) setPendingPayment(saved);} catch { /* Invalid local data. */ }
+        }
+      }
     }).catch(() => {});
     return () => { mounted = false; };
   }, [storageKey]);
@@ -77,6 +95,22 @@ export default function SponsorPaymentScreen() {
   const selectedPlanData = useMemo(() => ALL_PLANS.find((p) => p.id === selectedPlan) ?? null, [selectedPlan]);
   const selectedJob = useMemo(() => (jobs as any[]).find((j) => String(j?.id) === String(jobId)) ?? null, [jobs, jobId]);
   const screenTitle = "Төлбөр төлөлт";
+  const cancelInvoice = (target:QPayInvoice) => Alert.alert('Нэхэмжлэл цуцлах','Энэ төлбөрийг хийхээ болих уу? Төлбөр аль хэдийн орсон бол цуцлахгүй, үйлчилгээг баталгаажуулна.',[
+    {text:'Буцах',style:'cancel'}, {text:'Цуцлах',style:'destructive',onPress:async()=>{
+      if(busy.current) return;
+      busy.current=true;setIsSubmitting(true);
+      try {
+        const result=await callQPay<{paid:boolean;cancelled:boolean}>({action:'cancel',orderId:target.orderId});
+        if(!result.paid && !result.cancelled) throw new Error('Цуцлалт баталгаажаагүй. Дахин оролдоно уу.');
+        if(storageKey) await AsyncStorage.removeItem(storageKey);
+        setPendingPayment(null);setInvoice(null);setStep('info');
+        if(result.paid) {
+          await Promise.allSettled([refetchProfile?.(),loadJobs?.()]);
+          Alert.alert('Төлбөр орсон байна','Таны төлбөр баталгаажиж, эрх/үйлчилгээ нэмэгдсэн. Нэхэмжлэлийг цуцлаагүй.');
+        } else Alert.alert('Цуцлагдлаа','Нэхэмжлэл цуцлагдсан. Шинэ багц сонгож болно.');
+      } catch(e:any) {Alert.alert('Цуцалж чадсангүй',e.message);}
+      finally {busy.current=false;setIsSubmitting(false);}
+    }}]);
 
 
   const handleGenerateInvoice = async () => {
@@ -85,9 +119,10 @@ export default function SponsorPaymentScreen() {
     busy.current = true;
     setIsSubmitting(true);
     try {
-      const data=await callQPay<QPayInvoice>({action:'create',planId:selectedPlanData.id,jobId});
+      const data=await callQPay<QPayInvoice>({action:'create',planId:selectedPlanData.id,jobIds:selectedIds});
       if (!data?.orderId || !data.qr_image) throw new Error('Нэхэмжлэл үүсгэж чадсангүй.');
       setInvoice(data); setStep("invoice");
+      setPendingPayment({invoice:data,planId:selectedPlanData.id});
       if (storageKey) await AsyncStorage.setItem(storageKey,JSON.stringify({invoice:data,planId:selectedPlanData.id})).catch(() => {});
     } catch(error:any) { Alert.alert("Төлбөр",error.message); }
     finally { busy.current=false; setIsSubmitting(false); }
@@ -99,9 +134,14 @@ export default function SponsorPaymentScreen() {
     busy.current=true;
     setIsSubmitting(true);
     try {
-      const data=await callQPay<{paid:boolean}>({action:"status",orderId:invoice.orderId});
+      const data=await callQPay<{paid:boolean;cancelled?:boolean}>({action:"status",orderId:invoice.orderId});
+      if(data.cancelled) {
+        if(storageKey) await AsyncStorage.removeItem(storageKey);
+        setInvoice(null);setPendingPayment(null);setStep('info');return;
+      }
       if(!data?.paid) { if(!silent) Alert.alert("Төлбөр","Төлбөрийн баталгаажуулалт хараахан ирээгүй байна. Төлсний дараа дахин шалгана уу."); return; }
       setStep("success");
+      setPendingPayment(null);
       if(storageKey) await AsyncStorage.removeItem(storageKey).catch(() => {});
       await Promise.allSettled([refetchProfile?.(),loadJobs?.()]);
     } catch(error:any) { if(!silent) Alert.alert("Төлбөр",error.message); }
@@ -126,6 +166,16 @@ export default function SponsorPaymentScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
         {step === "info" && (
           <View style={styles.stepContainer}>
+            {pendingPayment && <View style={[styles.jobSummaryCard,{backgroundColor:colors.background}]}>
+              <Text style={{color:colors.text}}>Өмнөх төлбөрийн нэхэмжлэл байна. Шинээр төлөхөөс өмнө төлөвийг нь шалгаж болно.</Text>
+              <TouchableOpacity accessibilityRole="button" disabled={isSubmitting} style={[styles.actionBtnClose,{backgroundColor:colors.backgroundSecondary,marginTop:10}]} onPress={()=>{setInvoice(pendingPayment.invoice);setSelectedPlan(pendingPayment.planId);setStep('invoice');}}>
+                <Text style={{color:colors.text,fontWeight:'700'}}>Өмнөх төлбөрөө үргэлжлүүлэх · {pendingPayment.invoice.amount.toLocaleString()}₮</Text>
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" disabled={isSubmitting} style={[styles.actionBtnClose,{backgroundColor:colors.backgroundSecondary,marginTop:8}]} onPress={()=>cancelInvoice(pendingPayment.invoice)}>
+                {isSubmitting ? <ActivityIndicator color="#EF4444"/> : <Text style={{color:'#EF4444',fontWeight:'700'}}>Нэхэмжлэл цуцлах</Text>}
+              </TouchableOpacity>
+            </View>}
+            {targetType !== 'credit' && <Text style={{color:colors.text}}>Сонгосон: {selectedIds.length} зар. Төлбөр баталгаажихад зарын хугацаа 30 хоногоор шинэчлэгдэнэ. Зарын эрх хасагдахгүй.</Text>}
             {targetType !== "credit" && selectedJob && (
               <View style={[styles.jobSummaryCard, { backgroundColor: colors.background }]}>
                 <Text style={[styles.jobSummaryLabel, { color: colors.textSecondary }]}>Сонгосон зар</Text>
@@ -138,7 +188,7 @@ export default function SponsorPaymentScreen() {
               <View style={styles.plansContainer}>
                 {ALL_PLANS.filter(p => {
                   if (targetType === "bump") return p.id === "bump";
-                  if (targetType === "credit") return p.id === "credit";
+                  if (targetType === "credit") return p.id.startsWith("credit");
                   return p.id === "daily" || p.id === "weekly" || p.id === "monthly";
                 }).map((plan) => {
                   const selected = selectedPlan === plan.id;
@@ -163,7 +213,7 @@ export default function SponsorPaymentScreen() {
                           <View style={[styles.radioUnchecked, { borderColor: colors.textSecondary }]} />
                         )}
                       </View>
-                      <Text style={[styles.planPrice, { color: "#6E0AB0" }]}>{plan.price.toLocaleString()}₮</Text>
+                      <Text style={[styles.planPrice, { color: "#6E0AB0" }]}>{(plan.price * multiplier).toLocaleString()}₮</Text>
                       <Text style={[styles.planDescription, { color: colors.textSecondary }]}>{plan.description}</Text>
                     </TouchableOpacity>
                   );
@@ -176,7 +226,7 @@ export default function SponsorPaymentScreen() {
                 <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Төлбөр</Text>
                   <Text style={[styles.summaryPrice, { color: "#6E0AB0" }]}>
-                    {selectedPlanData.price.toLocaleString()}₮
+                    {(selectedPlanData.price * multiplier).toLocaleString()}₮
                   </Text>
                   <Text style={[styles.summaryDesc, { color: colors.textSecondary }]}>Хугацаа: {selectedPlanData.name}</Text>
                 </View>
@@ -237,6 +287,9 @@ export default function SponsorPaymentScreen() {
                 <Text style={[styles.actionBtnCloseText, { color: colors.text }]}>Хаах</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity accessibilityRole="button" disabled={isSubmitting || !invoice} style={[styles.actionBtnClose,{backgroundColor:colors.backgroundSecondary,marginTop:12}]} onPress={()=>invoice && cancelInvoice(invoice)}>
+              <Text style={{color:'#EF4444',fontWeight:'700'}}>Нэхэмжлэл цуцлах</Text>
+            </TouchableOpacity>
           </View>
         )}
 
