@@ -416,8 +416,17 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.dan-auth-finish-signup]
-verify_jwt = true
+# The handler validates the bearer token with auth.getUser before any writes.
+# Legacy gateway verification does not support all Auth signing algorithms.
+verify_jwt = false
 
 [functions.change-login-phone]
+verify_jwt = false
+
+[functions.delete-user]
+# Auth is verified by auth.getUser; do not use the legacy gateway JWT verifier.
+verify_jwt = false
+
+[functions.account-deletion-cleanup]
 verify_jwt = false
 

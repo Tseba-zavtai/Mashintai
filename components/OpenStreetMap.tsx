@@ -96,6 +96,9 @@ const OpenStreetMap = forwardRef(function OpenStreetMap(props: MapViewProps, ref
   } }), []);
   return <View style={props.style}>
     <WebView key={attempt} ref={web} style={StyleSheet.absoluteFill} source={source}
+      // Android must keep map drags instead of letting the enclosing form
+      // intercept vertical movement (RNCWebView disallows parent interception).
+      nestedScrollEnabled
       originWhitelist={["*"]} javaScriptEnabled cacheEnabled cacheMode="LOAD_DEFAULT"
       userAgent="Tureesly/1.0 (Android; mn.tureestei.app)" mixedContentMode="never"
       allowFileAccess={false} allowUniversalAccessFromFileURLs={false} setSupportMultipleWindows={false}

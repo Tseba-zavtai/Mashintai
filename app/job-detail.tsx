@@ -48,6 +48,8 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { RENTAL_INSURANCE_ENABLED } from "@/constants/features";
 import AppHeader from "@/components/AppHeader"; 
 import ContactPhonePickerModal from "@/components/ContactPhonePickerModal";
+import ListingGridCard from "@/components/ListingGridCard";
+import { getSimilarListings } from "@/lib/similarListings";
 import { loadDefaultContactPhone } from "@/lib/contactPhones";
 
 function toSafeDate(value: any): Date {
@@ -116,12 +118,13 @@ function normalizeDynamicData(value: unknown): Record<string, unknown> {
 }
 export default function JobDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { jobs } = useJobs() as any;
+  const { jobs, savedJobIds, toggleSaveJob } = useJobs() as any;
   const { user, isAuthenticated } = useAuth() as any;
   const router = useRouter();
   const { colors, currentTheme } = useTheme();
   const { width } = useWindowDimensions();
   const job = useMemo(() => jobs.find((j: any) => j.id === id), [jobs, id]);
+  const similarListings = useMemo(() => getSimilarListings(job, jobs), [job, jobs]);
   const viewedSponsoredJobIdsRef = useRef<Set<string>>(new Set());
   const isSponsoredJobView = isSponsoredPromotionActive(job);
 
@@ -566,6 +569,18 @@ export default function JobDetailScreen() {
             <Text style={[styles.reviewButtonSubText, { color: buttonTextColor, opacity: 0.8 }]}>Түрээслэх хугацаа болон тоог сонгох</Text>
           </TouchableOpacity>
 
+          {similarListings.length > 0 && (
+            <View style={[styles.similarSection, { backgroundColor: colors.background }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Төстэй зарууд</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.similarRow}>
+                {similarListings.map((item: any) => (
+                  <View key={item.id} style={{ width: Math.min(220, width * 0.57) }}>
+                    <ListingGridCard job={item} imageSwipeEnabled={false} isSaved={savedJobIds.includes(item.id)} onToggleSave={toggleSaveJob} />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
           <View style={styles.bottomPadding} />
         </ScrollView>
 
@@ -761,6 +776,8 @@ export default function JobDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  similarSection: { padding: 16, marginTop: 20, borderRadius: 14 },
+  similarRow: { gap: 12, paddingBottom: 4 },
   container: { flex: 1 },
   content: { flex: 1 },
   contentContainer: { padding: 20 },

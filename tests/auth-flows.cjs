@@ -72,6 +72,57 @@ function load(name, state = {}) {
   };
 }
 
+test('DAN signup establishes a fresh password session instead of refreshing revoked DAN credentials', async () => {
+  const source = fs.readFileSync('contexts/AuthContext.tsx', 'utf8');
+  const body = source.split('const completeDanSignup = useCallback(async (phone: string, password: string) => {')[1].split('}, [fetchProfile, touchLastActive]);')[0];
+  const calls = [];
+  const context = {
+    finishDanSignUp: async () => calls.push('finish'),
+    supabase: { auth: {
+      getSession: async () => ({ data: { session: { user: { id: 'test-id' } } } }),
+      refreshSession: async () => { throw new Error('revoked refresh token'); },
+      signInWithPassword: async input => { calls.push(input); return { data: { session: { user: { id: 'test-id' } } }, error: null }; },
+    } },
+    fetchProfile: async id => { calls.push(id); return {}; }, touchLastActive: async () => calls.push('active'),
+  };
+  const js = ts.transpileModule(`(async (phone: string, password: string) => {${body}})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  await vm.runInNewContext(js, context)('+97699112233', 'synthetic-password');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), ['test-id', 'finish', { email: 'u97699112233@example.com', password: 'synthetic-password' }, 'test-id', 'active']);
+});
+
+test('DAN browser return stays on auth rather than opening the home feed', () => {
+  const source = fs.readFileSync('app/+native-intent.tsx', 'utf8');
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports });
+  for (const path of ['tureesly://dan-callback?handoff=test', '/dan-callback?error=test']) {
+    assert.equal(exports.redirectSystemPath({ path, initial: false }), '/auth');
+  }
+  assert.equal(exports.redirectSystemPath({ path: 'other', initial: false }), '/');
+});
+
+test('DAN retry after a committed response does not overwrite credentials', async () => {
+  const source = fs.readFileSync('contexts/AuthContext.tsx', 'utf8');
+  const body = source.split('const completeDanSignup = useCallback(async (phone: string, password: string) => {')[1].split('}, [fetchProfile, touchLastActive]);')[0];
+  let writes = 0;
+  const session = { user: { id: 'test-id' } };
+  const context = {
+    normalizePhone: value => value,
+    finishDanSignUp: async () => { writes++; },
+    supabase: { auth: {
+      getSession: async () => ({ data: { session } }),
+      signInWithPassword: async () => ({ data: { session }, error: null }),
+    } },
+    fetchProfile: async () => ({ phone: '+97699112233', danOnboardingCompletedAt: 'done' }),
+    touchLastActive: async () => {},
+  };
+  const js = ts.transpileModule(`(async (phone: string, password: string) => {${body}})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const finish = vm.runInNewContext(js, context);
+  await finish('+97699112233', 'synthetic-password');
+  assert.equal(writes, 0);
+  await assert.rejects(finish('+97688112233', 'synthetic-password'), /Бүртгэл дууссан/);
+  assert.equal(writes, 0);
+});
+
 test('phone change: password required; no writes on rejection', async () => {
   const flow = load('change-login-phone');
   assert.equal((await flow.call({ phone: '88112233', currentPassword: 'wrong' })).status, 403);

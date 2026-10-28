@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import { Eye, EyeOff, ShieldCheck } from "lucide-react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import Constants from "expo-constants";
 
 const normalizePhone = (value: string) => value.replace(/\D/g, "").slice(0, 8);
 
@@ -59,8 +60,8 @@ export default function DanOnboardingScreen() {
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.backgroundSecondary }]} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}>
           <View style={[styles.iconCircle, { backgroundColor: colors.primary }]}>
             <ShieldCheck size={46} color={colors.buttonText} />
           </View>
@@ -134,6 +135,9 @@ export default function DanOnboardingScreen() {
           <TouchableOpacity disabled={saving} onPress={() => { void logout().then(() => router.replace("/auth")); }} style={{ padding: 16, alignItems: "center" }}>
             <Text style={{ color: colors.textSecondary }}>Гарах — бүртгэлээ дараа үргэлжлүүлэх</Text>
           </TouchableOpacity>
+          <Text style={{ color: colors.textSecondary, textAlign: "center", fontSize: 12 }}>
+            {Constants.nativeAppVersion ?? "1.0.0"} ({Constants.nativeBuildVersion ?? "dev"})
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

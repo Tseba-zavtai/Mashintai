@@ -3,6 +3,7 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   ScrollView,
@@ -39,6 +40,7 @@ export default function AuthScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [authTab, setAuthTab] = useState<"login" | "signup">("login");
   const [danResetVerified, setDanResetVerified] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -326,9 +328,9 @@ export default function AuthScreen() {
             <View style={styles.header}>
               <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
                 {isForgotPassword ? (
-                  <KeyRound size={48} color={colors.buttonText} strokeWidth={2} />
+                  <KeyRound size={30} color={colors.buttonText} strokeWidth={2} />
                 ) : (
-                  <LogIn size={48} color={colors.buttonText} strokeWidth={2} />
+                  <LogIn size={30} color={colors.buttonText} strokeWidth={2} />
                 )}
               </View>
               <Text style={[styles.title, { color: colors.text }]}>
@@ -339,12 +341,49 @@ export default function AuthScreen() {
                   ? danResetVerified
                     ? "DAN баталгаажсан. Шинэ нууц үгээ тохируулна уу."
                     : "DAN-аар өөрийгөө баталгаажуулаад нууц үгээ шинэчилнэ үү."
-                  : "Утасны дугаар, нууц үгээрээ нэвтэрнэ үү."}
+                  : "Түрээслэх, түрээслүүлэхэд тань ойр."}
               </Text>
             </View>
 
+            {!isForgotPassword && (
+              <View style={[styles.tabBar, { backgroundColor: colors.background, borderColor: colors.border }]} accessibilityRole="tablist">
+                {(["login", "signup"] as const).map((tab) => (
+                  <TouchableOpacity
+                    key={tab}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: authTab === tab, disabled: isLoading }}
+                    style={[styles.tab, authTab === tab && { backgroundColor: colors.primary }]}
+                    disabled={isLoading}
+                    onPress={() => { Keyboard.dismiss(); setAuthTab(tab); }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.tabText, { color: authTab === tab ? colors.buttonText : colors.textSecondary }]}>
+                      {tab === "login" ? "Нэвтрэх" : "Бүртгүүлэх"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             <View style={styles.form}>
-              {!isForgotPassword ? (
+              {!isForgotPassword && authTab === "signup" ? (
+                <View style={styles.signupContent}>
+                  <ShieldCheck size={36} color={colors.primary} />
+                  <Text style={[styles.signupTitle, { color: colors.text }]}>Анх удаа ашиглаж байна уу?</Text>
+                  <Text style={[styles.signupDescription, { color: colors.textSecondary }]}>
+                    DAN-аар өөрийгөө баталгаажуулсны дараа нэвтрэх утас, нууц үгээ тохируулна.
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.button, styles.signupButton, { backgroundColor: colors.primary }, isLoading && styles.buttonDisabled]}
+                    onPress={openTerms}
+                    disabled={isLoading}
+                    activeOpacity={0.8}
+                  >
+                    {isLoading ? <ActivityIndicator color={colors.buttonText} /> : <Text style={[styles.buttonText, { color: colors.buttonText }]}>DAN-аар бүртгүүлэх</Text>}
+                  </TouchableOpacity>
+                  <Text style={[styles.signupNote, { color: colors.textSecondary }]}>Эхлээд үйлчилгээний нөхцөлтэй танилцаж, зөвшөөрнө.</Text>
+                </View>
+              ) : !isForgotPassword ? (
                 <>
                   {renderPhoneInput()}
                   {renderPasswordInput()}
@@ -362,30 +401,6 @@ export default function AuthScreen() {
                     <Text style={[styles.forgotButtonText, { color: colors.primary }]}>Нууц үг мартсан уу?</Text>
                   </TouchableOpacity>
 
-                  <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                  <View style={{ alignItems: "center", gap: 8 }}>
-                    <Text style={[styles.legacyLinkText, { color: colors.textSecondary }]}>Шинэ хэрэглэгч үү?</Text>
-                    <TouchableOpacity style={styles.danSignUpButton} onPress={openTerms} disabled={isLoading} activeOpacity={0.75}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <ShieldCheck size={19} color={colors.primary} />
-                        <Text style={[styles.switchButtonText, { color: colors.primary }]}>DAN-аар бүртгүүлэх</Text>
-                      </View>
-                    </TouchableOpacity>
-                    <Text style={[styles.danHint, { color: colors.textSecondary }]}>Эхлээд үйлчилгээний нөхцөлтэй танилцаж, дараа нь DAN-аар иргэний мэдээллээ баталгаажуулна.</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.legacyLinkButton}
-                    onPress={() => Alert.alert(
-                      "Хуучин account-аа DAN-тай холбох",
-                      "Эхлээд утасны дугаар, нууц үгээрээ нэвтэрнэ үү. Дараа нь Profile → DAN-аар баталгаажуулах хэсгээс нэг удаа холбоно."
-                    )}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.legacyLinkText, { color: colors.textSecondary }]}>Өмнөх Tureesly бүртгэлтэй юу?</Text>
-                    <Text style={[styles.legacyLinkHint, { color: colors.primary }]}>Хуучин account-аа DAN-тай холбох</Text>
-                  </TouchableOpacity>
                 </>
               ) : (
                 <>
@@ -482,8 +497,8 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   keyboardView: { flex: 1 },
   scrollView: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingBottom: 120 },
-  content: { paddingHorizontal: 24, paddingTop: 40 },
+  scrollContent: { flexGrow: 1, paddingBottom: 48 },
+  content: { paddingHorizontal: 24, paddingTop: 12 },
 
   backButton: {
     width: 40,
@@ -493,21 +508,29 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  header: { alignItems: "center", marginBottom: 48 },
+  header: { alignItems: "center", marginBottom: 24 },
 
   iconContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: 16,
   },
 
-  title: { fontSize: 32, fontWeight: "700", marginBottom: 12, textAlign: "center" },
+  title: { fontSize: 26, fontWeight: "700", marginBottom: 8, textAlign: "center" },
   subtitle: { fontSize: 16, textAlign: "center", lineHeight: 24 },
 
   form: { gap: 24 },
+  tabBar: { flexDirection: "row", borderWidth: 1, borderRadius: 14, padding: 4, gap: 4, marginBottom: 24 },
+  tab: { flex: 1, minHeight: 48, borderRadius: 10, justifyContent: "center", alignItems: "center", paddingHorizontal: 8, paddingVertical: 10 },
+  tabText: { fontSize: 16, fontWeight: "700" },
+  signupContent: { alignItems: "center", gap: 18, paddingTop: 12 },
+  signupTitle: { fontSize: 20, fontWeight: "700", textAlign: "center" },
+  signupDescription: { fontSize: 16, lineHeight: 24, textAlign: "center" },
+  signupButton: { alignSelf: "stretch" },
+  signupNote: { fontSize: 12, lineHeight: 18, textAlign: "center" },
   inputContainer: { gap: 8 },
   label: { fontSize: 14, fontWeight: "600" },
 

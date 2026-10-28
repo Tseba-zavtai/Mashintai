@@ -1,6 +1,7 @@
 // supabase/functions/delete-user/index.ts
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { cleanDeletedAccountFiles } from "../_shared/accountDeletion.ts";
 
 serve(async (req) => {
   try {
@@ -65,23 +66,28 @@ serve(async (req) => {
       }
     }
 
-    // 1) public.users (table) устгана
-    const { error: dbErr } = await admin.from("users").delete().eq("id", userId);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+      return new Response(JSON.stringify({ error: "Хэрэглэгчийн дугаар буруу байна." }), { status: 400 });
+    }
+    // Profiles, financial unlinking and Auth removal commit or roll back together.
+    const { error: dbErr } = await admin.rpc("delete_account_atomic", { p_user_id: userId });
     if (dbErr) {
-      return new Response(JSON.stringify({ error: dbErr.message }), {
-        status: 500,
+      const messages: Record<string, string> = {
+        ACTIVE_RENTAL: "Дуусаагүй түрээс байна. Түрээсээ дуусгаж эсвэл цуцалсны дараа бүртгэлээ устгана уу.",
+        PENDING_PAYMENT: "Дуусаагүй төлбөр байна. Төлбөрөө шалгаж эсвэл нэхэмжлэлээ цуцалсны дараа дахин оролдоно уу.",
+        OPEN_DISPUTE: "Шийдэгдээгүй маргаан байна. Тусламжийн багтай холбогдоно уу.",
+        ADMIN_ACCOUNT_PROTECTED: "Үндсэн админ бүртгэлийг энэ үйлдлээр устгахгүй. Эхлээд админ эрхээ шилжүүлнэ үү.",
+      };
+      const code = Object.keys(messages).find(key => dbErr.message?.includes(key));
+      console.error("delete-account transaction rejected", code ?? dbErr.code);
+      return new Response(JSON.stringify({ error: code ? messages[code] : "Бүртгэлийг устгаж чадсангүй. Мэдээлэл өөрчлөгдөөгүй. Дахин оролдоно уу." }), {
+        status: code ? 409 : 500,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // 2) auth user устгана
-    const { error: authErr } = await admin.auth.admin.deleteUser(userId);
-    if (authErr) {
-      return new Response(JSON.stringify({ error: authErr.message }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    // Storage is external to the DB transaction. Failures remain in a retry queue.
+    await cleanDeletedAccountFiles(admin).catch(() => console.error("storage cleanup queued for retry"));
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,

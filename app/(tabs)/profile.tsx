@@ -351,7 +351,7 @@ export default function ProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert("Профайл устгах", "Та итгэлтэй байна уу?", [
+    Alert.alert("Профайл устгах", "Таны бүртгэл, DAN холбоос, зар болон холбоотой түрээсийн түүх устна. Буцааж сэргээх боломжгүй. Хувийн мэдээлэлгүй тооцооны баримт үлдэж болно. Үргэлжлүүлэх үү?", [
       { text: "Болих", style: "cancel" },
       {
         text: "Устгах", style: "destructive", onPress: async () => {
@@ -373,7 +373,7 @@ export default function ProfileScreen() {
 
             await logout();
             router.replace("/auth");
-          } catch { Alert.alert("Алдаа", "Алдаа гарлаа"); } finally { setDeleteBusy(false); }
+          } catch (error) { Alert.alert("Устгаж чадсангүй", error instanceof Error ? error.message : "Дахин оролдоно уу."); } finally { setDeleteBusy(false); }
         }
       }
     ]);

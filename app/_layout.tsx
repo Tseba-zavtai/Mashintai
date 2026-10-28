@@ -16,6 +16,7 @@ import * as Device from 'expo-device';
 import { supabase } from "@/lib/supabase";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
+import AndroidLaunchBrand from "@/components/AndroidLaunchBrand";
 
 const queryClient = new QueryClient();
 
@@ -177,6 +178,7 @@ export default function RootLayout() {
                   <RootLayoutNav />
                   <AppLockGate />
                   <AccountSuspendedGate />
+                  <AndroidLaunchBrand />
                 </GestureHandlerRootView>
               </JobsContext>
             </AppLockContext>

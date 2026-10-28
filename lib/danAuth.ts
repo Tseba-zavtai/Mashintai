@@ -1,5 +1,6 @@
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import { Platform } from "react-native";
 import { supabase } from "@/lib/supabase";
 
 const DAN_CALLBACK_URL = "tureesly://dan-callback";
@@ -48,6 +49,10 @@ export async function authenticateWithDan(mode: DanMode, options?: { termsAccept
   const browserResult = await WebBrowser.openAuthSessionAsync(
     startData.authorize_url,
     DAN_CALLBACK_URL,
+    // Android's default hidden custom tab also uses FLAG_ACTIVITY_NO_HISTORY.
+    // DAN opens the SMS app: preserve its browser task so returning from SMS
+    // resumes authorization instead of destroying the tab and reporting cancel.
+    Platform.OS === "android" ? { createTask: true, showInRecents: true } : undefined,
   );
 
   if (browserResult.type !== "success") {
@@ -115,7 +120,12 @@ export async function finishDanSignUp(phone: string, password: string) {
     if (code === "phone_already_in_use") throw new Error("Энэ утасны дугаар өөр Tureesly бүртгэл дээр ашиглагдаж байна.");
     if (code === "terms_acceptance_required") throw new Error("Үйлчилгээний нөхцөлийг эхлээд зөвшөөрнө үү.");
     if (code === "onboarding_already_completed") throw new Error("Бүртгэл аль хэдийн дууссан байна. Аппаа дахин нээгээд нэвтэрнэ үү.");
-    throw new Error(errorMessage(error, "Бүртгэлийн мэдээллийг хадгалж чадсангүй."));
+    if (code === "authentication_required") throw new Error("Нэвтрэх хугацаа дууссан байна. DAN-аар дахин нэвтэрч бүртгэлээ үргэлжлүүлнэ үү.");
+    if (code === "dan_identity_required") throw new Error("DAN баталгаажуулалт олдсонгүй. DAN-аар дахин нэвтэрнэ үү.");
+    if (code === "dan_signup_finish_unavailable") throw new Error("Бүртгэл хадгалахад серверийн алдаа гарлаа. Дахин оролдоно уу.");
+    const status = error?.context?.status;
+    if (status === 401) throw new Error("Нэвтрэх хугацаа дууссан байна. DAN-аар дахин нэвтэрч үргэлжлүүлнэ үү.");
+    throw new Error(`Бүртгэлийн мэдээллийг хадгалж чадсангүй. Дахин оролдоно уу.${status ? ` (HTTP ${status})` : ""}`);
   }
 }
 

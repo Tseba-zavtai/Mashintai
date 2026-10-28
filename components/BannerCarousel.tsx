@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import {
   View,
   AppState,
-  Text,
   FlatList,
 
   Pressable,
@@ -209,6 +208,8 @@ export default function BannerCarousel({
           <Pressable
             style={[styles.slide, { width: carouselWidth, height: computedHeight }]}
             onPress={() => onPressBanner(item)}
+            accessibilityRole="button"
+            accessibilityLabel={item.title?.trim() || item.subtitle?.trim() || "Сурталчилгааны баннер"}
           >
             <View
               style={[
@@ -222,14 +223,6 @@ export default function BannerCarousel({
             >
               <BannerMedia banner={item} isActive={itemIndex === index} />
 
-              {item.title || item.subtitle ? (
-                <View style={styles.overlay}>
-                  {item.title ? <Text style={styles.title}>{item.title}</Text> : null}
-                  {item.subtitle ? (
-                    <Text style={styles.subtitle}>{item.subtitle}</Text>
-                  ) : null}
-                </View>
-              ) : null}
             </View>
           </Pressable>
         )}
@@ -267,30 +260,6 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: "100%",
-  },
-
-  overlay: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    bottom: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: "rgba(0,0,0,0.35)",
-  },
-
-  title: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  subtitle: {
-    color: "#fff",
-    fontSize: 12,
-    marginTop: 2,
-    opacity: 0.9,
   },
 
   dots: {

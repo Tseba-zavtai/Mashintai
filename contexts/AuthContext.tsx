@@ -393,13 +393,41 @@ export const [AuthContext, useAuth] = createContextHook(() => {
   }, [fetchProfile, resetAdminUnlock, touchLastActive]);
 
   const completeDanSignup = useCallback(async (phone: string, password: string) => {
-    await finishDanSignUp(phone, password);
-    // Server-side credential updates are reflected in the persisted session too.
-    await supabase.auth.refreshSession();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session?.user?.id) throw new Error("Нэвтрэх session олдсонгүй.");
+    const { data: { session: originalSession } } = await supabase.auth.getSession();
+    if (!originalSession?.user?.id) {
+      throw new Error("Нэвтрэх хугацаа дууссан байна. DAN-аар дахин нэвтэрч үргэлжлүүлнэ үү.");
+    }
+    const expectedUserId = originalSession.user.id;
+    // A previous request can commit successfully even if its response is lost.
+    // Do not attempt to change credentials a second time for that account.
+    const existing = await fetchProfile(expectedUserId);
+    if (existing.danOnboardingCompletedAt) {
+      if (normalizePhone(phone) !== existing.phone) {
+        throw new Error("Бүртгэл дууссан байна. Бүртгэлтэй утасны дугаараараа нэвтэрнэ үү.");
+      }
+    } else {
+      try {
+        await finishDanSignUp(phone, password);
+      } catch (saveError) {
+        // Recover only when this very account demonstrably committed the same
+        // phone. Never treat a generic server failure as successful signup.
+        const committed = await fetchProfile(expectedUserId).catch(() => null);
+        if (!committed?.danOnboardingCompletedAt || committed.phone !== normalizePhone(phone)) throw saveError;
+      }
+    }
+    // Updating credentials can revoke the DAN session's refresh token.
+    // Establish a fresh session with the credentials that were just saved.
+    const digits = phone.replace(/\D/g, "");
+    const localPhone = digits.startsWith("976") && digits.length === 11 ? digits.slice(3) : digits;
+    const { data: { session }, error: loginError } = await supabase.auth.signInWithPassword({
+      email: `u976${localPhone}@example.com`, password,
+    });
+    if (loginError) throw new Error("Бүртгэл хадгалагдсан. Утас, нууц үгээрээ дахин нэвтэрнэ үү.");
+    if (!session?.user?.id) throw new Error("Бүртгэл хадгалагдсан боловч нэвтрэлт баталгаажаагүй байна. Утас, нууц үгээрээ нэвтэрнэ үү.");
+    if (session.user.id !== expectedUserId) {
+      await supabase.auth.signOut({ scope: "local" });
+      throw new Error("Бүртгэлийн мэдээлэл зөрлөө. DAN-аар дахин нэвтэрнэ үү.");
+    }
     await fetchProfile(session.user.id, phone);
     await touchLastActive();
   }, [fetchProfile, touchLastActive]);
