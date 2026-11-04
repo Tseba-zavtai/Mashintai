@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import AndroidLaunchBrand from "@/components/AndroidLaunchBrand";
+import { StorePurchaseProvider } from "@/contexts/StorePurchaseContext";
 
 const queryClient = new QueryClient();
 
@@ -174,12 +175,14 @@ export default function RootLayout() {
           <AuthContext>
             <AppLockContext>
               <JobsContext>
+                <StorePurchaseProvider>
                 <GestureHandlerRootView style={{ flex: 1 }}>
                   <RootLayoutNav />
                   <AppLockGate />
                   <AccountSuspendedGate />
                   <AndroidLaunchBrand />
                 </GestureHandlerRootView>
+                </StorePurchaseProvider>
               </JobsContext>
             </AppLockContext>
           </AuthContext>

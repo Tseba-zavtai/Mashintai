@@ -430,3 +430,11 @@ verify_jwt = false
 [functions.account-deletion-cleanup]
 verify_jwt = false
 
+[functions.store-purchases]
+# Each request is authenticated using auth.getUser inside the handler.
+verify_jwt = false
+
+[functions.store-refunds]
+# Apple signed JWS / private cron header are verified inside the handler.
+verify_jwt = false
+

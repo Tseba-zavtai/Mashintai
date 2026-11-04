@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info", "Content-Type": "application/json" };
-const plans: Record<string, number> = { credit: 3000, credit2: 5000, credit3: 7000, bump: 1000, daily: 4500, weekly: 21000, monthly: 45000 };
+const plans: Record<string, number> = { credit: 3200, credit2: 5200, credit3: 7200, bump: 1200, daily: 4000, weekly: 20000, monthly: 60000 };
 let token = ""; let expires = 0;
 let authenticating: Promise<void> | null = null;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

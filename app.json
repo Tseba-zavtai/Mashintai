@@ -70,6 +70,7 @@
       ]
     },
     "plugins": [
+      "expo-iap",
       "expo-router",
       [
         "expo-splash-screen",

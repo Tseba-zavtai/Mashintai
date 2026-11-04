@@ -32,6 +32,7 @@ import ContactPhonePickerModal from "@/components/ContactPhonePickerModal";
 import { loadDefaultContactPhone } from "@/lib/contactPhones";
 
 import { searchMatch } from "@/lib/searchUtils";
+import { getListingFormFields } from '@/lib/listingFormFields';
 import {
   getCategoryCatalogImmediately,
   loadCachedCategoryCatalog,
@@ -287,6 +288,8 @@ export default function PostScreen() {
   }, [selectedCategoryObj, subcategoryId, selectedSubcategoryLabel]);
 
   const selectedSubcategoryName = selectedSubcategoryObj?.name ?? selectedSubcategoryLabel ?? null;
+  const listingFormFields = useMemo(() => getListingFormFields(selectedCategoryObj?.form_schema, selectedCategoryName, selectedSubcategoryName),
+    [selectedCategoryObj?.form_schema, selectedCategoryName, selectedSubcategoryName]);
 
   const categoryPickerOptions = useMemo<CategoryPickerOption[]>(() => {
     const query = categorySearch.trim();
@@ -686,15 +689,32 @@ export default function PostScreen() {
             </View>
           )}
 
-          {selectedCategoryObj?.form_schema && selectedCategoryObj.form_schema.length > 0 && (
+          {listingFormFields.length > 0 && (
             <View style={styles.formSection}>
               <Text style={[styles.label, { color: colors.text, marginBottom: 16, fontSize: 16 }]}>
                 Нэмэлт мэдээлэл (Заавал биш)
               </Text>
-              {selectedCategoryObj.form_schema.map((field: any) => (
+              {listingFormFields.map((field) => (
                 <View key={field.name} style={{ marginBottom: 16 }}>
                   <Text style={[styles.label, { color: colors.text }]}>{field.label}</Text>
-                  {field.type === 'dropdown' ? (
+                  {field.allowCustomSize ? (
+                    <View>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                        {(field.options ?? []).map(option => <TouchableOpacity key={String(option)} accessibilityRole="button"
+                          accessibilityState={{ selected: dynamicData[field.name] === String(option) }} disabled={submitting}
+                          onPress={() => setDynamicData(prev => ({ ...prev, [field.name]: String(option) }))}
+                          style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
+                            borderColor: dynamicData[field.name] === String(option) ? colors.primary : colors.border,
+                            backgroundColor: dynamicData[field.name] === String(option) ? colors.primary : colors.card }}>
+                          <Text style={{ color: dynamicData[field.name] === String(option) ? colors.buttonText : colors.text }}>{String(option)}</Text>
+                        </TouchableOpacity>)}
+                      </View>
+                      <TextInput accessibilityLabel={`${field.label} — сонгох эсвэл бичих`} style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                        placeholder="Размер сонгох эсвэл өөрөө бичих" placeholderTextColor={colors.textSecondary}
+                        value={String(dynamicData[field.name] ?? '')} maxLength={30}
+                        onChangeText={value => setDynamicData(prev => ({ ...prev, [field.name]: value }))} editable={!submitting} />
+                    </View>
+                  ) : field.type === 'dropdown' ? (
                     <Pressable style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.card, borderColor: dynamicData[field.name] ? colors.primary : colors.border, opacity: pressed ? 0.85 : 1 }]} 
                       onPress={() => { setActiveDynamicField(field); setDynamicModalVisible(true); }}>
                       <Text style={[styles.selectButtonTitle, { color: dynamicData[field.name] ? colors.text : colors.textSecondary }]}>{dynamicData[field.name] || "Сонгох..."}</Text>

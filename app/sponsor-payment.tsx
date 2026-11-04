@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Linking,
   AppState,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
@@ -21,6 +22,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { callQPay, type QPayInvoice } from "@/lib/qpayPayments";
 import AppHeader from "@/components/AppHeader"; // 🎯 НЭМСЭН: Нэгдсэн стандартын толгой
+import StorePaymentScreen from '@/components/StorePaymentScreen';
+import { NATIVE_QPAY_ENABLED } from '@/constants/features';
+import type { StorePlan } from '@/lib/storeProducts';
 
 type SponsorPlan = {
   id: string;
@@ -32,17 +36,28 @@ type SponsorPlan = {
 };
 
 const ALL_PLANS: SponsorPlan[] = [
-  { id: "credit", name: "Зар оруулах 1 эрх", price: 3000, durationDays: 0, credits: 1, description: "Та 3,000₮-өөр 1 удаагийн зар оруулах эрх авна." },
-  { id: "credit2", name: "Зар оруулах 2 эрх", price: 5000, durationDays: 0, credits: 2, description: "2 эрхийн багц — 1,000₮ хэмнэнэ." },
-  { id: "credit3", name: "Зар оруулах 3 эрх", price: 7000, durationDays: 0, credits: 3, description: "3 эрхийн багц — 2,000₮ хэмнэнэ." },
-  { id: "bump", name: "Зараа дээш гаргах", price: 1000, durationDays: 0, description: "Зараа нэг удаа жагсаалтын эхэнд гаргана. Үүний дараа шинээр нэмэгдсэн эсвэл дээшлүүлсэн зарууд таны зарын өмнө гарна." },
-  { id: "daily", name: "1 хоног", price: 4500, durationDays: 1, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 1 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
-  { id: "weekly", name: "7 хоног", price: 21000, durationDays: 7, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 7 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
-  { id: "monthly", name: "30 хоног", price: 45000, durationDays: 30, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 30 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
+  { id: "credit", name: "Зар оруулах 1 эрх", price: 3200, durationDays: 0, credits: 1, description: "Та 3,200₮-өөр 1 удаагийн зар оруулах эрх авна." },
+  { id: "credit2", name: "Зар оруулах 2 эрх", price: 5200, durationDays: 0, credits: 2, description: "2 эрхийн багц — 1,200₮ хэмнэнэ." },
+  { id: "credit3", name: "Зар оруулах 3 эрх", price: 7200, durationDays: 0, credits: 3, description: "3 эрхийн багц — 2,400₮ хэмнэнэ." },
+  { id: "bump", name: "Зараа дээш гаргах", price: 1200, durationDays: 0, description: "Зараа нэг удаа жагсаалтын эхэнд гаргана. Үүний дараа шинээр нэмэгдсэн эсвэл дээшлүүлсэн зарууд таны зарын өмнө гарна." },
+  { id: "daily", name: "1 хоног", price: 4000, durationDays: 1, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 1 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
+  { id: "weekly", name: "7 хоног", price: 20000, durationDays: 7, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 7 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
+  { id: "monthly", name: "30 хоног", price: 60000, durationDays: 30, description: "Та өөрийн нийтэлсэн зараа Sponsored зар болгон 30 хоногийн турш заруудын эхэнд болон хайлтын эхэнд санал болгон харагдуулах боломжтой" },
 ];
 
 
 export default function SponsorPaymentScreen() {
+  const [qpayPlan, setQpayPlan] = useState<StorePlan | null>(null);
+  const [lastPlan, setLastPlan] = useState<StorePlan | undefined>();
+  if (Platform.OS === 'ios' || Platform.OS === 'android') {
+    if (NATIVE_QPAY_ENABLED && qpayPlan) return <LegacyQPayPaymentScreen initialPlan={qpayPlan} directCheckout onBackToStore={() => setQpayPlan(null)} />;
+    return <StorePaymentScreen initialPlan={lastPlan} qpayPrices={Object.fromEntries(ALL_PLANS.map(plan => [plan.id, plan.price]))}
+      onChooseQPay={NATIVE_QPAY_ENABLED ? plan => { setLastPlan(plan); setQpayPlan(plan); } : undefined} />;
+  }
+  return <LegacyQPayPaymentScreen />;
+}
+
+function LegacyQPayPaymentScreen({ initialPlan, onBackToStore, directCheckout = false }: { initialPlan?: StorePlan; onBackToStore?: () => void; directCheckout?: boolean }) {
   const router = useRouter();
   const { jobId, jobIds: idsParam, targetType } = useLocalSearchParams<{ jobId?: string; jobIds?: string; targetType?: "bump" | "sponsor" | "credit" }>();
   const selectedIds = useMemo(() => idsParam ? idsParam.split(',').filter(Boolean) : jobId ? [jobId] : [], [idsParam,jobId]);
@@ -56,20 +71,23 @@ export default function SponsorPaymentScreen() {
   const [invoice, setInvoice] = useState<QPayInvoice | null>(null);
   const [pendingPayment, setPendingPayment] = useState<{invoice:QPayInvoice;planId:string} | null>(null);
   const busy = useRef(false);
+  const [restored, setRestored] = useState(false);
+  const directStarted = useRef(false);
   const refreshers = useRef({refetchProfile,loadJobs});
   refreshers.current = {refetchProfile,loadJobs};
   const storageKey = user?.id ? `qpay-pending:${user.id}:${targetType}:${selectedIds.slice().sort().join(',') || 'credit'}` : null;
 
 
   useEffect(() => {
-    if (targetType === "bump") setSelectedPlan("bump");
+    if (initialPlan) setSelectedPlan(initialPlan);
+    else if (targetType === "bump") setSelectedPlan("bump");
     else if (targetType === "credit") setSelectedPlan("credit");
     else setSelectedPlan("daily");
-  }, [targetType]);
+  }, [targetType, initialPlan]);
 
   useEffect(() => {
     let mounted = true;
-    setStep('info'); setPendingPayment(null); setInvoice(null);
+    setStep('info'); setPendingPayment(null); setInvoice(null); setRestored(false);
     if (storageKey) AsyncStorage.getItem(storageKey).then(async value => {
       if (!mounted || !value) return;
       try {
@@ -88,7 +106,8 @@ export default function SponsorPaymentScreen() {
           try {const saved=JSON.parse(value);if(saved.invoice?.orderId && saved.planId) setPendingPayment(saved);} catch { /* Invalid local data. */ }
         }
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => { if (mounted) setRestored(true); });
+    else setRestored(true);
     return () => { mounted = false; };
   }, [storageKey]);
 
@@ -129,6 +148,15 @@ export default function SponsorPaymentScreen() {
   };
 
 
+  // Resume an existing invoice before creating one; native checkout skips duplicate package UI.
+  useEffect(() => {
+    if (!directCheckout || !restored || !selectedPlanData || !user?.id || directStarted.current) return;
+    directStarted.current = true;
+    if (pendingPayment) {
+      setInvoice(pendingPayment.invoice); setSelectedPlan(pendingPayment.planId); setStep('invoice');
+    } else void handleGenerateInvoice();
+  });
+
   const checkPaymentStatus = useCallback(async (silent = false) => {
     if (!invoice || busy.current) return;
     busy.current=true;
@@ -164,7 +192,22 @@ export default function SponsorPaymentScreen() {
       <AppHeader title={screenTitle} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-        {step === "info" && (
+        {onBackToStore && step !== 'success' && <View style={{ marginBottom: 16 }}>
+          <TouchableOpacity accessibilityRole="button" disabled={isSubmitting || !!pendingPayment || !!invoice}
+            onPress={onBackToStore} style={{ paddingVertical: 12, opacity: isSubmitting || pendingPayment || invoice ? 0.45 : 1 }}>
+            <Text style={{ color: colors.primary }}>{Platform.OS === 'ios' ? 'App Store' : 'Google Play'} төлбөр рүү буцах</Text>
+          </TouchableOpacity>
+          {(pendingPayment || invoice) && <Text style={{ color: colors.textSecondary }}>Давхар төлөхөөс сэргийлж өмнөх нэхэмжлэлээ эхлээд шалгах эсвэл цуцална уу.</Text>}
+        </View>}
+        {step === "info" && directCheckout && <View style={styles.stepContainer}>
+          {isSubmitting || !restored ? <ActivityIndicator color={colors.primary} /> : <>
+            <Text style={{ color: colors.text }}>QPay нэхэмжлэл үүсээгүй. Дахин оролдох эсвэл төлбөрийн аргаа солих боломжтой.</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={handleGenerateInvoice} style={[styles.qpayBtn, {backgroundColor:colors.background}]}>
+              <Text style={{color:colors.primary,fontWeight:'700'}}>Дахин оролдох</Text>
+            </TouchableOpacity>
+          </>}
+        </View>}
+        {step === "info" && !directCheckout && (
           <View style={styles.stepContainer}>
             {pendingPayment && <View style={[styles.jobSummaryCard,{backgroundColor:colors.background}]}>
               <Text style={{color:colors.text}}>Өмнөх төлбөрийн нэхэмжлэл байна. Шинээр төлөхөөс өмнө төлөвийг нь шалгаж болно.</Text>
